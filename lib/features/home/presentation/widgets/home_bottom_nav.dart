@@ -73,7 +73,7 @@ class _CenterAction extends StatelessWidget {
         color: const Color(0xFF3E4CDF),
         shape: BoxShape.circle,
         boxShadow: [
-          BoxShadow(color: const Color(0xFF3E4CDF).withValues(alpha: 0.4), blurRadius: 14, offset: const Offset(0, 8)),
+          BoxShadow(color: const Color(0xFF3E4CDF).withOpacity(0.4), blurRadius: 14, offset: const Offset(0, 8)),
         ],
       ),
       child: const Icon(Icons.grid_view_rounded, color: Colors.white),
