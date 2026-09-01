@@ -49,7 +49,9 @@ class HomeHeader extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               IconButton(
-                onPressed: onLogout,
+                onPressed: () {
+                  onLogout();
+                },
                 icon: const Icon(Icons.logout, color: Colors.white),
               ),
               const SizedBox(width: 8),

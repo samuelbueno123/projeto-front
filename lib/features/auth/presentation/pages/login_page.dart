@@ -40,7 +40,11 @@ class LoginPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 32),
                   FilledButton.icon(
-                    onPressed: isLoading ? null : onGoogleLogin,
+                    onPressed: isLoading
+                        ? null
+                        : () {
+                            onGoogleLogin();
+                          },
                     icon: isLoading
                         ? const SizedBox(
                             width: 18,

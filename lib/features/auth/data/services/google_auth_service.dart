@@ -93,7 +93,6 @@ class GoogleAuthService {
   }
 
   Future<Map<String, dynamic>> _authenticateAgainstBackend(Map<String, dynamic> payload) async {
-    AuthException? lastError;
     for (final path in _googleAuthPaths) {
       final uri = Uri.parse('$_backendBaseUrl$path');
       final response = await _httpClient.post(
@@ -121,10 +120,9 @@ class GoogleAuthService {
       return <String, dynamic>{};
     }
 
-    lastError ??= const AuthException(
+    throw const AuthException(
       'Nenhum endpoint de autenticação Google do backend foi encontrado.',
     );
-    throw lastError;
   }
 
   String? _extractString(Map<String, dynamic> data, List<String> keys) {
