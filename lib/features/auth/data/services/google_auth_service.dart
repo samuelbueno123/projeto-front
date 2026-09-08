@@ -1,8 +1,8 @@
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/entities/auth_session.dart';
 
@@ -10,8 +10,10 @@ class GoogleAuthService {
   GoogleAuthService({
     GoogleSignIn? googleSignIn,
     http.Client? httpClient,
+    FlutterSecureStorage? secureStorage,
   })  : _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: const ['email', 'profile']),
-        _httpClient = httpClient ?? http.Client();
+        _httpClient = httpClient ?? http.Client(),
+        _secureStorage = secureStorage ?? const FlutterSecureStorage();
 
   static const String _sessionStorageKey = 'auth_session';
   static const String _backendBaseUrl = String.fromEnvironment(
@@ -26,10 +28,10 @@ class GoogleAuthService {
 
   final GoogleSignIn _googleSignIn;
   final http.Client _httpClient;
+  final FlutterSecureStorage _secureStorage;
 
   Future<AuthSession?> readSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonString = prefs.getString(_sessionStorageKey);
+    final jsonString = await _secureStorage.read(key: _sessionStorageKey);
     if (jsonString == null || jsonString.isEmpty) {
       return null;
     }
@@ -47,8 +49,7 @@ class GoogleAuthService {
     }
 
   Future<void> clearSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_sessionStorageKey);
+    await _secureStorage.delete(key: _sessionStorageKey);
   }
 
   Future<void> signOut() async {
@@ -92,8 +93,10 @@ class GoogleAuthService {
       userEmail: _extractString(responseData, const ['email']) ?? googleUser.email,
     );
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_sessionStorageKey, jsonEncode(session.toJson()));
+    await _secureStorage.write(
+      key: _sessionStorageKey,
+      value: jsonEncode(session.toJson()),
+    );
     return session;
   }
 
