@@ -19,7 +19,7 @@ class GoogleAuthService {
   static const String _sessionStorageKey = 'auth_session';
   static const String _backendBaseUrl = String.fromEnvironment(
     'BACKEND_BASE_URL',
-    defaultValue: 'http://localhost:3000',
+    defaultValue: 'http://localhost:8080',
   );
   static const List<String> _googleAuthPaths = [
     '/auth/google/mobile',
@@ -69,9 +69,7 @@ class GoogleAuthService {
     } on PlatformException catch (error) {
       throw _googleSignInException(error);
     } catch (_) {
-      throw const AuthException(
-        'Não foi possível abrir o login do Google. Verifique sua conexão e tente novamente.',
-      );
+      throw const AuthException("Erro no Login com o Google");
     }
     if (googleUser == null) {
       throw const AuthException('Login com Google cancelado.');
