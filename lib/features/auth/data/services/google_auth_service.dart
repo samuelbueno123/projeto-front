@@ -34,12 +34,17 @@ class GoogleAuthService {
       return null;
     }
 
-    final decoded = jsonDecode(jsonString);
-    if (decoded is! Map<String, dynamic>) {
+    try {
+      final decoded = jsonDecode(jsonString);
+      if (decoded is! Map<String, dynamic>) {
+        await clearSession();
+        return null;
+      }
+      return AuthSession.fromJson(decoded);
+    } catch (_) {
+      await clearSession();
       return null;
     }
-    return AuthSession.fromJson(decoded);
-  }
 
   Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
