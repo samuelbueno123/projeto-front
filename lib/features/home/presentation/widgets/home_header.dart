@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 class HomeHeader extends StatelessWidget {
-  const HomeHeader({super.key});
+  const HomeHeader({super.key, required this.onLogout});
+
+  final Future<void> Function() onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +48,13 @@ class HomeHeader extends StatelessWidget {
                 ],
               ),
               const SizedBox(width: 16),
+              IconButton(
+                onPressed: () {
+                  onLogout();
+                },
+                icon: const Icon(Icons.logout, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
               const CircleAvatar(
                 radius: 24,
                 backgroundColor: Colors.white24,
