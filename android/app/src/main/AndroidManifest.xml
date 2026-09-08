@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Needed by the Google sign-in flow and by the API request that creates
+         the application's session. Keep this in the main manifest so release
+         builds have it too (the debug/profile manifests are not packaged in a
+         release APK). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="projeto_front"
         android:name="${applicationName}"

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
@@ -62,7 +63,16 @@ class GoogleAuthService {
   }
 
   Future<AuthSession> signInWithGoogle() async {
-    final googleUser = await _googleSignIn.signIn();
+    final GoogleSignInAccount? googleUser;
+    try {
+      googleUser = await _googleSignIn.signIn();
+    } on PlatformException catch (error) {
+      throw _googleSignInException(error);
+    } catch (_) {
+      throw const AuthException(
+        'Não foi possível abrir o login do Google. Verifique sua conexão e tente novamente.',
+      );
+    }
     if (googleUser == null) {
       throw const AuthException('Login com Google cancelado.');
     }
@@ -84,7 +94,14 @@ class GoogleAuthService {
       'displayName': googleUser.displayName,
     }..removeWhere((_, value) => value == null);
 
-    final responseData = await _authenticateAgainstBackend(payload);
+    final Map<String, dynamic> responseData;
+    try {
+      responseData = await _authenticateAgainstBackend(payload);
+    } on http.ClientException {
+      throw const AuthException(
+        'Não foi possível conectar ao servidor. Verifique a URL configurada em BACKEND_BASE_URL.',
+      );
+    }
 
     final session = AuthSession(
       isAuthenticated: true,
@@ -158,6 +175,27 @@ class GoogleAuthService {
       }
     } catch (_) {}
     return null;
+  }
+
+  AuthException _googleSignInException(PlatformException error) {
+    final errorDetails = '${error.code} ${error.message ?? ''}'.toLowerCase();
+
+    if (errorDetails.contains('10') ||
+        errorDetails.contains('developer_error') ||
+        errorDetails.contains('api_exception')) {
+      return const AuthException(
+        'O login do Google não está configurado para este aplicativo. '
+        'Cadastre o pacote Android e a impressão digital SHA-1 no Google Cloud Console.',
+      );
+    }
+
+    if (errorDetails.contains('network')) {
+      return const AuthException(
+        'Não foi possível conectar ao Google. Verifique sua conexão e tente novamente.',
+      );
+    }
+
+    return const AuthException('Não foi possível concluir o login com o Google. Tente novamente.');
   }
 }
 
