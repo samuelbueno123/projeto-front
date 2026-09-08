@@ -47,6 +47,7 @@ class GoogleAuthService {
       await clearSession();
       return null;
     }
+  }
 
   Future<void> clearSession() async {
     await _secureStorage.delete(key: _sessionStorageKey);
