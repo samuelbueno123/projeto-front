@@ -27,3 +27,18 @@ O app declara a permissão `INTERNET` no manifesto principal, portanto o fluxo
 também funciona em builds de release. Se a configuração OAuth estiver ausente,
 a tela de login apresenta uma mensagem específica em vez de ocultar a causa em
 um erro genérico.
+
+## Fluxos de autenticação
+
+Além do login com Google, a tela inicial também oferece:
+
+- Login com email e senha
+- Cadastro de usuário
+
+Os fluxos tentam endpoints comuns de backend para autenticação:
+
+- Login: `/auth/login`, `/auth/signin`, `/login`
+- Cadastro: `/auth/register`, `/auth/signup`, `/users`
+- Google: `/auth/google/mobile`, `/auth/google/login`, `/auth/google`
+
+Todos usam `BACKEND_BASE_URL` para montar a URL base da API.

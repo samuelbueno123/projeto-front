@@ -52,11 +52,17 @@ class _AppWidgetState extends State<AppWidget> {
     }
 
     if (_authController.isAuthenticated) {
-      return HomePage(onLogout: _authController.signOut);
+      return HomePage(
+        onLogout: _authController.signOut,
+        userName: _authController.session?.userName,
+        userEmail: _authController.session?.userEmail,
+      );
     }
 
     return LoginPage(
       onGoogleLogin: _authController.signInWithGoogle,
+      onEmailLogin: _authController.signInWithEmailPassword,
+      onSignUp: _authController.signUp,
       isLoading: _authController.isLoading,
       errorMessage: _authController.errorMessage,
     );
