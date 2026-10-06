@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
 
 class HomeHeader extends StatelessWidget {
-  const HomeHeader({super.key, required this.onLogout});
+  const HomeHeader({
+    super.key,
+    required this.onLogout,
+    this.userName,
+    this.userEmail,
+  });
 
   final Future<void> Function() onLogout;
+  final String? userName;
+  final String? userEmail;
 
   @override
   Widget build(BuildContext context) {
+    final displayName = (userName != null && userName!.trim().isNotEmpty) ? userName!.trim() : 'morador';
+    final subtitle =
+        (userEmail != null && userEmail!.trim().isNotEmpty) ? userEmail!.trim() : 'Bem-vindo ao Residencial Vila das Flores';
+
     return Container(
       height: 230,
       padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
@@ -63,14 +74,14 @@ class HomeHeader extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          const Text(
-            'Olá, Lucas! 👋',
-            style: TextStyle(color: Colors.white, fontSize: 42 / 1.6, fontWeight: FontWeight.w700),
+          Text(
+            'Olá, $displayName! 👋',
+            style: const TextStyle(color: Colors.white, fontSize: 42 / 1.6, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Bem-vindo ao Residencial Vila das Flores',
-            style: TextStyle(color: Colors.white, fontSize: 18),
+          Text(
+            subtitle,
+            style: const TextStyle(color: Colors.white, fontSize: 18),
           ),
         ],
       ),

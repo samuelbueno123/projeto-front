@@ -11,16 +11,27 @@ import '../widgets/reservation_tile.dart';
 import '../widgets/section_card.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.onLogout});
+  const HomePage({
+    super.key,
+    required this.onLogout,
+    this.userName,
+    this.userEmail,
+  });
 
   final Future<void> Function() onLogout;
+  final String? userName;
+  final String? userEmail;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          HomeHeader(onLogout: onLogout),
+          HomeHeader(
+            onLogout: onLogout,
+            userName: userName,
+            userEmail: userEmail,
+          ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(18, 150, 18, 96),

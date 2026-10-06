@@ -2,9 +2,9 @@ import '../../data/services/google_auth_service.dart';
 import '../../domain/entities/auth_session.dart';
 
 class AuthController {
-  AuthController({GoogleAuthService? authService}) : _authService = authService ?? GoogleAuthService();
+  AuthController({AuthService? authService}) : _authService = authService ?? AuthService();
 
-  final GoogleAuthService _authService;
+  final AuthService _authService;
 
   bool _isBootstrapping = true;
   bool _isLoading = false;
@@ -50,6 +50,52 @@ class AuthController {
       _errorMessage = error.message;
     } catch (_) {
       _errorMessage = 'Ocorreu um erro ao autenticar com o Google.';
+    } finally {
+      _isLoading = false;
+      _notify();
+    }
+  }
+
+  Future<void> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    _errorMessage = null;
+    _isLoading = true;
+    _notify();
+    try {
+      _session = await _authService.signInWithEmailPassword(
+        email: email,
+        password: password,
+      );
+    } on AuthException catch (error) {
+      _errorMessage = error.message;
+    } catch (_) {
+      _errorMessage = 'Ocorreu um erro ao autenticar com email e senha.';
+    } finally {
+      _isLoading = false;
+      _notify();
+    }
+  }
+
+  Future<void> signUp({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    _errorMessage = null;
+    _isLoading = true;
+    _notify();
+    try {
+      _session = await _authService.signUp(
+        name: name,
+        email: email,
+        password: password,
+      );
+    } on AuthException catch (error) {
+      _errorMessage = error.message;
+    } catch (_) {
+      _errorMessage = 'Ocorreu um erro ao realizar o cadastro.';
     } finally {
       _isLoading = false;
       _notify();

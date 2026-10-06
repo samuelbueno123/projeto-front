@@ -5,10 +5,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../../core/config/api_config.dart';
 import '../../domain/entities/auth_session.dart';
 
-class GoogleAuthService {
-  GoogleAuthService({
+class AuthService {
+  AuthService({
     GoogleSignIn? googleSignIn,
     http.Client? httpClient,
     FlutterSecureStorage? secureStorage,
@@ -17,14 +18,21 @@ class GoogleAuthService {
         _secureStorage = secureStorage ?? const FlutterSecureStorage();
 
   static const String _sessionStorageKey = 'auth_session';
-  static const String _backendBaseUrl = String.fromEnvironment(
-    'BACKEND_BASE_URL',
-    defaultValue: 'http://localhost:8080',
-  );
+  static const String _backendBaseUrl = ApiConfig.baseUrl;
   static const List<String> _googleAuthPaths = [
     '/auth/google/mobile',
     '/auth/google/login',
-    '/auth/google',
+    ApiConfig.authGoogleEndpoint,
+  ];
+  static const List<String> _emailLoginPaths = [
+    '/auth/login',
+    '/auth/signin',
+    '/login',
+  ];
+  static const List<String> _registerPaths = [
+    '/auth/register',
+    '/auth/signup',
+    ApiConfig.usersEndpoint,
   ];
 
   final GoogleSignIn _googleSignIn;
@@ -62,6 +70,55 @@ class GoogleAuthService {
     await clearSession();
   }
 
+  Future<AuthSession> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    final payload = <String, dynamic>{
+      'email': email,
+      'password': password,
+    };
+    final responseData = await _authenticateWithFallbackPaths(
+      paths: _emailLoginPaths,
+      payload: payload,
+      notFoundMessage: 'Nenhum endpoint de login por email/senha do backend foi encontrado.',
+      networkErrorMessage: 'Não foi possível conectar ao servidor. Verifique a URL configurada em BACKEND_BASE_URL.',
+    );
+
+    final session = _sessionFromResponse(
+      responseData,
+      fallbackEmail: email,
+    );
+    await _persistSession(session);
+    return session;
+  }
+
+  Future<AuthSession> signUp({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final payload = <String, dynamic>{
+      'name': name,
+      'email': email,
+      'password': password,
+    };
+    final responseData = await _authenticateWithFallbackPaths(
+      paths: _registerPaths,
+      payload: payload,
+      notFoundMessage: 'Nenhum endpoint de cadastro do backend foi encontrado.',
+      networkErrorMessage: 'Não foi possível conectar ao servidor. Verifique a URL configurada em BACKEND_BASE_URL.',
+    );
+
+    final session = _sessionFromResponse(
+      responseData,
+      fallbackName: name,
+      fallbackEmail: email,
+    );
+    await _persistSession(session);
+    return session;
+  }
+
   Future<AuthSession> signInWithGoogle() async {
     final GoogleSignInAccount? googleUser;
     try {
@@ -92,60 +149,80 @@ class GoogleAuthService {
       'displayName': googleUser.displayName,
     }..removeWhere((_, value) => value == null);
 
-    final Map<String, dynamic> responseData;
-    try {
-      responseData = await _authenticateAgainstBackend(payload);
-    } on http.ClientException {
-      throw const AuthException(
-        'Não foi possível conectar ao servidor. Verifique a URL configurada em BACKEND_BASE_URL.',
-      );
-    }
-
-    final session = AuthSession(
-      isAuthenticated: true,
-      token: _extractString(responseData, const ['accessToken', 'token', 'jwt']),
-      refreshToken: _extractString(responseData, const ['refreshToken']),
-      userName: _extractString(responseData, const ['name', 'displayName']) ?? googleUser.displayName,
-      userEmail: _extractString(responseData, const ['email']) ?? googleUser.email,
+    final responseData = await _authenticateWithFallbackPaths(
+      paths: _googleAuthPaths,
+      payload: payload,
+      notFoundMessage: 'Nenhum endpoint de autenticação Google do backend foi encontrado.',
+      networkErrorMessage: 'Não foi possível conectar ao servidor. Verifique a URL configurada em BACKEND_BASE_URL.',
     );
 
-    await _secureStorage.write(
-      key: _sessionStorageKey,
-      value: jsonEncode(session.toJson()),
+    final session = _sessionFromResponse(
+      responseData,
+      fallbackName: googleUser.displayName,
+      fallbackEmail: googleUser.email,
     );
+    await _persistSession(session);
     return session;
   }
 
-  Future<Map<String, dynamic>> _authenticateAgainstBackend(Map<String, dynamic> payload) async {
-    for (final path in _googleAuthPaths) {
-      final uri = Uri.parse('$_backendBaseUrl$path');
-      final response = await _httpClient.post(
-        uri,
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
-      );
+  Future<Map<String, dynamic>> _authenticateWithFallbackPaths({
+    required List<String> paths,
+    required Map<String, dynamic> payload,
+    required String notFoundMessage,
+    required String networkErrorMessage,
+  }) async {
+    try {
+      for (final path in paths) {
+        final uri = Uri.parse('$_backendBaseUrl$path');
+        final response = await _httpClient.post(
+          uri,
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        );
 
-      if (response.statusCode == 404) {
-        continue;
-      }
+        if (response.statusCode == 404) {
+          continue;
+        }
 
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw AuthException(_extractErrorMessage(response.body) ?? 'Falha ao autenticar no backend.');
-      }
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw AuthException(_extractErrorMessage(response.body) ?? 'Falha ao autenticar no backend.');
+        }
 
-      if (response.body.isEmpty) {
+        if (response.body.isEmpty) {
+          return <String, dynamic>{};
+        }
+
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
         return <String, dynamic>{};
       }
-
-      final decoded = jsonDecode(response.body);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-      return <String, dynamic>{};
+    } on http.ClientException {
+      throw AuthException(networkErrorMessage);
     }
 
-    throw const AuthException(
-      'Nenhum endpoint de autenticação Google do backend foi encontrado.',
+    throw AuthException(notFoundMessage);
+  }
+
+  AuthSession _sessionFromResponse(
+    Map<String, dynamic> responseData, {
+    String? fallbackName,
+    String? fallbackEmail,
+  }) {
+    return AuthSession(
+      isAuthenticated: true,
+      token: _extractString(responseData, const ['accessToken', 'token', 'jwt']),
+      refreshToken: _extractString(responseData, const ['refreshToken']),
+      userName: _extractString(responseData, const ['name', 'displayName']) ?? fallbackName,
+      userEmail: _extractString(responseData, const ['email']) ?? fallbackEmail,
+    );
+  }
+
+  Future<void> _persistSession(AuthSession session) async {
+    await _secureStorage.write(
+      key: _sessionStorageKey,
+      value: jsonEncode(session.toJson()),
     );
   }
 
