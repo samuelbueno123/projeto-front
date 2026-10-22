@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../home/data/home_service.dart';
 import '../../home/presentation/pages/notifications_page.dart';
@@ -255,7 +256,7 @@ class _ManagerPageState extends State<ManagerPage> {
                     child: ListTile(
                       title: Text('${unit['sector']} • ${unit['identifier']}'),
                       subtitle: Text(
-                        'Pagamento: ${_status(unit['paymentStatus'])}${unit['dueDate'] == null ? '' : ' • vence ${unit['dueDate']}'}',
+                        'Pagamento: ${_status(unit['paymentStatus'])}${unit['dueDate'] == null ? '' : ' • Vence: ${_formatDate(unit['dueDate'])}'}${unit['amount'] == null ? '' : ' • R\$ ${unit['amount']}'}',
                       ),
                       trailing: IconButton(
                         tooltip: 'Registrar status',
@@ -280,7 +281,7 @@ class _ManagerPageState extends State<ManagerPage> {
                         '${reservation['commonArea']} • ${reservation['residentName']}',
                       ),
                       subtitle: Text(
-                        '${reservation['startAt']} – ${reservation['endAt']}\n${reservation['residentEmail']} • ${reservation['status']}',
+                        '${_formatDateTime(reservation['startAt'])} – ${_formatDateTime(reservation['endAt'])}\n${reservation['residentEmail']} • ${_translateStatus(reservation['status'])}',
                       ),
                     ),
                   );
@@ -289,6 +290,32 @@ class _ManagerPageState extends State<ManagerPage> {
             ),
           ),
   );
+
+  String _formatDate(dynamic dateString) {
+    if (dateString == null) return '';
+    try {
+      final dt = DateTime.parse(dateString.toString());
+      return DateFormat('dd/MM/yyyy').format(dt);
+    } catch (_) {
+      return dateString.toString();
+    }
+  }
+
+  String _formatDateTime(dynamic dateTimeString) {
+    if (dateTimeString == null) return '';
+    try {
+      final dt = DateTime.parse(dateTimeString.toString()).toLocal();
+      return DateFormat('dd/MM/yyyy HH:mm').format(dt);
+    } catch (_) {
+      return dateTimeString.toString();
+    }
+  }
+
+  String _translateStatus(dynamic status) {
+    if (status == 'CONFIRMED') return 'Confirmada';
+    if (status == 'CANCELLED') return 'Cancelada';
+    return status?.toString() ?? '—';
+  }
 
   String _status(dynamic status) => switch (status) {
     'PAID' => 'Pago',
