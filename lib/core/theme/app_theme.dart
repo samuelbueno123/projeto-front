@@ -13,9 +13,18 @@ class AppTheme {
         surface: Colors.white,
       ),
       textTheme: const TextTheme(
-        headlineSmall: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF13162A)),
-        titleLarge: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF13162A)),
-        titleMedium: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF13162A)),
+        headlineSmall: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF13162A),
+        ),
+        titleLarge: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF13162A),
+        ),
+        titleMedium: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF13162A),
+        ),
         bodyMedium: TextStyle(color: Color(0xFF5C6179)),
       ),
       cardTheme: CardThemeData(

@@ -1,8 +1,23 @@
 /// Configurações da API e endpoints
 class ApiConfig {
   static const String baseUrl = String.fromEnvironment(
-    'BACKEND_BASE_URL',
+    'API_BASE_URL',
     defaultValue: 'http://localhost:8080',
+  );
+
+  static const String googleWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+    defaultValue:
+        '1093543407623-ch2dq0uh0bnvrhm6pkf6kd8v75bvr3a0.apps.googleusercontent.com',
+  );
+
+  static const String oauthClientId = String.fromEnvironment(
+    'OAUTH_CLIENT_ID',
+    defaultValue: 'myclientid',
+  );
+  static const String oauthClientSecret = String.fromEnvironment(
+    'OAUTH_CLIENT_SECRET',
+    defaultValue: 'myclientsecret',
   );
 
   // Timeout padrão para requisições (em segundos)

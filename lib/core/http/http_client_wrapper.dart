@@ -14,9 +14,9 @@ class HttpClientWrapper {
     String? baseUrl,
     String? authToken,
     this.enableLogging = false,
-  })  : _httpClient = httpClient ?? http.Client(),
-        _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-        _authToken = authToken;
+  }) : _httpClient = httpClient ?? http.Client(),
+       _baseUrl = baseUrl ?? ApiConfig.baseUrl,
+       _authToken = authToken;
 
   final http.Client _httpClient;
   final String _baseUrl;
@@ -60,7 +60,12 @@ class HttpClientWrapper {
   }
 
   /// Log de requisição (apenas em debug mode)
-  void _logRequest(String method, Uri uri, Map<String, String> headers, String? body) {
+  void _logRequest(
+    String method,
+    Uri uri,
+    Map<String, String> headers,
+    String? body,
+  ) {
     if (!enableLogging) return;
 
     print('=== HTTP REQUEST ===');
@@ -101,10 +106,7 @@ class HttpClientWrapper {
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(
-        response,
-        fromJsonT: fromJsonT,
-      );
+      return _handleResponse<T>(response, fromJsonT: fromJsonT);
     } on TimeoutException {
       throw TimeoutException('Timeout ao conectar ao servidor');
     } catch (e) {
@@ -132,10 +134,7 @@ class HttpClientWrapper {
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(
-        response,
-        fromJsonT: fromJsonT,
-      );
+      return _handleResponse<T>(response, fromJsonT: fromJsonT);
     } on TimeoutException {
       throw TimeoutException('Timeout ao conectar ao servidor');
     } catch (e) {
@@ -163,10 +162,7 @@ class HttpClientWrapper {
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(
-        response,
-        fromJsonT: fromJsonT,
-      );
+      return _handleResponse<T>(response, fromJsonT: fromJsonT);
     } on TimeoutException {
       throw TimeoutException('Timeout ao conectar ao servidor');
     } catch (e) {
@@ -192,10 +188,7 @@ class HttpClientWrapper {
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(
-        response,
-        fromJsonT: fromJsonT,
-      );
+      return _handleResponse<T>(response, fromJsonT: fromJsonT);
     } on TimeoutException {
       throw TimeoutException('Timeout ao conectar ao servidor');
     } catch (e) {
@@ -223,10 +216,7 @@ class HttpClientWrapper {
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(
-        response,
-        fromJsonT: fromJsonT,
-      );
+      return _handleResponse<T>(response, fromJsonT: fromJsonT);
     } on TimeoutException {
       throw TimeoutException('Timeout ao conectar ao servidor');
     } catch (e) {
@@ -282,11 +272,16 @@ class HttpClientWrapper {
       }
 
       final message = jsonData['message'] as String?;
-      return ApiResponse.success(data as T, statusCode: response.statusCode, message: message);
+      return ApiResponse.success(
+        data as T,
+        statusCode: response.statusCode,
+        message: message,
+      );
     }
 
     // Extrai mensagem de erro
-    String errorMessage = _extractErrorMessage(jsonData) ?? 'Erro na requisição';
+    String errorMessage =
+        _extractErrorMessage(jsonData) ?? 'Erro na requisição';
 
     // Trata diferentes status codes de erro
     if (response.statusCode == 401 || response.statusCode == 403) {
@@ -314,13 +309,13 @@ class HttpClientWrapper {
       );
     }
 
-    throw ApiException(errorMessage);
+    throw NetworkException(errorMessage);
   }
 
   /// Trata exceções gerais
   ApiResponse<T> _handleException<T>(dynamic exception) {
     if (exception is ApiException) {
-      rethrow;
+      throw exception;
     }
 
     if (exception is TimeoutException) {

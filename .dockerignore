@@ -1,0 +1,11 @@
+.dart_tool
+.git
+.idea
+.packages
+build
+coverage
+android
+ios
+linux
+macos
+windows

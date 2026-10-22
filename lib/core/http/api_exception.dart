@@ -32,22 +32,16 @@ class UnauthorizedException extends ClientException {
     required int statusCode,
     String? responseBody,
   }) : super(
-    message: message,
-    statusCode: statusCode,
-    responseBody: responseBody,
-  );
+         message: message,
+         statusCode: statusCode,
+         responseBody: responseBody,
+       );
 }
 
 /// Erro 404 (não encontrado)
 class NotFoundException extends ClientException {
-  NotFoundException({
-    required String message,
-    String? responseBody,
-  }) : super(
-    message: message,
-    statusCode: 404,
-    responseBody: responseBody,
-  );
+  NotFoundException({required String message, String? responseBody})
+    : super(message: message, statusCode: 404, responseBody: responseBody);
 }
 
 /// Erro 5xx (servidor)
@@ -64,10 +58,7 @@ class ServerException extends ApiException {
 
 /// Erro de parsing/desserialização
 class ParsingException extends ApiException {
-  ParsingException({
-    required String message,
-    this.cause,
-  }) : super(message);
+  ParsingException({required String message, this.cause}) : super(message);
 
   final dynamic cause;
 }

@@ -2,43 +2,33 @@
 
 ## Login com Google
 
-O login exige configuração no projeto do Google Cloud que pertence ao backend:
+O fluxo Google usa `google_sign_in` no Android e o botão oficial Google Identity
+Services na Web. Configure no Google Cloud:
 
-1. Crie um cliente OAuth **Android** com o package name configurado em
-   `android/app/build.gradle.kts` (`com.example.projeto_front`).
-2. Cadastre a impressão digital SHA-1 do certificado que assina o APK. Para o
-   build de desenvolvimento, obtenha-a com:
+1. Um cliente OAuth Android para o package name em
+   `android/app/build.gradle.kts` e SHA-1 dos certificados de desenvolvimento e
+   release. Use `cd android; ./gradlew signingReport` para consultar o SHA-1 de
+   desenvolvimento.
+2. Um cliente OAuth Web com as origens autorizadas do frontend.
+3. O mesmo ID de cliente Web no frontend (`GOOGLE_WEB_CLIENT_ID`) e no backend
+   (`GOOGLE_CLIENT_ID`). O backend valida assinatura, emissor, público-alvo e
+   email verificado do ID token antes de emitir uma sessão própria.
 
-   ```bash
-   ./gradlew signingReport
-   ```
+Para desenvolvimento em emulador Android, a API da máquina normalmente é
+acessada por `10.0.2.2`:
 
-3. Configure também o cliente OAuth correspondente para cada certificado de
-   release usado na distribuição.
-4. Inicie o app apontando para uma URL que o dispositivo consiga alcançar. Em
-   emulador Android, o backend na máquina de desenvolvimento normalmente é
-   `http://10.0.2.2:3000`, e não `http://localhost:3000`:
+```bash
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080 --dart-define=GOOGLE_WEB_CLIENT_ID=seu-id-web.apps.googleusercontent.com
+```
 
-   ```bash
-   flutter run --dart-define=BACKEND_BASE_URL=http://10.0.2.2:3000
-   ```
+## Conta do usuário
 
-O app declara a permissão `INTERNET` no manifesto principal, portanto o fluxo
-também funciona em builds de release. Se a configuração OAuth estiver ausente,
-a tela de login apresenta uma mensagem específica em vez de ocultar a causa em
-um erro genérico.
+O perfil usa `GET /users/me` e `PUT /users/me/profile`. A foto é salva no banco e
+aceita PNG, JPEG ou WebP de até 1 MB. A troca de email pede reautenticação.
+`POST /users/me/password` pede a senha atual para contas locais ou confirmação
+Google recente para contas Google.
 
-## Fluxos de autenticação
-
-Além do login com Google, a tela inicial também oferece:
-
-- Login com email e senha
-- Cadastro de usuário
-
-Os fluxos tentam endpoints comuns de backend para autenticação:
-
-- Login: `/auth/login`, `/auth/signin`, `/login`
-- Cadastro: `/auth/register`, `/auth/signup`, `/users`
-- Google: `/auth/google/mobile`, `/auth/google/login`, `/auth/google`
-
-Todos usam `BACKEND_BASE_URL` para montar a URL base da API.
+O login por email usa `POST /oauth2/token`; cadastro usa `POST /users`. A API
+base pode ser alterada por `API_BASE_URL`. Para builds do container frontend,
+configure `API_BASE_URL` e `GOOGLE_CLIENT_ID` no ambiente antes de executar o
+Compose.

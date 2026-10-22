@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+/// Header legado mantido para compatibilidade com consumidores existentes.
+/// A tela ativa do app monta o cabeçalho conectado aos dados em HomePage.
 class HomeHeader extends StatelessWidget {
   const HomeHeader({
     super.key,
@@ -14,76 +16,46 @@ class HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayName = (userName != null && userName!.trim().isNotEmpty) ? userName!.trim() : 'morador';
-    final subtitle =
-        (userEmail != null && userEmail!.trim().isNotEmpty) ? userEmail!.trim() : 'Bem-vindo ao Residencial Vila das Flores';
-
+    final name = userName?.trim().isNotEmpty == true
+        ? userName!.trim()
+        : 'morador';
+    final email = userEmail?.trim().isNotEmpty == true
+        ? userEmail!.trim()
+        : 'Bem-vindo';
     return Container(
-      height: 230,
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+      padding: const EdgeInsets.all(24),
       decoration: const BoxDecoration(
         color: Color(0xFF2F3FB0),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(38),
-          bottomRight: Radius.circular(38),
-        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.menu, color: Colors.white),
-              ),
-              const Spacer(),
-              Stack(
-                clipBehavior: Clip.none,
+      child: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.notifications_none, color: Colors.white, size: 30),
-                  Positioned(
-                    top: -6,
-                    right: -8,
-                    child: Container(
-                      height: 20,
-                      width: 20,
-                      decoration: const BoxDecoration(color: Color(0xFFFF4D67), shape: BoxShape.circle),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        '3',
-                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
-                      ),
+                  Text(
+                    'Olá, $name! 👋',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  Text(email, style: const TextStyle(color: Colors.white70)),
                 ],
               ),
-              const SizedBox(width: 16),
-              IconButton(
-                onPressed: () {
-                  onLogout();
-                },
-                icon: const Icon(Icons.logout, color: Colors.white),
-              ),
-              const SizedBox(width: 8),
-              const CircleAvatar(
-                radius: 24,
-                backgroundColor: Colors.white24,
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            'Olá, $displayName! 👋',
-            style: const TextStyle(color: Colors.white, fontSize: 42 / 1.6, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: const TextStyle(color: Colors.white, fontSize: 18),
-          ),
-        ],
+            ),
+            IconButton(
+              tooltip: 'Sair',
+              onPressed: onLogout,
+              icon: const Icon(Icons.logout, color: Colors.white),
+            ),
+          ],
+        ),
       ),
     );
   }

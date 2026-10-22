@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/google_login_button.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({
@@ -11,15 +12,14 @@ class LoginPage extends StatefulWidget {
   });
 
   final Future<void> Function() onGoogleLogin;
-  final Future<void> Function({
-    required String email,
-    required String password,
-  }) onEmailLogin;
+  final Future<void> Function({required String email, required String password})
+  onEmailLogin;
   final Future<void> Function({
     required String name,
     required String email,
     required String password,
-  }) onSignUp;
+  })
+  onSignUp;
   final bool isLoading;
   final String? errorMessage;
 
@@ -52,18 +52,11 @@ class _LoginPageState extends State<LoginPage> {
 
     if (_isSignUp) {
       final name = _nameController.text.trim();
-      await widget.onSignUp(
-        name: name,
-        email: email,
-        password: password,
-      );
+      await widget.onSignUp(name: name, email: email, password: password);
       return;
     }
 
-    await widget.onEmailLogin(
-      email: email,
-      password: password,
-    );
+    await widget.onEmailLogin(email: email, password: password);
   }
 
   @override
@@ -82,10 +75,16 @@ class _LoginPageState extends State<LoginPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(Icons.apartment, size: 72, color: Color(0xFF2F3FB0)),
+                      const Icon(
+                        Icons.apartment,
+                        size: 72,
+                        color: Color(0xFF2F3FB0),
+                      ),
                       const SizedBox(height: 24),
                       Text(
-                        _isSignUp ? 'Criar conta no Condomínio App' : 'Entrar no Condomínio App',
+                        _isSignUp
+                            ? 'Criar conta no Condomínio App'
+                            : 'Entrar no Condomínio App',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
@@ -128,7 +127,9 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         validator: (value) {
                           final text = value?.trim() ?? '';
-                          if (text.isEmpty || !text.contains('@')) {
+                          if (!RegExp(
+                            r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                          ).hasMatch(text)) {
                             return 'Informe um email válido.';
                           }
                           return null;
@@ -147,8 +148,11 @@ class _LoginPageState extends State<LoginPage> {
                         onFieldSubmitted: (_) => _submit(),
                         validator: (value) {
                           final text = value?.trim() ?? '';
-                          if (text.length < 6) {
-                            return 'A senha deve ter pelo menos 6 caracteres.';
+                          if (_isSignUp && text.length < 8) {
+                            return 'A senha deve ter pelo menos 8 caracteres.';
+                          }
+                          if (!_isSignUp && text.isEmpty) {
+                            return 'Informe sua senha.';
                           }
                           return null;
                         },
@@ -160,25 +164,31 @@ class _LoginPageState extends State<LoginPage> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               )
                             : const Icon(Icons.email_outlined),
                         label: Text(
                           widget.isLoading
                               ? 'Aguarde...'
-                              : (_isSignUp ? 'Criar conta' : 'Entrar com email'),
+                              : (_isSignUp
+                                    ? 'Criar conta'
+                                    : 'Entrar com email'),
                         ),
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                       ),
                       const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: widget.isLoading ? null : widget.onGoogleLogin,
-                        icon: const Icon(Icons.login),
-                        label: const Text('Continuar com Google'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                      IgnorePointer(
+                        ignoring: widget.isLoading,
+                        child: Opacity(
+                          opacity: widget.isLoading ? 0.5 : 1,
+                          child: buildGoogleLoginButton(
+                            onPressed: widget.onGoogleLogin,
+                          ),
                         ),
                       ),
                       TextButton(
@@ -193,12 +203,16 @@ class _LoginPageState extends State<LoginPage> {
                               : 'Ainda não tem conta? Criar cadastro',
                         ),
                       ),
-                      if (widget.errorMessage != null && widget.errorMessage!.trim().isNotEmpty) ...[
+                      if (widget.errorMessage != null &&
+                          widget.errorMessage!.trim().isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Text(
                           widget.errorMessage!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ],

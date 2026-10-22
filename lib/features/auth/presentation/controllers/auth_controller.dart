@@ -2,7 +2,8 @@ import '../../data/services/google_auth_service.dart';
 import '../../domain/entities/auth_session.dart';
 
 class AuthController {
-  AuthController({AuthService? authService}) : _authService = authService ?? AuthService();
+  AuthController({AuthService? authService})
+    : _authService = authService ?? AuthService();
 
   final AuthService _authService;
 
@@ -115,5 +116,24 @@ class AuthController {
       _isLoading = false;
       _notify();
     }
+  }
+
+  Future<String> reauthenticateWithGoogle() =>
+      _authService.reauthenticateWithGoogle();
+
+  Future<void> refreshAfterCredentialChange({
+    required String email,
+    required String password,
+  }) async {
+    _session = await _authService.refreshWithCredentials(
+      email: email,
+      password: password,
+    );
+    _notify();
+  }
+
+  Future<void> refreshGoogleAfterCredentialChange() async {
+    _session = await _authService.refreshGoogleSession();
+    _notify();
   }
 }

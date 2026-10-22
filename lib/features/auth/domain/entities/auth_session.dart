@@ -5,6 +5,7 @@ class AuthSession {
     this.refreshToken,
     this.userName,
     this.userEmail,
+    this.provider = 'password',
   });
 
   final bool isAuthenticated;
@@ -12,6 +13,7 @@ class AuthSession {
   final String? refreshToken;
   final String? userName;
   final String? userEmail;
+  final String provider;
 
   AuthSession copyWith({
     bool? isAuthenticated,
@@ -19,6 +21,7 @@ class AuthSession {
     String? refreshToken,
     String? userName,
     String? userEmail,
+    String? provider,
   }) {
     return AuthSession(
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
@@ -26,6 +29,7 @@ class AuthSession {
       refreshToken: refreshToken ?? this.refreshToken,
       userName: userName ?? this.userName,
       userEmail: userEmail ?? this.userEmail,
+      provider: provider ?? this.provider,
     );
   }
 
@@ -36,6 +40,7 @@ class AuthSession {
       'refreshToken': refreshToken,
       'userName': userName,
       'userEmail': userEmail,
+      'provider': provider,
     };
   }
 
@@ -46,6 +51,7 @@ class AuthSession {
       refreshToken: json['refreshToken'] as String?,
       userName: json['userName'] as String?,
       userEmail: json['userEmail'] as String?,
+      provider: json['provider'] as String? ?? 'password',
     );
   }
 }
