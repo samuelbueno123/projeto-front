@@ -343,6 +343,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       backgroundColor: const Color(0xFF2F3FB0),
       foregroundColor: Colors.white,
       leading: IconButton(
+        tooltip: 'Voltar',
         onPressed: widget.onClose,
         icon: const Icon(Icons.arrow_back),
       ),

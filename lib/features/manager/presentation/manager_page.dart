@@ -186,8 +186,16 @@ class _ManagerPageState extends State<ManagerPage> {
           ),
           icon: const Icon(Icons.notifications_none),
         ),
-        IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-        IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout)),
+        IconButton(
+          tooltip: 'Atualizar',
+          onPressed: _load,
+          icon: const Icon(Icons.refresh),
+        ),
+        IconButton(
+          tooltip: 'Sair',
+          onPressed: widget.onLogout,
+          icon: const Icon(Icons.logout),
+        ),
       ],
     ),
     body: _loading

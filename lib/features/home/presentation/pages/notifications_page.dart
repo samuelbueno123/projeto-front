@@ -48,7 +48,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
     appBar: AppBar(
       title: const Text('Notificações'),
       actions: [
-        IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)),
+        IconButton(
+          tooltip: 'Atualizar',
+          onPressed: _refresh,
+          icon: const Icon(Icons.refresh),
+        ),
       ],
     ),
     body:
