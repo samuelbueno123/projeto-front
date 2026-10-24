@@ -23,6 +23,9 @@ class HttpClientWrapper {
   String? _authToken;
   final bool enableLogging;
 
+  /// Global callback for 401 Unauthorized
+  static void Function()? onUnauthorized;
+
   /// Define o token de autenticação (JWT)
   void setAuthToken(String? token) {
     _authToken = token;
@@ -38,7 +41,7 @@ class HttpClientWrapper {
 
   /// Constrói URL completa a partir de um endpoint relativo
   Uri _buildUri(String endpoint, {Map<String, String>? queryParameters}) {
-    final url = endpoint.startsWith('http') ? endpoint : '$_baseUrl$endpoint';
+    final url = endpoint.startsWith('http') ? endpoint : '\$_baseUrl\$endpoint';
     return Uri.parse(url).replace(queryParameters: queryParameters);
   }
 
@@ -48,7 +51,7 @@ class HttpClientWrapper {
 
     // Adiciona token de autenticação se disponível
     if (_authToken != null && _authToken!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $_authToken';
+      headers['Authorization'] = 'Bearer \$_authToken';
     }
 
     // Mescla headers customizados
@@ -68,11 +71,11 @@ class HttpClientWrapper {
   ) {
     if (!enableLogging) return;
 
-    print('=== HTTP REQUEST ===');
-    print('$method ${uri.toString()}');
-    print('Headers: $headers');
+    // print('=== HTTP REQUEST ===');
+    // print('\$method \${uri.toString()}');
+    // print('Headers: \$headers');
     if (body != null && body.isNotEmpty) {
-      print('Body: $body');
+      // print('Body: \$body');
     }
   }
 
@@ -80,10 +83,10 @@ class HttpClientWrapper {
   void _logResponse(int statusCode, String body) {
     if (!enableLogging) return;
 
-    print('=== HTTP RESPONSE ===');
-    print('Status: $statusCode');
+    // print('=== HTTP RESPONSE ===');
+    // print('Status: \$statusCode');
     if (body.isNotEmpty) {
-      print('Body: $body');
+      // print('Body: \$body');
     }
   }
 
@@ -285,6 +288,9 @@ class HttpClientWrapper {
 
     // Trata diferentes status codes de erro
     if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401 && onUnauthorized != null) {
+        onUnauthorized!();
+      }
       throw UnauthorizedException(
         message: errorMessage,
         statusCode: response.statusCode,
@@ -322,7 +328,7 @@ class HttpClientWrapper {
       throw TimeoutException('Timeout ao conectar ao servidor');
     }
 
-    throw NetworkException('Erro de rede: ${exception.toString()}');
+    throw NetworkException('Erro de rede: \${exception.toString()}');
   }
 
   /// Extrai mensagem de erro de diferentes formatos de resposta

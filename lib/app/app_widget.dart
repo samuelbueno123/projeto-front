@@ -8,6 +8,8 @@ import '../features/auth/presentation/pages/login_page.dart';
 import '../features/admin/presentation/admin_page.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/manager/presentation/manager_page.dart';
+import '../features/doorman/presentation/pages/doorman_page.dart';
+import '../core/http/http_client_wrapper.dart';
 
 class AppWidget extends StatefulWidget {
   const AppWidget({super.key});
@@ -24,6 +26,7 @@ class _AppWidgetState extends State<AppWidget> {
     super.initState();
     _authController = AuthController();
     _authController.addListener(_handleControllerChange);
+    HttpClientWrapper.onUnauthorized = _authController.signOut;
     _authController.bootstrap();
   }
 
@@ -78,6 +81,13 @@ class _AppWidgetState extends State<AppWidget> {
           onLogout: _authController.signOut,
         );
       }
+      if (_isDoorman(session?.token)) {
+        return DoormanPage(
+          token: session?.token,
+          userName: session?.userName,
+          onLogout: _authController.signOut,
+        );
+      }
       return HomePage(
         onLogout: _authController.signOut,
         token: session?.token,
@@ -122,6 +132,19 @@ class _AppWidgetState extends State<AppWidget> {
       );
       final authorities = claims is Map ? claims['authorities'] : null;
       return authorities is List && authorities.contains('ROLE_MANAGER');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isDoorman(String? token) {
+    if (token == null) return false;
+    try {
+      final claims = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))),
+      );
+      final authorities = claims is Map ? claims['authorities'] : null;
+      return authorities is List && authorities.contains('ROLE_DOORMAN');
     } catch (_) {
       return false;
     }
