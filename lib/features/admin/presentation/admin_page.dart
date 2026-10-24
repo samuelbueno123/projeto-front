@@ -362,6 +362,7 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
       title: Text(widget.title),
       actions: [
         IconButton(
+          tooltip: 'Atualizar',
           onPressed: () => setState(_load),
           icon: const Icon(Icons.refresh),
         ),
@@ -432,6 +433,7 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
+                    tooltip: 'Página anterior',
                     onPressed: _page > 0
                         ? () => setState(() {
                             _page--;
@@ -442,6 +444,7 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
                   ),
                   Text('Página ${_page + 1} de $totalPages'),
                   IconButton(
+                    tooltip: 'Próxima página',
                     onPressed: _page + 1 < totalPages
                         ? () => setState(() {
                             _page++;

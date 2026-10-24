@@ -793,7 +793,11 @@ class _CollectionPageState extends State<_CollectionPage> {
     appBar: AppBar(
       title: Text(widget.title),
       actions: [
-        IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)),
+        IconButton(
+          tooltip: 'Atualizar',
+          onPressed: _refresh,
+          icon: const Icon(Icons.refresh),
+        ),
       ],
     ),
     body: FutureBuilder<dynamic>(
