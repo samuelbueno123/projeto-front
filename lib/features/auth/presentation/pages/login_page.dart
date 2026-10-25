@@ -33,6 +33,7 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isSignUp = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -102,6 +103,7 @@ class _LoginPageState extends State<LoginPage> {
                           controller: _nameController,
                           enabled: !widget.isLoading,
                           textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.name],
                           decoration: const InputDecoration(
                             labelText: 'Nome completo',
                             border: OutlineInputBorder(),
@@ -121,6 +123,7 @@ class _LoginPageState extends State<LoginPage> {
                         enabled: !widget.isLoading,
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.email],
                         decoration: const InputDecoration(
                           labelText: 'Email',
                           border: OutlineInputBorder(),
@@ -139,11 +142,25 @@ class _LoginPageState extends State<LoginPage> {
                       TextFormField(
                         controller: _passwordController,
                         enabled: !widget.isLoading,
-                        obscureText: true,
+                        obscureText: _obscurePassword,
                         textInputAction: TextInputAction.done,
-                        decoration: const InputDecoration(
+                        autofillHints: _isSignUp
+                            ? const [AutofillHints.newPassword]
+                            : const [AutofillHints.password],
+                        decoration: InputDecoration(
                           labelText: 'Senha',
-                          border: OutlineInputBorder(),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                            ),
+                            tooltip: _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          ),
                         ),
                         onFieldSubmitted: (_) => _submit(),
                         validator: (value) {
