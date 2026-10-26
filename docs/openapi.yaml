@@ -14,7 +14,7 @@ paths:
   /oauth2/token:
     post:
       summary: Autenticação via Email/Senha
-      x-implementation-status: required
+      x-implementation-status: implemented
       requestBody:
         required: true
         content:
@@ -48,7 +48,7 @@ paths:
   /auth/google:
     post:
       summary: Autenticação via Google
-      x-implementation-status: required
+      x-implementation-status: implemented
       requestBody:
         required: true
         content:
@@ -74,7 +74,7 @@ paths:
   /users:
     post:
       summary: Cadastrar usuário
-      x-implementation-status: required
+      x-implementation-status: implemented
       requestBody:
         required: true
         content:
@@ -102,7 +102,7 @@ paths:
   /users/me:
     get:
       summary: Perfil do usuário atual
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       responses:
@@ -128,7 +128,7 @@ paths:
   /users/me/profile:
     put:
       summary: Atualizar perfil do usuário
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       requestBody:
@@ -160,7 +160,7 @@ paths:
   /users/me/password:
     post:
       summary: Alterar senha do usuário
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       requestBody:
@@ -186,7 +186,7 @@ paths:
   /notifications/my:
     get:
       summary: Listar notificações do usuário
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       responses:
@@ -212,7 +212,7 @@ paths:
   /notifications/{id}/read:
     patch:
       summary: Marcar notificação como lida
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       parameters:
@@ -231,7 +231,7 @@ paths:
   /memberships/my:
     get:
       summary: Listar participações do usuário em condomínios
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       responses:
@@ -259,7 +259,7 @@ paths:
   /condominiums/{id}:
     get:
       summary: Obter detalhes do condomínio
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       parameters:
@@ -278,7 +278,7 @@ paths:
   /condominiums/{id}/common-areas:
     get:
       summary: Listar áreas comuns do condomínio
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       parameters:
@@ -297,7 +297,7 @@ paths:
   /common-areas/{id}/reservations:
     post:
       summary: Reservar área comum
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       parameters:
@@ -329,7 +329,7 @@ paths:
   /reservations/{id}/cancel:
     patch:
       summary: Cancelar reserva
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       parameters:
@@ -348,7 +348,7 @@ paths:
   /manager/condominiums/{id}/units/{unitId}/payment-status:
     put:
       summary: Atualizar status de pagamento da unidade
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       parameters:
@@ -383,7 +383,7 @@ paths:
   /admin/dashboard:
     get:
       summary: Dados do painel administrativo
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       responses:
@@ -396,7 +396,7 @@ paths:
   /admin/system-announcements:
     post:
       summary: Criar aviso do sistema
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       requestBody:
@@ -420,7 +420,7 @@ paths:
   /packages/{id}/{action}:
     patch:
       summary: Atualizar status do pacote (action = receive, deliver, etc)
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       parameters:
@@ -444,7 +444,7 @@ paths:
   /packages:
     post:
       summary: Registrar pacote
-      x-implementation-status: required
+      x-implementation-status: implemented
       security:
       - bearerAuth: []
       requestBody:
