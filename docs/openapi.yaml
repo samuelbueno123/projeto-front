@@ -256,6 +256,42 @@ paths:
       description: Listar participações do usuário em condomínios
       tags:
       - memberships
+  /condominiums/{id}/announcements:
+    get:
+      summary: Listar comunicados do condomínio
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Lista de comunicados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    title:
+                      type: string
+                    content:
+                      type: string
+                    imageUrl:
+                      type: string
+                    createdAt:
+                      type: string
+      operationId: get_condominiums_id_announcements
+      description: Listar comunicados do condomínio
+      tags:
+      - condominiums
   /condominiums/{id}:
     get:
       summary: Obter detalhes do condomínio
