@@ -150,11 +150,17 @@ class _LoginPageState extends State<LoginPage> {
                           border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                              _obscurePassword
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
                             ),
-                            tooltip: _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
+                            tooltip: _obscurePassword
+                                ? 'Mostrar senha'
+                                : 'Ocultar senha',
                             onPressed: () {
-                              setState(() => _obscurePassword = !_obscurePassword);
+                              setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              );
                             },
                           ),
                         ),
