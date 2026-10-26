@@ -41,7 +41,7 @@ class HttpClientWrapper {
 
   /// Constrói URL completa a partir de um endpoint relativo
   Uri _buildUri(String endpoint, {Map<String, String>? queryParameters}) {
-    final url = endpoint.startsWith('http') ? endpoint : '\$_baseUrl\$endpoint';
+    final url = endpoint.startsWith('http') ? endpoint : '$_baseUrl$endpoint';
     return Uri.parse(url).replace(queryParameters: queryParameters);
   }
 
@@ -51,7 +51,7 @@ class HttpClientWrapper {
 
     // Adiciona token de autenticação se disponível
     if (_authToken != null && _authToken!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer \$_authToken';
+      headers['Authorization'] = 'Bearer $_authToken';
     }
 
     // Mescla headers customizados
@@ -328,7 +328,7 @@ class HttpClientWrapper {
       throw TimeoutException('Timeout ao conectar ao servidor');
     }
 
-    throw NetworkException('Erro de rede: \${exception.toString()}');
+    throw NetworkException('Erro de rede: ${exception.toString()}');
   }
 
   /// Extrai mensagem de erro de diferentes formatos de resposta

@@ -2,85 +2,107 @@ openapi: 3.1.0
 info:
   title: Condomínio App API
   version: 1.0.0
-  description: API oficial para comunicação do front-end com o back-end do projeto
-    Condomínio App.
+  description: API oficial para comunicação do front-end com o back-end do projeto Condomínio App.
   contact:
-    name: Condominio App
+    name: Condomínio App
     email: contato@condominioapp.com
 servers:
-- url: http://localhost:8080
-  description: Servidor Local
+  - url: http://localhost:8080
+    description: Servidor Local
 paths:
   /oauth2/token:
     post:
       summary: Autenticação via Email/Senha
+      description: Realiza a autenticação utilizando fluxo de credenciais de senha OAuth2.
+      operationId: post_oauth2_token
       x-implementation-status: required
+      tags:
+        - oauth2
       requestBody:
         required: true
         content:
           application/x-www-form-urlencoded:
             schema:
               type: object
+              required:
+                - grant_type
+                - username
+                - password
               properties:
                 grant_type:
                   type: string
                   example: password
                 username:
                   type: string
+                  example: usuario@email.com
                 password:
                   type: string
+                  example: senha123
                 scope:
                   type: string
                   example: read write
       responses:
         '200':
-          description: Sucesso
+          description: Sucesso na autenticação
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthSession'
         '400':
-          description: Erro de autenticação
-      operationId: post_oauth2_token
-      description: Autenticação via Email/Senha
-      tags:
-      - oauth2
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /auth/google:
     post:
       summary: Autenticação via Google
+      description: Autentica o usuário no backend trocando o ID token do Google Identity/Sign-In por uma sessão local.
+      operationId: post_auth_google
       x-implementation-status: required
+      tags:
+        - auth
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - idToken
               properties:
                 idToken:
                   type: string
+                  description: ID Token retornado pelo Google Sign-In
       responses:
         '200':
-          description: Sucesso
+          description: Sucesso na autenticação com Google
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthSession'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
-          description: Não autorizado
-      operationId: post_auth_google
-      description: Autenticação via Google
-      tags:
-      - auth
+          $ref: '#/components/responses/UnauthorizedError'
+
   /users:
     post:
       summary: Cadastrar usuário
+      description: Registra um novo usuário no sistema.
+      operationId: post_users
       x-implementation-status: required
+      tags:
+        - users
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - firstName
+                - email
+                - password
               properties:
                 firstName:
                   type: string
@@ -88,49 +110,45 @@ paths:
                   type: string
                 email:
                   type: string
+                  format: email
                 password:
                   type: string
       responses:
         '201':
-          description: Criado
+          description: Usuário criado com sucesso
         '400':
-          description: Dados inválidos
-      operationId: post_users
-      description: Cadastrar usuário
-      tags:
-      - users
+          $ref: '#/components/responses/BadRequestError'
+
   /users/me:
     get:
       summary: Perfil do usuário atual
+      description: Retorna as informações do perfil do usuário autenticado.
+      operationId: get_users_me
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - users
       responses:
         '200':
           description: Dados do perfil
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  firstName:
-                    type: string
-                  lastName:
-                    type: string
-                  email:
-                    type: string
-                  profileImage:
-                    type: string
-      operationId: get_users_me
-      description: Perfil do usuário atual
-      tags:
-      - users
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /users/me/profile:
     put:
       summary: Atualizar perfil do usuário
+      description: Atualiza os dados de perfil do usuário (nome, email, imagem e reautenticação se necessário).
+      operationId: put_users_me_profile
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - users
       requestBody:
         required: true
         content:
@@ -144,31 +162,42 @@ paths:
                   type: string
                 email:
                   type: string
+                  format: email
                 profileImage:
                   type: string
+                  description: String de imagem codificada em base64
                 currentPassword:
                   type: string
+                  description: Senha atual necessária se alterando email
                 googleIdToken:
                   type: string
+                  description: Token Google se alterando email
       responses:
         '200':
-          description: Perfil atualizado
-      operationId: put_users_me_profile
-      description: Atualizar perfil do usuário
-      tags:
-      - users
+          description: Perfil atualizado com sucesso
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /users/me/password:
     post:
       summary: Alterar senha do usuário
+      description: Altera a senha da conta do usuário autenticado.
+      operationId: post_users_me_password
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - users
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - newPassword
               properties:
                 newPassword:
                   type: string
@@ -178,17 +207,22 @@ paths:
                   type: string
       responses:
         '200':
-          description: Senha alterada
-      operationId: post_users_me_password
-      description: Alterar senha do usuário
-      tags:
-      - users
+          description: Senha alterada com sucesso
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /notifications/my:
     get:
       summary: Listar notificações do usuário
+      description: Obtém a lista de notificações destinadas ao usuário autenticado.
+      operationId: get_notifications_my
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - notifications
       responses:
         '200':
           description: Lista de notificações
@@ -197,43 +231,44 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                    message:
-                      type: string
-                    read:
-                      type: boolean
-      operationId: get_notifications_my
-      description: Listar notificações do usuário
-      tags:
-      - notifications
+                  $ref: '#/components/schemas/NotificationItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /notifications/{id}/read:
     patch:
       summary: Marcar notificação como lida
+      description: Atualiza o status de uma notificação para lida.
+      operationId: patch_notifications_id_read
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - notifications
       parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
       responses:
         '200':
-          description: Notificação lida
-      operationId: patch_notifications_id_read
-      description: Marcar notificação como lida
-      tags:
-      - notifications
+          description: Notificação marcada como lida
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
   /memberships/my:
     get:
       summary: Listar participações do usuário em condomínios
+      description: Retorna todos os vínculos e cargos do usuário logado.
+      operationId: get_memberships_my
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - memberships
       responses:
         '200':
           description: Lista de participações
@@ -242,76 +277,169 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                    condominiumId:
-                      type: integer
-                    role:
-                      type: string
-                    unitId:
-                      type: integer
-      operationId: get_memberships_my
-      description: Listar participações do usuário em condomínios
+                  $ref: '#/components/schemas/MembershipItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /memberships:
+    get:
+      summary: Listar vínculos de usuários
+      description: Retorna a lista paginada de vínculos entre usuários e condomínios.
+      operationId: get_memberships
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
       tags:
-      - memberships
+        - memberships
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/SizeQuery'
+      responses:
+        '200':
+          description: Lista paginada de vínculos
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /condominiums/{id}:
     get:
       summary: Obter detalhes do condomínio
+      description: Retorna informações completas de um condomínio específico.
+      operationId: get_condominiums_id
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - condominiums
       parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
       responses:
         '200':
           description: Detalhes do condomínio
-      operationId: get_condominiums_id
-      description: Obter detalhes do condomínio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CondominiumDetail'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /condominiums/{id}/announcements:
+    get:
+      summary: Listar comunicados do condomínio
+      description: Retorna a lista de comunicados de um condomínio.
+      operationId: get_condominiums_id_announcements
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
       tags:
-      - condominiums
+        - condominiums
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de comunicados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AnnouncementItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /condominiums/{id}/reservations/my:
+    get:
+      summary: Listar reservas do morador no condomínio
+      description: Retorna as reservas efetuadas pelo usuário atual no condomínio especificado.
+      operationId: get_condominiums_id_reservations_my
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - condominiums
+        - reservations
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de reservas do usuário
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReservationItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /condominiums/{id}/common-areas:
     get:
       summary: Listar áreas comuns do condomínio
+      description: Retorna todas as áreas comuns disponíveis para reserva.
+      operationId: get_condominiums_id_common_areas
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - condominiums
+        - common-areas
       parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
       responses:
         '200':
-          description: Áreas comuns
-      operationId: get_condominiums_id_common-areas
-      description: Listar áreas comuns do condomínio
-      tags:
-      - condominiums
+          description: Áreas comuns do condomínio
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommonAreaItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /common-areas/{id}/reservations:
     post:
       summary: Reservar área comum
+      description: Solicita uma nova reserva de área comum.
+      operationId: post_common_areas_id_reservations
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - common-areas
+        - reservations
       parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - startAt
+                - endAt
               properties:
                 startAt:
                   type: string
@@ -321,47 +449,100 @@ paths:
                   format: date-time
       responses:
         '201':
-          description: Reserva criada
-      operationId: post_common-areas_id_reservations
-      description: Reservar área comum
-      tags:
-      - common-areas
+          description: Reserva criada com sucesso
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /reservations/{id}/cancel:
     patch:
       summary: Cancelar reserva
+      description: Cancela uma reserva realizada previamente.
+      operationId: patch_reservations_id_cancel
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - reservations
       parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
       responses:
         '200':
-          description: Reserva cancelada
-      operationId: patch_reservations_id_cancel
-      description: Cancelar reserva
-      tags:
-      - reservations
-  /manager/condominiums/{id}/units/{unitId}/payment-status:
-    put:
-      summary: Atualizar status de pagamento da unidade
+          description: Reserva cancelada com sucesso
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /packages/my:
+    get:
+      summary: Listar encomendas do morador logado
+      description: Retorna a lista de encomendas destinadas ao morador autenticado.
+      operationId: get_packages_my
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - packages
       parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-      - in: path
-        name: unitId
-        required: true
-        schema:
-          type: integer
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/SizeQuery'
+      responses:
+        '200':
+          description: Lista de encomendas do usuário
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPackages'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /packages:
+    get:
+      summary: Listar encomendas por condomínio (Portaria)
+      description: Retorna todas as encomendas registradas para um condomínio (com paginação e ordenação).
+      operationId: get_packages
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - packages
+      parameters:
+        - in: query
+          name: condominiumId
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/SizeQuery'
+        - in: query
+          name: sort
+          schema:
+            type: string
+            example: id,desc
+      responses:
+        '200':
+          description: Lista paginada de encomendas do condomínio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPackages'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      summary: Registrar pacote/encomenda
+      description: Cadastra a chegada de uma nova encomenda na portaria.
+      operationId: post_packages
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - packages
       requestBody:
         required: true
         content:
@@ -369,108 +550,343 @@ paths:
             schema:
               type: object
               properties:
-                status:
+                description:
                   type: string
-                amount:
-                  type: number
+                condominiumId:
+                  type: integer
+                unitId:
+                  type: integer
+                recipientId:
+                  type: integer
+      responses:
+        '201':
+          description: Pacote registrado
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /packages/{id}/{action}:
+    patch:
+      summary: Atualizar status do pacote
+      description: 'Transiciona o status do pacote (ex.: receive, cancel, notify, pickup, return).'
+      operationId: patch_packages_id_action
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - packages
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: action
+          required: true
+          schema:
+            type: string
+            enum:
+              - receive
+              - cancel
+              - notify
+              - pickup
+              - return
       responses:
         '200':
-          description: Status atualizado
-      operationId: put_manager_condominiums_id_units_unitId_payment-status
-      description: Atualizar status de pagamento da unidade
-      tags:
-      - manager
-  /admin/dashboard:
+          description: Pacote atualizado com sucesso
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /manager/dashboard:
     get:
-      summary: Dados do painel administrativo
+      summary: Painel do síndico
+      description: Retorna métricas, totais de unidades/reservas e lista de lançamentos financeiro/pagamentos do condomínio.
+      operationId: get_manager_dashboard
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - manager
+      parameters:
+        - in: query
+          name: condominiumId
+          required: true
+          schema:
+            type: integer
       responses:
         '200':
-          description: Dados do painel
-      operationId: get_admin_dashboard
-      description: Dados do painel administrativo
-      tags:
-      - admin
-  /admin/system-announcements:
-    post:
-      summary: Criar aviso do sistema
+          description: Dados do painel do síndico
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /manager/condominiums/{id}/units/{unitId}/payment-status:
+    put:
+      summary: Atualizar status de pagamento da unidade
+      description: 'Define o status financeiro de uma unidade (ex.: PAID, PENDING, OVERDUE).'
+      operationId: put_manager_condominiums_id_units_unitId_payment_status
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - manager
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: unitId
+          required: true
+          schema:
+            type: integer
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - PAID
+                    - PENDING
+                    - OVERDUE
+                amount:
+                  type: number
+                dueDate:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: Status de pagamento atualizado
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /admin/dashboard:
+    get:
+      summary: Dados do painel administrativo
+      description: Retorna estatísticas globais do sistema (totais de usuários, condomínios, etc.).
+      operationId: get_admin_dashboard
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - admin
+      responses:
+        '200':
+          description: Dados globais do painel administrativo
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /admin/data/{resource}:
+    get:
+      summary: Consultar coleção administrativa
+      description: 'Retorna registros paginados da coleção solicitada (ex.: users, condominiums, units, etc.).'
+      operationId: get_admin_data_resource
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - admin
+      parameters:
+        - in: path
+          name: resource
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/SizeQuery'
+        - in: query
+          name: sort
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista paginada do recurso
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /admin/search:
+    get:
+      summary: Pesquisa global no painel administrativo
+      description: Pesquisa usuários, condomínios e setores pelo termo fornecido.
+      operationId: get_admin_search
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - admin
+      parameters:
+        - in: query
+          name: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resultados da busca
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /admin/system-announcements:
+    post:
+      summary: Criar e transmitir aviso do sistema
+      description: Envia um comunicado geral para todos os usuários do aplicativo.
+      operationId: post_admin_system_announcements
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - message
               properties:
                 title:
                   type: string
                 message:
                   type: string
+                imageUrl:
+                  type: string
       responses:
         '201':
-          description: Aviso criado
-      operationId: post_admin_system-announcements
-      description: Criar aviso do sistema
-      tags:
-      - admin
-  /packages/{id}/{action}:
-    patch:
-      summary: Atualizar status do pacote (action = receive, deliver, etc)
+          description: Aviso do sistema transmitido com sucesso
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /billingplans:
+    get:
+      summary: Listar planos de cobrança
+      description: Obtém a lista paginada de planos de cobrança cadastrados.
+      operationId: get_billingplans
       x-implementation-status: required
       security:
-      - bearerAuth: []
+        - bearerAuth: []
+      tags:
+        - admin
       parameters:
-      - in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-      - in: path
-        name: action
-        required: true
-        schema:
-          type: string
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/SizeQuery'
       responses:
         '200':
-          description: Pacote atualizado
-      operationId: patch_packages_id_action
-      description: Atualizar status do pacote (action = receive, deliver, etc)
-      tags:
-      - packages
-  /packages:
-    post:
-      summary: Registrar pacote
+          description: Lista paginada de planos
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /sectors:
+    get:
+      summary: Listar setores
+      description: Obtém a lista paginada de setores de condomínios.
+      operationId: get_sectors
       x-implementation-status: required
       security:
-      - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                condominiumId:
-                  type: integer
-                unitId:
-                  type: integer
-      responses:
-        '201':
-          description: Pacote registrado
-      operationId: post_packages
-      description: Registrar pacote
+        - bearerAuth: []
       tags:
-      - packages
+        - condominiums
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/SizeQuery'
+      responses:
+        '200':
+          description: Lista de setores
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /units:
+    get:
+      summary: Listar unidades
+      description: Obtém a lista paginada de unidades do sistema.
+      operationId: get_units
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - condominiums
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/SizeQuery'
+      responses:
+        '200':
+          description: Lista de unidades
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /residents:
+    get:
+      summary: Listar moradores
+      description: Obtém a lista de moradores cadastrados.
+      operationId: get_residents
+      x-implementation-status: required
+      security:
+        - bearerAuth: []
+      tags:
+        - users
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/SizeQuery'
+      responses:
+        '200':
+          description: Lista de moradores
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    PageQuery:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        default: 0
+    SizeQuery:
+      in: query
+      name: size
+      required: false
+      schema:
+        type: integer
+        default: 20
+
+  responses:
+    BadRequestError:
+      description: Dados inválidos ou erro no formato da requisição
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnauthorizedError:
+      description: Não autorizado ou token JWT ausente/expirado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFoundError:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
   schemas:
     AuthSession:
       type: object
@@ -483,26 +899,147 @@ components:
           type: string
         email:
           type: string
+
+    UserProfile:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        profileImage:
+          type: string
+
+    NotificationItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        message:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+
+    AnnouncementItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+
+    MembershipItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        condominiumId:
+          type: integer
+        role:
+          type: string
+        authority:
+          type: string
+        unitId:
+          type: integer
+
+    CondominiumDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        address:
+          type: string
+
+    CommonAreaItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+
+    ReservationItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        commonAreaName:
+          type: string
+        startAt:
+          type: string
+        endAt:
+          type: string
+        status:
+          type: string
+
+    PackageItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        description:
+          type: string
+        status:
+          type: string
+        unitId:
+          type: integer
+        receivedAt:
+          type: string
+
+    PaginatedPackages:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageItem'
+        totalPages:
+          type: integer
+        totalElements:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+
 tags:
-- name: admin
-  description: Endpoints related to admin
-- name: auth
-  description: Endpoints related to auth
-- name: common-areas
-  description: Endpoints related to common-areas
-- name: condominiums
-  description: Endpoints related to condominiums
-- name: manager
-  description: Endpoints related to manager
-- name: memberships
-  description: Endpoints related to memberships
-- name: notifications
-  description: Endpoints related to notifications
-- name: oauth2
-  description: Endpoints related to oauth2
-- name: packages
-  description: Endpoints related to packages
-- name: reservations
-  description: Endpoints related to reservations
-- name: users
-  description: Endpoints related to users
+  - name: admin
+    description: Endpoints do painel e gestão administrativa
+  - name: auth
+    description: Autenticação via provedores (Google)
+  - name: common-areas
+    description: Áreas comuns e agendamentos
+  - name: condominiums
+    description: Gestão e consulta de condomínios
+  - name: manager
+    description: Painel do síndico
+  - name: memberships
+    description: Vínculos e participações do usuário
+  - name: notifications
+    description: Central de notificações
+  - name: oauth2
+    description: Autenticação com credenciais locais
+  - name: packages
+    description: Gestão e controle de encomendas (Portaria/Morador)
+  - name: reservations
+    description: Reservas de espaços e áreas
+  - name: users
+    description: Perfil e gestão de usuários
