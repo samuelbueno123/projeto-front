@@ -1,0 +1,508 @@
+openapi: 3.1.0
+info:
+  title: Condomínio App API
+  version: 1.0.0
+  description: API oficial para comunicação do front-end com o back-end do projeto
+    Condomínio App.
+  contact:
+    name: Condominio App
+    email: contato@condominioapp.com
+servers:
+- url: http://localhost:8080
+  description: Servidor Local
+paths:
+  /oauth2/token:
+    post:
+      summary: Autenticação via Email/Senha
+      x-implementation-status: required
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type:
+                  type: string
+                  example: password
+                username:
+                  type: string
+                password:
+                  type: string
+                scope:
+                  type: string
+                  example: read write
+      responses:
+        '200':
+          description: Sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        '400':
+          description: Erro de autenticação
+      operationId: post_oauth2_token
+      description: Autenticação via Email/Senha
+      tags:
+      - oauth2
+  /auth/google:
+    post:
+      summary: Autenticação via Google
+      x-implementation-status: required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                idToken:
+                  type: string
+      responses:
+        '200':
+          description: Sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        '401':
+          description: Não autorizado
+      operationId: post_auth_google
+      description: Autenticação via Google
+      tags:
+      - auth
+  /users:
+    post:
+      summary: Cadastrar usuário
+      x-implementation-status: required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: Criado
+        '400':
+          description: Dados inválidos
+      operationId: post_users
+      description: Cadastrar usuário
+      tags:
+      - users
+  /users/me:
+    get:
+      summary: Perfil do usuário atual
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Dados do perfil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  firstName:
+                    type: string
+                  lastName:
+                    type: string
+                  email:
+                    type: string
+                  profileImage:
+                    type: string
+      operationId: get_users_me
+      description: Perfil do usuário atual
+      tags:
+      - users
+  /users/me/profile:
+    put:
+      summary: Atualizar perfil do usuário
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                email:
+                  type: string
+                profileImage:
+                  type: string
+                currentPassword:
+                  type: string
+                googleIdToken:
+                  type: string
+      responses:
+        '200':
+          description: Perfil atualizado
+      operationId: put_users_me_profile
+      description: Atualizar perfil do usuário
+      tags:
+      - users
+  /users/me/password:
+    post:
+      summary: Alterar senha do usuário
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                newPassword:
+                  type: string
+                currentPassword:
+                  type: string
+                googleIdToken:
+                  type: string
+      responses:
+        '200':
+          description: Senha alterada
+      operationId: post_users_me_password
+      description: Alterar senha do usuário
+      tags:
+      - users
+  /notifications/my:
+    get:
+      summary: Listar notificações do usuário
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de notificações
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    message:
+                      type: string
+                    read:
+                      type: boolean
+      operationId: get_notifications_my
+      description: Listar notificações do usuário
+      tags:
+      - notifications
+  /notifications/{id}/read:
+    patch:
+      summary: Marcar notificação como lida
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Notificação lida
+      operationId: patch_notifications_id_read
+      description: Marcar notificação como lida
+      tags:
+      - notifications
+  /memberships/my:
+    get:
+      summary: Listar participações do usuário em condomínios
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de participações
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    condominiumId:
+                      type: integer
+                    role:
+                      type: string
+                    unitId:
+                      type: integer
+      operationId: get_memberships_my
+      description: Listar participações do usuário em condomínios
+      tags:
+      - memberships
+  /condominiums/{id}:
+    get:
+      summary: Obter detalhes do condomínio
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Detalhes do condomínio
+      operationId: get_condominiums_id
+      description: Obter detalhes do condomínio
+      tags:
+      - condominiums
+  /condominiums/{id}/common-areas:
+    get:
+      summary: Listar áreas comuns do condomínio
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Áreas comuns
+      operationId: get_condominiums_id_common-areas
+      description: Listar áreas comuns do condomínio
+      tags:
+      - condominiums
+  /common-areas/{id}/reservations:
+    post:
+      summary: Reservar área comum
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                startAt:
+                  type: string
+                  format: date-time
+                endAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Reserva criada
+      operationId: post_common-areas_id_reservations
+      description: Reservar área comum
+      tags:
+      - common-areas
+  /reservations/{id}/cancel:
+    patch:
+      summary: Cancelar reserva
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Reserva cancelada
+      operationId: patch_reservations_id_cancel
+      description: Cancelar reserva
+      tags:
+      - reservations
+  /manager/condominiums/{id}/units/{unitId}/payment-status:
+    put:
+      summary: Atualizar status de pagamento da unidade
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      - in: path
+        name: unitId
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                amount:
+                  type: number
+      responses:
+        '200':
+          description: Status atualizado
+      operationId: put_manager_condominiums_id_units_unitId_payment-status
+      description: Atualizar status de pagamento da unidade
+      tags:
+      - manager
+  /admin/dashboard:
+    get:
+      summary: Dados do painel administrativo
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Dados do painel
+      operationId: get_admin_dashboard
+      description: Dados do painel administrativo
+      tags:
+      - admin
+  /admin/system-announcements:
+    post:
+      summary: Criar aviso do sistema
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                message:
+                  type: string
+      responses:
+        '201':
+          description: Aviso criado
+      operationId: post_admin_system-announcements
+      description: Criar aviso do sistema
+      tags:
+      - admin
+  /packages/{id}/{action}:
+    patch:
+      summary: Atualizar status do pacote (action = receive, deliver, etc)
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      - in: path
+        name: action
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Pacote atualizado
+      operationId: patch_packages_id_action
+      description: Atualizar status do pacote (action = receive, deliver, etc)
+      tags:
+      - packages
+  /packages:
+    post:
+      summary: Registrar pacote
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                condominiumId:
+                  type: integer
+                unitId:
+                  type: integer
+      responses:
+        '201':
+          description: Pacote registrado
+      operationId: post_packages
+      description: Registrar pacote
+      tags:
+      - packages
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AuthSession:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+tags:
+- name: admin
+  description: Endpoints related to admin
+- name: auth
+  description: Endpoints related to auth
+- name: common-areas
+  description: Endpoints related to common-areas
+- name: condominiums
+  description: Endpoints related to condominiums
+- name: manager
+  description: Endpoints related to manager
+- name: memberships
+  description: Endpoints related to memberships
+- name: notifications
+  description: Endpoints related to notifications
+- name: oauth2
+  description: Endpoints related to oauth2
+- name: packages
+  description: Endpoints related to packages
+- name: reservations
+  description: Endpoints related to reservations
+- name: users
+  description: Endpoints related to users
