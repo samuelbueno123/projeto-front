@@ -33,6 +33,7 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isSignUp = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -101,6 +102,7 @@ class _LoginPageState extends State<LoginPage> {
                         TextFormField(
                           controller: _nameController,
                           enabled: !widget.isLoading,
+                          autofillHints: const [AutofillHints.name],
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             labelText: 'Nome completo',
@@ -119,6 +121,7 @@ class _LoginPageState extends State<LoginPage> {
                       TextFormField(
                         controller: _emailController,
                         enabled: !widget.isLoading,
+                        autofillHints: const [AutofillHints.email],
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
@@ -139,11 +142,21 @@ class _LoginPageState extends State<LoginPage> {
                       TextFormField(
                         controller: _passwordController,
                         enabled: !widget.isLoading,
-                        obscureText: true,
+                        autofillHints: const [AutofillHints.password],
+                        obscureText: _obscurePassword,
                         textInputAction: TextInputAction.done,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Senha',
-                          border: OutlineInputBorder(),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                            ),
+                            tooltip: _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
+                            onPressed: () {
+                              setState(() => _obscurePassword = !_obscurePassword);
+                            },
+                          ),
                         ),
                         onFieldSubmitted: (_) => _submit(),
                         validator: (value) {
