@@ -47,7 +47,7 @@ class _DoormanPageState extends State<DoormanPage> {
         final condoId = m['condominiumId'];
         if (condoId != null) {
           try {
-            final condo = await _api.get('/condominiums/\$condoId');
+            final condo = await _api.get('/condominiums/$condoId');
             condos.add(condo as Map<String, dynamic>);
           } catch (_) {}
         }
@@ -83,7 +83,7 @@ class _DoormanPageState extends State<DoormanPage> {
     try {
       final condoId = _selectedCondominium!['id'];
       final response = await _api.get(
-        '/packages?condominiumId=\$condoId&page=0&size=100&sort=id,desc',
+        '/packages?condominiumId=$condoId&page=0&size=100&sort=id,desc',
       );
 
       List<Map<String, dynamic>> packages = [];
@@ -111,7 +111,7 @@ class _DoormanPageState extends State<DoormanPage> {
 
   Future<void> _updatePackageStatus(int packageId, String action) async {
     try {
-      await _api.send('PATCH', '/packages/\$packageId/\$action');
+      await _api.send('PATCH', '/packages/$packageId/$action');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Status atualizado com sucesso.')),
@@ -176,29 +176,57 @@ class _DoormanPageState extends State<DoormanPage> {
       },
     );
 
-    if (result == true && mounted) {
-      try {
-        final body = {
-          'description': descriptionController.text,
-          if (recipientIdController.text.isNotEmpty)
-            'recipientId': int.tryParse(recipientIdController.text),
-          if (unitIdController.text.isNotEmpty)
-            'unitId': int.tryParse(unitIdController.text),
-        };
-        await _api.send('POST', '/packages', body: body);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Encomenda registrada.')),
-          );
-        }
-        _loadPackages();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(e.toString())));
-        }
+    if (result != true || !mounted) {
+      descriptionController.dispose();
+      recipientIdController.dispose();
+      unitIdController.dispose();
+      return;
+    }
+
+    final description = descriptionController.text.trim();
+    final unitIdText = unitIdController.text.trim();
+    final recipientIdText = recipientIdController.text.trim();
+    final unitId = unitIdText.isEmpty ? null : int.tryParse(unitIdText);
+    final recipientId = recipientIdText.isEmpty
+        ? null
+        : int.tryParse(recipientIdText);
+    if (description.isEmpty ||
+        (unitIdText.isNotEmpty && unitId == null) ||
+        (recipientIdText.isNotEmpty && recipientId == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Informe uma descrição e IDs numéricos válidos.'),
+        ),
+      );
+      descriptionController.dispose();
+      recipientIdController.dispose();
+      unitIdController.dispose();
+      return;
+    }
+    try {
+      final body = {
+        'condominiumId': _selectedCondominium!['id'],
+        'description': description,
+        'recipientId': ?recipientId,
+        'unitId': ?unitId,
+      };
+      await _api.send('POST', '/packages', body: body);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Encomenda registrada.')));
       }
+      _loadPackages();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      descriptionController.dispose();
+      recipientIdController.dispose();
+      unitIdController.dispose();
     }
   }
 

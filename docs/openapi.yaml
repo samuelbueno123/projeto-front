@@ -271,6 +271,10 @@ paths:
       responses:
         '200':
           description: Detalhes do condomínio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Condominium'
       operationId: get_condominiums_id
       description: Obter detalhes do condomínio
       tags:
@@ -290,6 +294,12 @@ paths:
       responses:
         '200':
           description: Áreas comuns
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommonArea'
       operationId: get_condominiums_id_common-areas
       description: Listar áreas comuns do condomínio
       tags:
@@ -373,6 +383,9 @@ paths:
                   type: string
                 amount:
                   type: number
+                dueDate:
+                  type: string
+                  format: date
       responses:
         '200':
           description: Status atualizado
@@ -410,6 +423,10 @@ paths:
                   type: string
                 message:
                   type: string
+                imageUrl:
+                  type:
+                  - string
+                  - 'null'
       responses:
         '201':
           description: Aviso criado
@@ -419,7 +436,7 @@ paths:
       - admin
   /packages/{id}/{action}:
     patch:
-      summary: Atualizar status do pacote (action = receive, deliver, etc)
+      summary: Atualizar status do pacote
       x-implementation-status: required
       security:
       - bearerAuth: []
@@ -434,11 +451,12 @@ paths:
         required: true
         schema:
           type: string
+          enum: [receive, cancel, notify, pickup, return]
       responses:
         '200':
           description: Pacote atualizado
       operationId: patch_packages_id_action
-      description: Atualizar status do pacote (action = receive, deliver, etc)
+      description: 'Ações observadas na portaria: receber, cancelar, notificar, registrar retirada e devolver.'
       tags:
       - packages
   /packages:
@@ -452,20 +470,378 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                condominiumId:
-                  type: integer
-                unitId:
-                  type: integer
+              $ref: '#/components/schemas/CreatePackageRequest'
       responses:
         '201':
           description: Pacote registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '400':
+          $ref: '#/components/responses/ValidationError'
       operationId: post_packages
       description: Registrar pacote
       tags:
       - packages
+    get:
+      summary: Listar encomendas do condomínio
+      description: Usado pela portaria para carregar encomendas do condomínio selecionado.
+      operationId: get_packages
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: condominiumId
+        in: query
+        required: true
+        schema:
+          type: integer
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de encomendas (ou lista simples compatível).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/PackagePage'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Package'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+      tags:
+      - packages
+  /packages/my:
+    get:
+      summary: Listar encomendas do usuário atual
+      operationId: get_packages_my
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Encomendas do usuário autenticado.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/PackagePage'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/Package'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - packages
+  /manager/dashboard:
+    get:
+      summary: Consultar painel do síndico
+      operationId: get_manager_dashboard
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: condominiumId
+        in: query
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Totais, pagamentos de unidades e reservas do condomínio.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagerDashboard'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - manager
+  /condominiums/{id}/announcements:
+    get:
+      summary: Listar comunicados do condomínio
+      operationId: get_condominium_announcements
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Comunicados associados ao condomínio.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Announcement'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+      - condominiums
+  /condominiums/{id}/reservations/my:
+    get:
+      summary: Listar reservas do usuário no condomínio
+      operationId: get_condominium_reservations_my
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Reservas do usuário no condomínio.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reservation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - reservations
+  /memberships:
+    get:
+      summary: Listar vínculos
+      operationId: get_memberships
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de vínculos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - memberships
+  /sectors:
+    get:
+      summary: Listar setores
+      operationId: get_sectors
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Página de setores.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - sectors
+  /units:
+    get:
+      summary: Listar unidades
+      operationId: get_units
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Página de unidades.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - units
+  /residents:
+    get:
+      summary: Listar moradores
+      operationId: get_residents
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Página de moradores.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - residents
+  /billing/plans:
+    get:
+      summary: Listar planos de cobrança
+      operationId: get_billing_plans
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Página de planos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - billing
+  /admin/data/{resource}:
+    get:
+      summary: Consultar registros para a área administrativa
+      operationId: get_admin_resource_data
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: resource
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [users, condominiums, memberships, sectors, units, residents, packages, announcements, reservations, common-areas, notifications, billing-plans, features]
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Página de registros da coleção solicitada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - admin
+  /admin/search:
+    get:
+      summary: Pesquisar usuários, condomínios e setores
+      operationId: get_admin_search
+      x-implementation-status: required
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Grupos de resultados de pesquisa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSearchResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      tags:
+      - admin
 components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Sort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+  responses:
+    ValidationError:
+      description: Requisição inválida ou campos rejeitados pela validação.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: Token ausente, inválido ou expirado.
+    Forbidden:
+      description: Usuário autenticado sem autorização para a operação.
+    NotFound:
+      description: Recurso inexistente.
+    UnexpectedError:
+      description: Falha inesperada da API.
   securitySchemes:
     bearerAuth:
       type: http
@@ -483,6 +859,189 @@ components:
           type: string
         email:
           type: string
+    ApiError:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        error_description:
+          type: string
+        errors:
+          type: array
+          items:
+            oneOf:
+            - type: string
+            - type: object
+              properties:
+                fieldName:
+                  type: string
+                message:
+                  type: string
+              additionalProperties: true
+      additionalProperties: true
+    Condominium:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        address:
+          type: string
+    CommonArea:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+    CreatePackageRequest:
+      type: object
+      required: [condominiumId, description]
+      properties:
+        condominiumId:
+          type: integer
+        description:
+          type: string
+          minLength: 1
+        recipientId:
+          type: integer
+        unitId:
+          type: integer
+    Package:
+      type: object
+      properties:
+        id:
+          type: integer
+        condominiumId:
+          type: integer
+        recipientId:
+          type: integer
+        unitId:
+          type: integer
+        description:
+          type: string
+        status:
+          type: string
+          enum: [EXPECTED, RECEIVED, NOTIFIED, DELIVERED, RETURNED, CANCELED]
+        receivedAt:
+          type: string
+          format: date-time
+    PackagePage:
+      allOf:
+      - $ref: '#/components/schemas/GenericPage'
+      - type: object
+        properties:
+          content:
+            type: array
+            items:
+              $ref: '#/components/schemas/Package'
+    GenericPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        totalPages:
+          type: integer
+        totalElements:
+          type: integer
+        number:
+          type: integer
+        size:
+          type: integer
+    Announcement:
+      type: object
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        message:
+          type: string
+        imageUrl:
+          type:
+          - string
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: integer
+        commonAreaName:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+    ManagerDashboard:
+      type: object
+      properties:
+        totalUnits:
+          type: integer
+        totalUsers:
+          type: integer
+        totalReservations:
+          type: integer
+        units:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              sector:
+                type: string
+              identifier:
+                type: string
+              paymentStatus:
+                type: string
+              amount:
+                type:
+                - number
+                - 'null'
+              dueDate:
+                type:
+                - string
+                - 'null'
+                format: date
+        reservations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reservation'
+    AdminSearchResult:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        condominiums:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        sectors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
 tags:
 - name: admin
   description: Endpoints related to admin
