@@ -10,7 +10,7 @@ abstract class ApiException implements Exception {
 
 /// Erro de rede/conectividade
 class NetworkException extends ApiException {
-  const NetworkException(String message) : super(message);
+  const NetworkException(super.message);
 }
 
 /// Erro 4xx (cliente)
@@ -28,20 +28,16 @@ class ClientException extends ApiException {
 /// Erro 401/403 (autenticação/autorização)
 class UnauthorizedException extends ClientException {
   UnauthorizedException({
-    required String message,
-    required int statusCode,
-    String? responseBody,
-  }) : super(
-         message: message,
-         statusCode: statusCode,
-         responseBody: responseBody,
-       );
+    required super.message,
+    required super.statusCode,
+    super.responseBody,
+  });
 }
 
 /// Erro 404 (não encontrado)
 class NotFoundException extends ClientException {
-  NotFoundException({required String message, String? responseBody})
-    : super(message: message, statusCode: 404, responseBody: responseBody);
+  NotFoundException({required super.message, super.responseBody})
+    : super(statusCode: 404);
 }
 
 /// Erro 5xx (servidor)
@@ -65,5 +61,5 @@ class ParsingException extends ApiException {
 
 /// Erro de timeout
 class TimeoutException extends ApiException {
-  const TimeoutException(String message) : super(message);
+  const TimeoutException(super.message);
 }

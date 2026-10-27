@@ -55,7 +55,7 @@ class HomeService {
           fromJsonT: (json) => json,
         );
       } else {
-        throw HomeApiException('Método HTTP não suportado: \$method');
+        throw HomeApiException('Método HTTP não suportado: $method');
       }
       return response.data;
     } on ApiException catch (e) {
