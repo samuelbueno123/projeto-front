@@ -197,14 +197,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                    message:
-                      type: string
-                    read:
-                      type: boolean
+                  $ref: '#/components/schemas/Notification'
       operationId: get_notifications_my
       description: Listar notificações do usuário
       tags:
@@ -242,16 +235,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    id:
-                      type: integer
-                    condominiumId:
-                      type: integer
-                    role:
-                      type: string
-                    unitId:
-                      type: integer
+                  $ref: '#/components/schemas/Membership'
       operationId: get_memberships_my
       description: Listar participações do usuário em condomínios
       tags:
@@ -646,6 +630,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
       tags:
       - memberships
   /sectors:
@@ -757,6 +743,14 @@ paths:
       - $ref: '#/components/parameters/Page'
       - $ref: '#/components/parameters/Size'
       - $ref: '#/components/parameters/Sort'
+      - name: query
+        in: query
+        required: false
+        description: Texto usado para filtrar registros na coleção antes de paginar.
+        x-implementation-status: required
+        schema:
+          type: string
+          maxLength: 100
       responses:
         '200':
           description: Página de registros da coleção solicitada.
@@ -768,6 +762,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
       tags:
       - admin
   /admin/search:
@@ -796,6 +792,259 @@ paths:
           $ref: '#/components/responses/Forbidden'
       tags:
       - admin
+  /manager/condominiums/{condominiumId}/memberships:
+    get:
+      summary: Listar vínculos de um condomínio administrado
+      operationId: get_manager_condominium_memberships
+      x-implementation-status: required
+      description: Exige que o usuário autenticado seja síndico deste condomínio. Retorna usuários e vínculos ativos ou pendentes.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: condominiumId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Vínculos do condomínio.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Membership'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+      - memberships
+  /manager/condominiums/{condominiumId}/membership-invitations:
+    post:
+      summary: Convidar usuário para um condomínio
+      operationId: post_manager_membership_invitation
+      x-implementation-status: required
+      description: O convite cria uma notificação para a conta existente indicada pelo email. O vínculo só fica ativo após aceite explícito do usuário.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: condominiumId
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipInvitationRequest'
+      responses:
+        '201':
+          description: Convite criado e notificação enviada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipInvitation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+      - memberships
+  /manager/condominiums/{condominiumId}/memberships/{membershipId}:
+    delete:
+      summary: Remover porteiro de um condomínio
+      operationId: delete_manager_doorman_membership
+      x-implementation-status: required
+      description: Exige que o usuário seja síndico do condomínio; esta operação só remove vínculos com o papel ROLE_DOORMAN.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: condominiumId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: membershipId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '204':
+          description: Porteiro removido do condomínio.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+      - memberships
+  /admin/condominiums/{condominiumId}/managers:
+    get:
+      summary: Listar síndicos de qualquer condomínio
+      operationId: get_admin_condominium_managers
+      x-implementation-status: required
+      description: Requer ROLE_ADMIN.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: condominiumId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Vínculos de síndico no condomínio.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Membership'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+      - admin
+    post:
+      summary: Adicionar síndico a qualquer condomínio
+      operationId: post_admin_condominium_manager
+      x-implementation-status: required
+      description: Requer ROLE_ADMIN e email de uma conta existente; a associação é ativada imediatamente.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: condominiumId
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddManagerRequest'
+      responses:
+        '201':
+          description: Síndico adicionado ao condomínio.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+      - admin
+  /admin/condominiums/{condominiumId}/managers/{membershipId}:
+    delete:
+      summary: Remover síndico de qualquer condomínio
+      operationId: delete_admin_condominium_manager
+      x-implementation-status: required
+      description: Requer ROLE_ADMIN.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: condominiumId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: membershipId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '204':
+          description: Síndico removido do condomínio.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      tags:
+      - admin
+  /membership-invitations/{invitationId}/accept:
+    post:
+      summary: Aceitar convite de vínculo recebido
+      operationId: post_membership_invitation_accept
+      x-implementation-status: required
+      description: Só o destinatário do convite pode aceitá-lo. A partir do aceite, o vínculo passa a valer para o condomínio.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Convite aceito e vínculo ativado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Convite expirado ou já respondido.
+      tags:
+      - memberships
+  /membership-invitations/{invitationId}/decline:
+    post:
+      summary: Recusar convite de vínculo recebido
+      operationId: post_membership_invitation_decline
+      x-implementation-status: required
+      description: Só o destinatário do convite pode recusá-lo.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '204':
+          description: Convite recusado.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Convite expirado ou já respondido.
+      tags:
+      - memberships
 components:
   parameters:
     Id:
@@ -859,6 +1108,91 @@ components:
           type: string
         email:
           type: string
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [PACKAGE_RECEIVED, PACKAGE_STATUS_CHANGED, ANNOUNCEMENT, RESERVATION, SYSTEM_ANNOUNCEMENT, MEMBERSHIP_INVITATION]
+        title:
+          type: string
+        message:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        imageUrl:
+          type: [string, 'null']
+        invitationId:
+          type: integer
+        condominiumId:
+          type: integer
+        condominiumName:
+          type: string
+        authority:
+          type: string
+          enum: [ROLE_RESIDENT, ROLE_DOORMAN]
+    Membership:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        condominiumId:
+          type: integer
+        authority:
+          type: string
+          enum: [ROLE_RESIDENT, ROLE_DOORMAN, ROLE_MANAGER]
+        userName:
+          type: string
+        email:
+          type: string
+          format: email
+        status:
+          type: string
+          enum: [PENDING, ACTIVE]
+        unitId:
+          type: [integer, 'null']
+    MembershipInvitationRequest:
+      type: object
+      required: [email, authority]
+      properties:
+        email:
+          type: string
+          format: email
+        authority:
+          type: string
+          enum: [ROLE_RESIDENT, ROLE_DOORMAN]
+    MembershipInvitation:
+      type: object
+      required: [id, condominiumId, authority, status]
+      properties:
+        id:
+          type: integer
+        condominiumId:
+          type: integer
+        condominiumName:
+          type: string
+        authority:
+          type: string
+          enum: [ROLE_RESIDENT, ROLE_DOORMAN]
+        status:
+          type: string
+          const: PENDING
+        notificationId:
+          type: integer
+    AddManagerRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
     ApiError:
       type: object
       properties:

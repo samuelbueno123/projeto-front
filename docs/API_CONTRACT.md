@@ -22,10 +22,12 @@ contrato não comprova que ela exista no backend.
 
 ## Evidência e status atuais
 
-Os endpoints existentes foram confirmados por leitura dos serviços e telas
-Dart deste frontend. O backend não foi inspecionado nem executado nesta
-alteração. Por isso, as operações mantêm status `required`; nenhuma é declarada
-implementada ou verificada no backend.
+As chamadas do frontend foram confirmadas pelo código Dart. Também foram
+inspecionados os controladores atuais de vínculos, notificações e pesquisa do
+backend. O backend atual permite CRUD genérico de vínculos por ID e permite
+listar/marcar notificações como lidas, mas não oferece convites, aceite/recusa,
+gestão de papéis com escopo por condomínio, nem o filtro `query` nas listas
+administrativas. Nenhuma dessas capacidades novas é declarada implementada.
 
 Chamadas confirmadas no frontend:
 
@@ -47,15 +49,30 @@ Chamadas confirmadas no frontend:
   destinatário e da unidade.
 - Gestão: `GET /manager/dashboard` e
   `PUT /manager/condominiums/{id}/units/{unitId}/payment-status`.
+- Gestão de vínculos proposta: `GET /manager/condominiums/{condominiumId}/memberships`,
+  `POST /manager/condominiums/{condominiumId}/membership-invitations`,
+  `DELETE /manager/condominiums/{condominiumId}/memberships/{membershipId}`,
+  `POST /membership-invitations/{invitationId}/accept` e
+  `POST /membership-invitations/{invitationId}/decline`.
+- Gestão global de síndicos proposta: `GET` e `POST`
+  `/admin/condominiums/{condominiumId}/managers`, além de
+  `DELETE /admin/condominiums/{condominiumId}/managers/{membershipId}`.
 - Administração: `GET /admin/dashboard`, `GET /admin/data/{resource}`,
   `GET /admin/search` e `POST /admin/system-announcements`.
 - Listas de apoio usadas pela navegação: `GET /billing/plans`, `GET /sectors`,
   `GET /units` e `GET /residents`.
 
-Essas operações são requisitos do frontend e ainda dependem de confirmação e
-compatibilização com o backend. Os formatos de resposta refletem os campos que
-as telas leem; qualquer divergência observada durante a integração deve ser
-resolvida junto com uma atualização deste contrato.
+As operações propostas de convite e gestão de papéis, assim como o parâmetro
+`query` em `/admin/data/{resource}`, têm `x-implementation-status: required` e
+dependem de implementação no backend. A tela de conta sem condomínio restringe
+o uso do app ao aviso de vínculo, notificações, perfil e saída. O aceite ou a
+recusa ocorre a partir da notificação, com autorização limitada ao destinatário
+do convite. As telas não usam o CRUD genérico de vínculos para conceder papéis.
+
+As buscas nas listas usam os registros carregados pela tela e só aplicam o
+filtro quando a pessoa pressiona Enter. A pesquisa global do painel já usa
+`GET /admin/search`; o filtro remoto por coleção usa o novo parâmetro documentado
+acima e precisa de suporte do backend para pesquisar além da página carregada.
 
 ## Autenticação e erros
 
