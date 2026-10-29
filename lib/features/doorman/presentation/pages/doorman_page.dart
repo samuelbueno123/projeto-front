@@ -47,7 +47,7 @@ class _DoormanPageState extends State<DoormanPage> {
         final condoId = m['condominiumId'];
         if (condoId != null) {
           try {
-            final condo = await _api.get('/condominiums/\$condoId');
+            final condo = await _api.get('/condominiums/$condoId');
             condos.add(condo as Map<String, dynamic>);
           } catch (_) {}
         }
@@ -83,7 +83,7 @@ class _DoormanPageState extends State<DoormanPage> {
     try {
       final condoId = _selectedCondominium!['id'];
       final response = await _api.get(
-        '/packages?condominiumId=\$condoId&page=0&size=100&sort=id,desc',
+        '/packages?condominiumId=$condoId&page=0&size=100&sort=id,desc',
       );
 
       List<Map<String, dynamic>> packages = [];
@@ -111,7 +111,7 @@ class _DoormanPageState extends State<DoormanPage> {
 
   Future<void> _updatePackageStatus(int packageId, String action) async {
     try {
-      await _api.send('PATCH', '/packages/\$packageId/\$action');
+      await _api.send('PATCH', '/packages/$packageId/$action');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Status atualizado com sucesso.')),
