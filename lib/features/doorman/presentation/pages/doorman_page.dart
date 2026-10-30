@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/enter_search_field.dart';
 import '../../../home/data/home_service.dart';
 
 class DoormanPage extends StatefulWidget {
@@ -25,6 +26,7 @@ class _DoormanPageState extends State<DoormanPage> {
   List<Map<String, dynamic>> _packages = [];
   bool _isLoading = true;
   String? _error;
+  String _query = '';
 
   @override
   void initState() {
@@ -176,29 +178,57 @@ class _DoormanPageState extends State<DoormanPage> {
       },
     );
 
-    if (result == true && mounted) {
-      try {
-        final body = {
-          'description': descriptionController.text,
-          if (recipientIdController.text.isNotEmpty)
-            'recipientId': int.tryParse(recipientIdController.text),
-          if (unitIdController.text.isNotEmpty)
-            'unitId': int.tryParse(unitIdController.text),
-        };
-        await _api.send('POST', '/packages', body: body);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Encomenda registrada.')),
-          );
-        }
-        _loadPackages();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(e.toString())));
-        }
+    if (result != true || !mounted) {
+      descriptionController.dispose();
+      recipientIdController.dispose();
+      unitIdController.dispose();
+      return;
+    }
+
+    final description = descriptionController.text.trim();
+    final unitIdText = unitIdController.text.trim();
+    final recipientIdText = recipientIdController.text.trim();
+    final unitId = unitIdText.isEmpty ? null : int.tryParse(unitIdText);
+    final recipientId = recipientIdText.isEmpty
+        ? null
+        : int.tryParse(recipientIdText);
+    if (description.isEmpty ||
+        (unitIdText.isNotEmpty && unitId == null) ||
+        (recipientIdText.isNotEmpty && recipientId == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Informe uma descrição e IDs numéricos válidos.'),
+        ),
+      );
+      descriptionController.dispose();
+      recipientIdController.dispose();
+      unitIdController.dispose();
+      return;
+    }
+    try {
+      final body = {
+        'condominiumId': _selectedCondominium!['id'],
+        'description': description,
+        'recipientId': ?recipientId,
+        'unitId': ?unitId,
+      };
+      await _api.send('POST', '/packages', body: body);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Encomenda registrada.')));
       }
+      _loadPackages();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      descriptionController.dispose();
+      recipientIdController.dispose();
+      unitIdController.dispose();
     }
   }
 
@@ -269,6 +299,9 @@ class _DoormanPageState extends State<DoormanPage> {
 
   @override
   Widget build(BuildContext context) {
+    final visiblePackages = _packages
+        .where((item) => recordMatchesQuery(item, _query))
+        .toList();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Portaria - Encomendas'),
@@ -312,6 +345,14 @@ class _DoormanPageState extends State<DoormanPage> {
                 },
               ),
             ),
+          if (_selectedCondominium != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: EnterSearchField(
+                hintText: 'Pesquisar encomendas',
+                onSubmitted: (query) => setState(() => _query = query),
+              ),
+            ),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -319,12 +360,12 @@ class _DoormanPageState extends State<DoormanPage> {
                 ? Center(child: Text(_error!))
                 : _condominiums.isEmpty
                 ? const Center(child: Text('Nenhum condomínio associado.'))
-                : _packages.isEmpty
+                : visiblePackages.isEmpty
                 ? const Center(child: Text('Nenhuma encomenda encontrada.'))
                 : ListView.builder(
-                    itemCount: _packages.length,
+                    itemCount: visiblePackages.length,
                     itemBuilder: (context, index) {
-                      final pkg = _packages[index];
+                      final pkg = visiblePackages[index];
                       return Card(
                         margin: const EdgeInsets.symmetric(
                           horizontal: 16,

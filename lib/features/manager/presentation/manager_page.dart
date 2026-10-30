@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/widgets/enter_search_field.dart';
 import '../../home/data/home_service.dart';
 import '../../home/presentation/pages/notifications_page.dart';
+import 'membership_management_page.dart';
 
 class ManagerPage extends StatefulWidget {
   const ManagerPage({
@@ -27,6 +29,7 @@ class _ManagerPageState extends State<ManagerPage> {
   Map<String, dynamic>? _dashboard;
   bool _loading = true;
   String? _error;
+  String _query = '';
 
   @override
   void initState() {
@@ -85,6 +88,28 @@ class _ManagerPageState extends State<ManagerPage> {
         });
       }
     }
+  }
+
+  List<Map<String, dynamic>> _dashboardRecords(String key) {
+    final values = _dashboard?[key];
+    if (values is! List) return [];
+    return values
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .where((item) => recordMatchesQuery(item, _query))
+        .toList();
+  }
+
+  Future<void> _openMemberships() async {
+    final condominiumId = _selected;
+    if (condominiumId == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            MembershipManagementPage(api: _api, condominiumId: condominiumId),
+      ),
+    );
+    if (mounted) _load();
   }
 
   Future<void> _editPayment(Map<String, dynamic> unit) async {
@@ -242,6 +267,15 @@ class _ManagerPageState extends State<ManagerPage> {
                     _load();
                   },
                 ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _openMemberships,
+                    icon: const Icon(Icons.groups_outlined),
+                    label: const Text('Gerenciar moradores e porteiros'),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 10,
@@ -252,14 +286,18 @@ class _ManagerPageState extends State<ManagerPage> {
                     _metric('Agendamentos', _dashboard?['totalReservations']),
                   ],
                 ),
+                const SizedBox(height: 20),
+                EnterSearchField(
+                  hintText: 'Pesquisar unidades e reservas',
+                  onSubmitted: (query) => setState(() => _query = query),
+                ),
                 const SizedBox(height: 22),
                 Text(
                   'Pagamentos das unidades',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
-                ...((_dashboard?['units'] as List?) ?? []).map((value) {
-                  final unit = Map<String, dynamic>.from(value as Map);
+                ..._dashboardRecords('units').map((unit) {
                   return Card(
                     child: ListTile(
                       title: Text('${unit['sector']} • ${unit['identifier']}'),
@@ -280,8 +318,7 @@ class _ManagerPageState extends State<ManagerPage> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
-                ...((_dashboard?['reservations'] as List?) ?? []).map((value) {
-                  final reservation = value as Map;
+                ..._dashboardRecords('reservations').map((reservation) {
                   return Card(
                     child: ListTile(
                       leading: const Icon(Icons.event_available_outlined),

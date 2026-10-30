@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
+
+import '../../../../core/widgets/enter_search_field.dart';
 import '../../data/home_service.dart';
 
 class NotificationsPage extends StatefulWidget {
-  const NotificationsPage({super.key, required this.api, this.condominiumId});
+  const NotificationsPage({
+    super.key,
+    required this.api,
+    this.condominiumId,
+    this.onInvitationChanged,
+  });
   final HomeService api;
   final int? condominiumId;
+  final Future<void> Function()? onInvitationChanged;
   @override
   State<NotificationsPage> createState() => _NotificationsPageState();
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
+  String _query = '';
   late Future<
     ({
       List<Map<String, dynamic>> notices,
@@ -43,6 +52,46 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _refresh() async => setState(() => _load = _fetch());
+
+  Future<void> _respondToInvitation(
+    Map<String, dynamic> notification, {
+    required bool accept,
+  }) async {
+    final invitationId = notification['invitationId'];
+    if (invitationId == null) return;
+    try {
+      await widget.api.send(
+        'POST',
+        '/membership-invitations/$invitationId/${accept ? 'accept' : 'decline'}',
+      );
+      await _refresh();
+      await widget.onInvitationChanged?.call();
+      if (mounted) {
+        final role = notification['authority']?.toString();
+        final needsNewSession =
+            accept && (role == 'ROLE_DOORMAN' || role == 'ROLE_MANAGER');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              accept
+                  ? needsNewSession
+                        ? 'Convite aceito. Saia e entre novamente para atualizar seus acessos.'
+                        : 'Convite aceito.'
+                  : 'Convite recusado.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  bool _matches(Map<String, dynamic> item) => recordMatchesQuery(item, _query);
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -68,16 +117,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
               return const Center(child: CircularProgressIndicator());
             }
             final data = snapshot.data!;
-            final items = data.notices;
-            final announcements = data.announcements;
-            if (items.isEmpty && announcements.isEmpty) {
-              return const Center(child: Text('Você não tem notificações.'));
-            }
+            final items = data.notices.where(_matches).toList();
+            final announcements = data.announcements.where(_matches).toList();
             Widget card(
               Map<String, dynamic> item, {
               bool announcement = false,
             }) {
               final image = item['imageUrl'] as String?;
+              final isMembershipInvitation =
+                  !announcement &&
+                  item['type'] == 'MEMBERSHIP_INVITATION' &&
+                  item['invitationId'] != null;
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: InkWell(
@@ -126,6 +176,24 @@ class _NotificationsPageState extends State<NotificationsPage> {
                           '${item['createdAt'] ?? ''}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
+                        if (isMembershipInvitation) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              FilledButton(
+                                onPressed: () =>
+                                    _respondToInvitation(item, accept: true),
+                                child: const Text('Aceitar convite'),
+                              ),
+                              OutlinedButton(
+                                onPressed: () =>
+                                    _respondToInvitation(item, accept: false),
+                                child: const Text('Recusar'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -138,6 +206,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  EnterSearchField(
+                    hintText: 'Pesquisar notificações e comunicados',
+                    onSubmitted: (query) => setState(() => _query = query),
+                  ),
+                  const SizedBox(height: 12),
+                  if (items.isEmpty && announcements.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('Você não tem notificações ou comunicados.'),
+                    ),
                   if (items.isNotEmpty) ...[
                     Text(
                       'Notificações',

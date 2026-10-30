@@ -1,10 +1,11 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/enter_search_field.dart';
 import '../../home/data/home_service.dart';
 import '../../auth/presentation/pages/user_profile_page.dart';
+import '../../manager/presentation/membership_management_page.dart';
 import 'system_announcement_page.dart';
 import '../../home/presentation/pages/notifications_page.dart';
 
@@ -342,6 +343,7 @@ class _AdminResourcePage extends StatefulWidget {
 
 class _AdminResourcePageState extends State<_AdminResourcePage> {
   int _page = 0;
+  String _query = '';
   late Future<dynamic> _data;
 
   @override
@@ -352,7 +354,7 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
 
   void _load() {
     _data = widget.api.get(
-      '/admin/data/${widget.resource}?page=$_page&size=25&sort=id,desc',
+      '/admin/data/${widget.resource}?page=$_page&size=25&sort=id,desc${_query.trim().isEmpty ? '' : '&query=${Uri.encodeQueryComponent(_query.trim())}'}',
     );
   }
 
@@ -389,44 +391,81 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
         final rows = result is Map && result['content'] is List
             ? (result['content'] as List)
                   .whereType<Map<String, dynamic>>()
+                  .where((item) => recordMatchesQuery(item, _query))
                   .toList()
             : <Map<String, dynamic>>[];
         final totalPages = result is Map
             ? (result['totalPages'] as num?)?.toInt() ?? 1
             : 1;
-        if (rows.isEmpty) {
-          return const Center(child: Text('Nenhum registro encontrado.'));
-        }
         return Column(
           children: [
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: rows.length,
-                itemBuilder: (context, index) {
-                  final item = rows[index];
-                  final title = _primaryValue(item);
-                  final details = const JsonEncoder.withIndent(
-                    '  ',
-                  ).convert(item);
-                  return Card(
-                    child: ExpansionTile(
-                      title: Text(title),
-                      subtitle: Text('Registro #${item['id'] ?? '—'}'),
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: SelectableText(
-                            details,
-                            style: const TextStyle(fontFamily: 'monospace'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: EnterSearchField(
+                hintText: 'Pesquisar registros',
+                onSubmitted: (query) => setState(() {
+                  _query = query;
+                  _page = 0;
+                  _load();
+                }),
               ),
             ),
+            if (rows.isEmpty)
+              const Expanded(
+                child: Center(child: Text('Nenhum registro encontrado.')),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: rows.length,
+                  itemBuilder: (context, index) {
+                    final item = rows[index];
+                    final title = _primaryValue(item);
+                    final details = const JsonEncoder.withIndent(
+                      '  ',
+                    ).convert(item);
+                    return Card(
+                      child: ExpansionTile(
+                        title: Text(title),
+                        subtitle: Text('Registro #${item['id'] ?? '—'}'),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: SelectableText(
+                              details,
+                              style: const TextStyle(fontFamily: 'monospace'),
+                            ),
+                          ),
+                          if (widget.resource == 'condominiums')
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => MembershipManagementPage(
+                                        api: widget.api,
+                                        condominiumId: (item['id'] as num)
+                                            .toInt(),
+                                        isSystemAdmin: true,
+                                      ),
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.admin_panel_settings_outlined,
+                                  ),
+                                  label: const Text('Gerenciar síndicos'),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
             SafeArea(
               top: false,
               child: Row(
@@ -490,7 +529,6 @@ class _AdminSearch extends StatefulWidget {
 
 class _AdminSearchState extends State<_AdminSearch> {
   final _controller = TextEditingController();
-  Timer? _debounce;
   int _requestNumber = 0;
   bool _loading = false;
   String _query = '';
@@ -499,13 +537,11 @@ class _AdminSearchState extends State<_AdminSearch> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
-  void _onChanged(String value) {
-    _debounce?.cancel();
+  void _onSubmitted(String value) {
     final requestNumber = ++_requestNumber;
     final query = value.trim();
     setState(() {
@@ -515,9 +551,7 @@ class _AdminSearchState extends State<_AdminSearch> {
       _error = null;
     });
     if (query.isEmpty) return;
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      _search(query, requestNumber);
-    });
+    _search(query, requestNumber);
   }
 
   Future<void> _search(String query, int requestNumber) async {
@@ -567,7 +601,8 @@ class _AdminSearchState extends State<_AdminSearch> {
           const SizedBox(height: 10),
           TextField(
             controller: _controller,
-            onChanged: _onChanged,
+            maxLength: 100,
+            onSubmitted: _onSubmitted,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: 'Nome de usuário, condomínio ou setor',
@@ -578,11 +613,12 @@ class _AdminSearchState extends State<_AdminSearch> {
                       tooltip: 'Limpar pesquisa',
                       onPressed: () {
                         _controller.clear();
-                        _onChanged('');
+                        _onSubmitted('');
                       },
                       icon: const Icon(Icons.close),
                     ),
               border: const OutlineInputBorder(),
+              counterText: '',
             ),
           ),
           if (_loading) ...[
@@ -634,7 +670,21 @@ class _AdminSearchState extends State<_AdminSearch> {
             subtitle: item['details'] == null
                 ? null
                 : Text(item['details'].toString()),
-            trailing: Text('#${item['id'] ?? '—'}'),
+            trailing: key == 'condominiums'
+                ? IconButton(
+                    tooltip: 'Gerenciar síndicos',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => MembershipManagementPage(
+                          api: widget.api,
+                          condominiumId: (item['id'] as num).toInt(),
+                          isSystemAdmin: true,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.admin_panel_settings_outlined),
+                  )
+                : Text('#${item['id'] ?? '—'}'),
           ),
         ),
       ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/home_service.dart';
 import '../../../auth/presentation/pages/user_profile_page.dart';
+import '../../../../core/widgets/enter_search_field.dart';
 import 'notifications_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -45,6 +46,9 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> _reservations = [];
   List<Map<String, dynamic>> _notifications = [];
   Map<String, dynamic> _profile = {};
+  String _packageQuery = '';
+  String _reservationQuery = '';
+  String _announcementQuery = '';
 
   bool get _canManage {
     final token = widget.token;
@@ -95,13 +99,18 @@ class _HomePageState extends State<HomePage> {
       _error = null;
     });
     try {
-      final profile = _map(await _safeGet('/users/me'));
-      final memberships = _list(await _api.get('/memberships/my'));
+      final initial = await Future.wait([
+        _safeGet('/users/me'),
+        _api.get('/memberships/my'),
+        _safeGet('/notifications/my'),
+      ]);
+      final profile = _map(initial[0]);
+      final memberships = _list(initial[1]);
+      final notifications = _list(initial[2]);
       Map<String, dynamic>? condominium;
       List<Map<String, dynamic>> announcements = [],
           packages = [],
-          reservations = [],
-          notifications = [];
+          reservations = [];
       if (memberships.isNotEmpty) {
         final id = memberships.first['condominiumId'];
         condominium = _map(await _api.get('/condominiums/$id'));
@@ -109,12 +118,10 @@ class _HomePageState extends State<HomePage> {
           _safeGet('/condominiums/$id/announcements'),
           _safeGet('/packages/my?page=0&size=20'),
           _safeGet('/condominiums/$id/reservations/my'),
-          _safeGet('/notifications/my'),
         ]);
         announcements = _list(results[0]);
         packages = _list(results[1]);
         reservations = _list(results[2]);
-        notifications = _list(results[3]);
       }
       if (!mounted) return;
       setState(() {
@@ -203,11 +210,12 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Outros menus',
-                    onPressed: _showMoreMenus,
-                    icon: const Icon(Icons.menu, color: Colors.white),
-                  ),
+                  if (_memberships.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Outros menus',
+                      onPressed: _showMoreMenus,
+                      icon: const Icon(Icons.menu, color: Colors.white),
+                    ),
                   IconButton(
                     tooltip: 'Notificações',
                     onPressed: () => _showNotifications(),
@@ -248,11 +256,8 @@ class _HomePageState extends State<HomePage> {
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
                   ? _errorPanel()
-                  : _memberships.isEmpty
-                  ? _empty(
-                      'Nenhum condomínio vinculado à sua conta.',
-                      Icons.apartment_outlined,
-                    )
+                  : _memberships.isEmpty && _tab != 4
+                  ? _noCondominiumNotice()
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView(
@@ -265,34 +270,77 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (value) => setState(() => _tab = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Início',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.inventory_2_outlined),
-            label: 'Encomendas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.event_available_outlined),
-            label: 'Reservas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.campaign_outlined),
-            label: 'Comunicados',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            label: 'Perfil',
-          ),
-        ],
+        selectedIndex: _memberships.isEmpty ? (_tab == 4 ? 1 : 0) : _tab,
+        onDestinationSelected: (value) => setState(
+          () => _tab = _memberships.isEmpty ? (value == 1 ? 4 : 0) : value,
+        ),
+        destinations: _memberships.isEmpty
+            ? const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Início',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  label: 'Perfil',
+                ),
+              ]
+            : const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Início',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.inventory_2_outlined),
+                  label: 'Encomendas',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.event_available_outlined),
+                  label: 'Reservas',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.campaign_outlined),
+                  label: 'Comunicados',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  label: 'Perfil',
+                ),
+              ],
       ),
     );
   }
+
+  Widget _noCondominiumNotice() => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.apartment_outlined, size: 48),
+          const SizedBox(height: 14),
+          Text(
+            'Sua conta ainda não está vinculada a um condomínio.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Enquanto isso, você pode consultar notificações e aceitar convites por lá.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: _showNotifications,
+            icon: const Icon(Icons.notifications_none),
+            label: const Text('Abrir notificações'),
+          ),
+        ],
+      ),
+    ),
+  );
 
   ImageProvider? get _profileAvatarImage {
     final image = _profile['profileImage'];
@@ -446,18 +494,25 @@ class _HomePageState extends State<HomePage> {
     children: [
       Text('Suas encomendas', style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 12),
-      if (_packages.isEmpty)
+      EnterSearchField(
+        hintText: 'Pesquisar encomendas',
+        onSubmitted: (query) => setState(() => _packageQuery = query),
+      ),
+      const SizedBox(height: 12),
+      if (_packages.where((e) => recordMatchesQuery(e, _packageQuery)).isEmpty)
         _empty('Nenhuma encomenda encontrada.', Icons.inventory_2_outlined)
       else
-        ..._packages.map(
-          (e) => Card(
-            child: _dataTile(
-              Icons.inventory_2_outlined,
-              _text(e['description'], 'Encomenda'),
-              '${_text(e['status'])} · ${_text(e['receivedAt'])}',
+        ..._packages
+            .where((e) => recordMatchesQuery(e, _packageQuery))
+            .map(
+              (e) => Card(
+                child: _dataTile(
+                  Icons.inventory_2_outlined,
+                  _text(e['description'], 'Encomenda'),
+                  '${_text(e['status'])} · ${_text(e['receivedAt'])}',
+                ),
+              ),
             ),
-          ),
-        ),
     ],
   );
 
@@ -480,30 +535,39 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       const SizedBox(height: 12),
-      if (_reservations.isEmpty)
+      EnterSearchField(
+        hintText: 'Pesquisar reservas',
+        onSubmitted: (query) => setState(() => _reservationQuery = query),
+      ),
+      const SizedBox(height: 12),
+      if (_reservations
+          .where((e) => recordMatchesQuery(e, _reservationQuery))
+          .isEmpty)
         _empty(
           'Você ainda não possui reservas.',
           Icons.event_available_outlined,
         )
       else
-        ..._reservations.map(
-          (e) => Card(
-            child: ListTile(
-              title: Text(_text(e['commonAreaName'])),
-              subtitle: Text(
-                '${_text(e['startAt'])} – ${_text(e['endAt'])}\n${_text(e['status'])}',
+        ..._reservations
+            .where((e) => recordMatchesQuery(e, _reservationQuery))
+            .map(
+              (e) => Card(
+                child: ListTile(
+                  title: Text(_text(e['commonAreaName'])),
+                  subtitle: Text(
+                    '${_text(e['startAt'])} – ${_text(e['endAt'])}\n${_text(e['status'])}',
+                  ),
+                  isThreeLine: true,
+                  trailing: e['status'] == 'CONFIRMED'
+                      ? IconButton(
+                          tooltip: 'Cancelar reserva',
+                          icon: const Icon(Icons.cancel_outlined),
+                          onPressed: () => _cancelReservation(e),
+                        )
+                      : null,
+                ),
               ),
-              isThreeLine: true,
-              trailing: e['status'] == 'CONFIRMED'
-                  ? IconButton(
-                      tooltip: 'Cancelar reserva',
-                      icon: const Icon(Icons.cancel_outlined),
-                      onPressed: () => _cancelReservation(e),
-                    )
-                  : null,
             ),
-          ),
-        ),
     ],
   );
 
@@ -512,24 +576,33 @@ class _HomePageState extends State<HomePage> {
     children: [
       Text('Comunicados', style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 12),
-      if (_announcements.isEmpty)
+      EnterSearchField(
+        hintText: 'Pesquisar comunicados',
+        onSubmitted: (query) => setState(() => _announcementQuery = query),
+      ),
+      const SizedBox(height: 12),
+      if (_announcements
+          .where((e) => recordMatchesQuery(e, _announcementQuery))
+          .isEmpty)
         _empty('Nenhum comunicado ativo.', Icons.campaign_outlined)
       else
-        ..._announcements.map(
-          (e) => Card(
-            child: ListTile(
-              leading: const Icon(
-                Icons.campaign_outlined,
-                color: Color(0xFF3E4CDF),
+        ..._announcements
+            .where((e) => recordMatchesQuery(e, _announcementQuery))
+            .map(
+              (e) => Card(
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.campaign_outlined,
+                    color: Color(0xFF3E4CDF),
+                  ),
+                  title: Text(_text(e['title'])),
+                  subtitle: Text(
+                    '${_text(e['content'])}\n${_text(e['createdAt'])}',
+                  ),
+                  isThreeLine: true,
+                ),
               ),
-              title: Text(_text(e['title'])),
-              subtitle: Text(
-                '${_text(e['content'])}\n${_text(e['createdAt'])}',
-              ),
-              isThreeLine: true,
             ),
-          ),
-        ),
     ],
   );
 
@@ -593,6 +666,7 @@ class _HomePageState extends State<HomePage> {
         builder: (_) => NotificationsPage(
           api: _api,
           condominiumId: (_condominium?['id'] as num?)?.toInt(),
+          onInvitationChanged: _load,
         ),
       ),
     );
@@ -751,6 +825,7 @@ class _CollectionPage extends StatefulWidget {
 
 class _CollectionPageState extends State<_CollectionPage> {
   late Future<dynamic> _data;
+  String _query = '';
 
   @override
   void initState() {
@@ -824,33 +899,51 @@ class _CollectionPageState extends State<_CollectionPage> {
             ),
           );
         }
-        final items = _items(snapshot.data);
+        final items = _items(
+          snapshot.data,
+        ).where((item) => recordMatchesQuery(item, _query)).toList();
         if (items.isEmpty) {
-          return const Center(child: Text('Nenhum registro encontrado.'));
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: EnterSearchField(
+                  onSubmitted: (query) => setState(() => _query = query),
+                ),
+              ),
+              const Expanded(
+                child: Center(child: Text('Nenhum registro encontrado.')),
+              ),
+            ],
+          );
         }
         return RefreshIndicator(
           onRefresh: () async => _refresh(),
-          child: ListView.builder(
+          child: ListView(
             padding: const EdgeInsets.all(12),
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              final details = item.entries
-                  .where((entry) => entry.value != null && entry.key != 'id')
-                  .map((entry) => '${entry.key}: ${entry.value}')
-                  .join('\n');
-              return Card(
-                child: ListTile(
-                  title: Text(_title(item)),
-                  subtitle: Text(
-                    details,
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
+            children: [
+              EnterSearchField(
+                onSubmitted: (query) => setState(() => _query = query),
+              ),
+              const SizedBox(height: 12),
+              ...items.map((item) {
+                final details = item.entries
+                    .where((entry) => entry.value != null && entry.key != 'id')
+                    .map((entry) => '${entry.key}: ${entry.value}')
+                    .join('\n');
+                return Card(
+                  child: ListTile(
+                    title: Text(_title(item)),
+                    subtitle: Text(
+                      details,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: Text('#${item['id'] ?? ''}'),
                   ),
-                  trailing: Text('#${item['id'] ?? ''}'),
-                ),
-              );
-            },
+                );
+              }),
+            ],
           ),
         );
       },
