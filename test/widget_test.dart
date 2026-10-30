@@ -5,13 +5,21 @@ import 'package:projeto_front/features/auth/presentation/pages/login_page.dart';
 import 'package:projeto_front/features/home/presentation/widgets/home_header.dart';
 
 void main() {
-  testWidgets('renderiza tela de login com ações principais', (WidgetTester tester) async {
+  testWidgets('renderiza tela de login com ações principais', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: LoginPage(
           onGoogleLogin: () async {},
-          onEmailLogin: ({required String email, required String password}) async {},
-          onSignUp: ({required String name, required String email, required String password}) async {},
+          onEmailLogin:
+              ({required String email, required String password}) async {},
+          onSignUp:
+              ({
+                required String name,
+                required String email,
+                required String password,
+              }) async {},
           isLoading: false,
         ),
       ),
@@ -23,7 +31,9 @@ void main() {
     expect(find.text('Ainda não tem conta? Criar cadastro'), findsOneWidget);
   });
 
-  testWidgets('renderiza saudação dinâmica no header', (WidgetTester tester) async {
+  testWidgets('renderiza saudação dinâmica no header', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(

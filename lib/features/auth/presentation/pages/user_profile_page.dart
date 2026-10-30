@@ -402,6 +402,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
                       const SizedBox(height: 12),
                       TextField(
                         controller: _name,
+                        autofillHints: const [AutofillHints.name],
+                        textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
                           labelText: 'Nome completo',
                           border: OutlineInputBorder(),
@@ -410,7 +412,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
                       const SizedBox(height: 12),
                       TextField(
                         controller: _email,
+                        autofillHints: const [AutofillHints.email],
                         keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.done,
                         decoration: const InputDecoration(
                           labelText: 'Email',
                           border: OutlineInputBorder(),
