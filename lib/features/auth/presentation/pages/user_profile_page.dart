@@ -242,49 +242,97 @@ class _UserProfilePageState extends State<UserProfilePage> {
     final newPassword = TextEditingController();
     final confirmation = TextEditingController();
     final currentPassword = TextEditingController();
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirmation = true;
+
     final values = await showDialog<List<String>?>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Alterar senha'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.provider != 'google')
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: const Text('Alterar senha'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.provider != 'google')
+                TextField(
+                  controller: currentPassword,
+                  obscureText: obscureCurrent,
+                  autofillHints: const [AutofillHints.password],
+                  decoration: InputDecoration(
+                    labelText: 'Senha atual',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        obscureCurrent
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      tooltip: obscureCurrent
+                          ? 'Mostrar senha'
+                          : 'Ocultar senha',
+                      onPressed: () {
+                        setStateDialog(() => obscureCurrent = !obscureCurrent);
+                      },
+                    ),
+                  ),
+                ),
               TextField(
-                controller: currentPassword,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Senha atual'),
+                controller: newPassword,
+                obscureText: obscureNew,
+                autofillHints: const [AutofillHints.newPassword],
+                decoration: InputDecoration(
+                  labelText: 'Nova senha (mín. 8 caracteres)',
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscureNew ? Icons.visibility : Icons.visibility_off,
+                    ),
+                    tooltip: obscureNew ? 'Mostrar senha' : 'Ocultar senha',
+                    onPressed: () {
+                      setStateDialog(() => obscureNew = !obscureNew);
+                    },
+                  ),
+                ),
               ),
-            TextField(
-              controller: newPassword,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Nova senha (mín. 8 caracteres)',
+              TextField(
+                controller: confirmation,
+                obscureText: obscureConfirmation,
+                autofillHints: const [AutofillHints.newPassword],
+                decoration: InputDecoration(
+                  labelText: 'Confirme a nova senha',
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscureConfirmation
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
+                    tooltip: obscureConfirmation
+                        ? 'Mostrar senha'
+                        : 'Ocultar senha',
+                    onPressed: () {
+                      setStateDialog(
+                        () => obscureConfirmation = !obscureConfirmation,
+                      );
+                    },
+                  ),
+                ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
             ),
-            TextField(
-              controller: confirmation,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Confirme a nova senha',
-              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, [
+                currentPassword.text,
+                newPassword.text,
+                confirmation.text,
+              ]),
+              child: const Text('Salvar'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, [
-              currentPassword.text,
-              newPassword.text,
-              confirmation.text,
-            ]),
-            child: const Text('Salvar'),
-          ),
-        ],
       ),
     );
     if (values == null) return;
@@ -402,6 +450,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
                       const SizedBox(height: 12),
                       TextField(
                         controller: _name,
+                        autofillHints: const [AutofillHints.name],
                         decoration: const InputDecoration(
                           labelText: 'Nome completo',
                           border: OutlineInputBorder(),
@@ -411,6 +460,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
                       TextField(
                         controller: _email,
                         keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
                         decoration: const InputDecoration(
                           labelText: 'Email',
                           border: OutlineInputBorder(),

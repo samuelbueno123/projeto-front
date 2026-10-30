@@ -33,6 +33,7 @@ O frontend já se comunica ou vai se comunicar com:
 - `PATCH /notifications/{id}/read`
 - `GET /memberships/my`
 - `GET /condominiums/{id}`
+- `GET /condominiums/{id}/announcements`
 - `GET /condominiums/{id}/common-areas`
 - `POST /common-areas/{id}/reservations`
 - `PATCH /reservations/{id}/cancel`
