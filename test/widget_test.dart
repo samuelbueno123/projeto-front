@@ -17,7 +17,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Entrar no Condomínio App'), findsOneWidget);
+    expect(find.text('Entrar no Âncora Gestão'), findsOneWidget);
     expect(find.text('Entrar com email'), findsOneWidget);
     expect(find.text('Continuar com Google'), findsOneWidget);
     expect(find.text('Ainda não tem conta? Criar cadastro'), findsOneWidget);

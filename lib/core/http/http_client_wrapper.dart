@@ -42,7 +42,16 @@ class HttpClientWrapper {
   /// Constrói URL completa a partir de um endpoint relativo
   Uri _buildUri(String endpoint, {Map<String, String>? queryParameters}) {
     final url = endpoint.startsWith('http') ? endpoint : '$_baseUrl$endpoint';
-    return Uri.parse(url).replace(queryParameters: queryParameters);
+    final uri = Uri.parse(url);
+    if (queryParameters == null || queryParameters.isEmpty) {
+      return uri;
+    }
+    return uri.replace(
+      queryParameters: <String, String>{
+        ...uri.queryParameters,
+        ...queryParameters,
+      },
+    );
   }
 
   /// Constrói headers padrão com autenticação se disponível
@@ -237,31 +246,53 @@ class HttpClientWrapper {
       return ApiResponse.success(null as T, statusCode: 204);
     }
 
+    final isSuccess = response.statusCode >= 200 && response.statusCode < 300;
+
     // Tenta fazer parse do JSON
+    dynamic decodedJson;
     late Map<String, dynamic> jsonData;
     try {
-      if (response.body.isEmpty) {
-        jsonData = {};
+      if (response.body.trim().isEmpty) {
+        decodedJson = <String, dynamic>{};
+        jsonData = <String, dynamic>{};
       } else {
         final decoded = jsonDecode(response.body);
+        decodedJson = decoded;
         if (decoded is Map<String, dynamic>) {
           jsonData = decoded;
-        } else {
-          throw ParsingException(
-            message: 'Resposta não é um JSON válido',
-            cause: decoded,
+        } else if (decoded is Map) {
+          jsonData = Map<String, dynamic>.from(decoded);
+        } else if (decoded is List) {
+          jsonData = <String, dynamic>{};
+        } else if (isSuccess) {
+          return ApiResponse.success(
+            decoded as T,
+            statusCode: response.statusCode,
           );
+        } else {
+          jsonData = <String, dynamic>{};
         }
       }
     } catch (e) {
-      throw ParsingException(
-        message: 'Erro ao fazer parse da resposta JSON',
-        cause: e,
-      );
+      if (isSuccess) {
+        throw ParsingException(
+          message: 'Erro ao fazer parse da resposta JSON',
+          cause: e,
+        );
+      }
+      decodedJson = <String, dynamic>{};
+      jsonData = <String, dynamic>{};
     }
 
     // Verifica se é sucesso (2xx)
-    if (response.statusCode >= 200 && response.statusCode < 300) {
+    if (isSuccess) {
+      if (decodedJson is List) {
+        return ApiResponse.success(
+          decodedJson as T,
+          statusCode: response.statusCode,
+        );
+      }
+
       T? data;
       if (fromJsonT != null && jsonData.isNotEmpty) {
         try {
@@ -272,6 +303,8 @@ class HttpClientWrapper {
             cause: e,
           );
         }
+      } else if (fromJsonT == null && jsonData.isNotEmpty) {
+        data = jsonData as T;
       }
 
       final message = jsonData['message'] as String?;
@@ -333,8 +366,23 @@ class HttpClientWrapper {
 
   /// Extrai mensagem de erro de diferentes formatos de resposta
   String? _extractErrorMessage(Map<String, dynamic> jsonData) {
+    final errorsList = jsonData['errors'];
+    if (errorsList is List && errorsList.isNotEmpty) {
+      final first = errorsList.first;
+      if (first is String && first.trim().isNotEmpty) {
+        return first;
+      }
+      if (first is Map) {
+        final field = first['fieldName'] ?? first['field'];
+        final msg = first['message'] ?? first['error'];
+        if (msg is String && msg.trim().isNotEmpty) {
+          return field != null ? '$field: $msg' : msg;
+        }
+      }
+    }
+
     // Tenta diferentes campos comuns para mensagem de erro
-    final keys = ['message', 'error', 'errors', 'detail', 'msg'];
+    final keys = ['message', 'detail', 'msg', 'error'];
 
     for (final key in keys) {
       final value = jsonData[key];

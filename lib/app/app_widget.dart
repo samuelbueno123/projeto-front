@@ -47,7 +47,7 @@ class _AppWidgetState extends State<AppWidget> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Condomínio App',
+      title: 'Âncora Gestão',
       theme: AppTheme.light(),
       home: _buildHome(),
     );

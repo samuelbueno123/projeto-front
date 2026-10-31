@@ -36,4 +36,20 @@ class ApiConfig {
   static const String sectorsEndpoint = '/sectors';
   static const String membershipsEndpoint = '/memberships';
   static const String billingPlansEndpoint = '/billingplans';
+
+  /// Resolve um caminho relativo de mídia do servidor (ex.: "media/pictures/user_1_abc.png")
+  /// para a URL completa servida pelo backend.
+  static String? resolveMediaUrl(String? rawPath) {
+    if (rawPath == null) return null;
+    final trimmed = rawPath.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.startsWith('data:') ||
+        trimmed.startsWith('http://') ||
+        trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    final cleanBase = baseUrl.replaceAll(RegExp(r'/+$'), '');
+    final cleanRelative = trimmed.replaceFirst(RegExp(r'^/+'), '');
+    return '$cleanBase/$cleanRelative';
+  }
 }

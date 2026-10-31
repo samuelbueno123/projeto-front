@@ -14,7 +14,7 @@ RUN git clone --depth 1 --branch 3.47.5 https://github.com/flutter/flutter.git $
 WORKDIR /app
 
 COPY pubspec.yaml pubspec.lock ./
-RUN flutter pub get --enforce-lockfile
+RUN flutter pub get
 
 COPY lib ./lib
 COPY web ./web

@@ -1,9 +1,19 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../data/home_service.dart';
+import '../../../admin/presentation/admin_page.dart';
 import '../../../auth/presentation/pages/user_profile_page.dart';
+import '../../../community/data/community_api.dart';
+import '../../../community/presentation/dialogs/common_area_booking_dialog.dart';
+import '../../../community/presentation/dialogs/join_condominium_dialog.dart';
+import '../../../community/presentation/dialogs/unit_payment_confirmation_dialog.dart';
+import '../../../community/presentation/views/community_hub_view.dart';
+import '../../../../core/utils/formatters.dart';
+import '../../../../core/widgets/enter_search_field.dart';
+import '../../../../core/widgets/full_screen_image_viewer.dart';
 import 'notifications_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -35,6 +45,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late HomeService _api;
+  late CommunityApi _communityApi;
   int _tab = 0;
   bool _loading = true;
   String? _error;
@@ -45,6 +56,19 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> _reservations = [];
   List<Map<String, dynamic>> _notifications = [];
   Map<String, dynamic> _profile = {};
+  String _packageQuery = '';
+  String _reservationQuery = '';
+  String _announcementQuery = '';
+
+  String get _residentFirstName {
+    final fromProfile = firstNameOf(_profile['firstName']?.toString());
+    if (fromProfile.isNotEmpty) return fromProfile;
+    final fromSession = firstNameOf(widget.userName);
+    if (fromSession.isNotEmpty && !fromSession.contains('@')) {
+      return fromSession;
+    }
+    return 'morador';
+  }
 
   bool get _canManage {
     final token = widget.token;
@@ -65,6 +89,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _api = HomeService(token: widget.token);
+    _communityApi = CommunityApi(api: _api);
     _load();
   }
 
@@ -73,12 +98,14 @@ class _HomePageState extends State<HomePage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.token != widget.token) {
       _api = HomeService(token: widget.token);
+      _communityApi = CommunityApi(api: _api);
       _load();
     }
   }
 
   Map<String, dynamic> _map(dynamic value) =>
       value is Map<String, dynamic> ? value : <String, dynamic>{};
+
   List<Map<String, dynamic>> _list(dynamic value) {
     if (value is List) return value.whereType<Map<String, dynamic>>().toList();
     if (value is Map && value['content'] is List) {
@@ -95,13 +122,18 @@ class _HomePageState extends State<HomePage> {
       _error = null;
     });
     try {
-      final profile = _map(await _safeGet('/users/me'));
-      final memberships = _list(await _api.get('/memberships/my'));
+      final initial = await Future.wait([
+        _safeGet('/users/me'),
+        _api.get('/memberships/my'),
+        _safeGet('/notifications/my'),
+      ]);
+      final profile = _map(initial[0]);
+      final memberships = _list(initial[1]);
+      final notifications = _list(initial[2]);
       Map<String, dynamic>? condominium;
       List<Map<String, dynamic>> announcements = [],
           packages = [],
-          reservations = [],
-          notifications = [];
+          reservations = [];
       if (memberships.isNotEmpty) {
         final id = memberships.first['condominiumId'];
         condominium = _map(await _api.get('/condominiums/$id'));
@@ -109,12 +141,10 @@ class _HomePageState extends State<HomePage> {
           _safeGet('/condominiums/$id/announcements'),
           _safeGet('/packages/my?page=0&size=20'),
           _safeGet('/condominiums/$id/reservations/my'),
-          _safeGet('/notifications/my'),
         ]);
         announcements = _list(results[0]);
         packages = _list(results[1]);
         reservations = _list(results[2]);
-        notifications = _list(results[3]);
       }
       if (!mounted) return;
       setState(() {
@@ -146,6 +176,85 @@ class _HomePageState extends State<HomePage> {
 
   String _text(dynamic value, [String fallback = '—']) =>
       value == null || value.toString().isEmpty ? fallback : value.toString();
+
+  String _formatDate(dynamic raw) {
+    if (raw == null || raw.toString().trim().isEmpty) return '—';
+    try {
+      final dt = DateTime.parse(raw.toString()).toLocal();
+      return DateFormat('dd/MM/yyyy HH:mm').format(dt);
+    } catch (_) {
+      return raw.toString();
+    }
+  }
+
+  (String, Color, Color) _packageStatusStyle(dynamic status) =>
+      switch (status) {
+        'EXPECTED' => (
+          'Aguardando chegada',
+          const Color(0xFFFEF3C7),
+          const Color(0xFFB45309),
+        ),
+        'RECEIVED' => (
+          'Na portaria',
+          const Color(0xFFDBEAFE),
+          const Color(0xFF1D4ED8),
+        ),
+        'NOTIFIED' => (
+          'Pronta para retirada',
+          const Color(0xFFE0E7FF),
+          const Color(0xFF2F3FB0),
+        ),
+        'PICKED_UP' || 'DELIVERED' => (
+          'Entregue',
+          const Color(0xFFDCFCE7),
+          const Color(0xFF15803D),
+        ),
+        'RETURNED' => (
+          'Devolvida',
+          const Color(0xFFFFEDD5),
+          const Color(0xFFC2410C),
+        ),
+        'CANCELLED' => (
+          'Cancelada',
+          const Color(0xFFFEE2E2),
+          const Color(0xFFB91C1C),
+        ),
+        _ => (
+          _text(status, 'Registrada'),
+          const Color(0xFFF1F5F9),
+          const Color(0xFF334155),
+        ),
+      };
+
+  (String, Color, Color) _reservationStatusStyle(dynamic status) =>
+      switch (status) {
+        'CONFIRMED' => (
+          'Confirmada',
+          const Color(0xFFDCFCE7),
+          const Color(0xFF15803D),
+        ),
+        'PENDING' => (
+          'Aguardando aprovação do síndico',
+          const Color(0xFFFEF3C7),
+          const Color(0xFFB45309),
+        ),
+        'REJECTED' => (
+          'Recusada',
+          const Color(0xFFFEE2E2),
+          const Color(0xFFB91C1C),
+        ),
+        'CANCELLED' => (
+          'Cancelada',
+          const Color(0xFFFEE2E2),
+          const Color(0xFFB91C1C),
+        ),
+        _ => (
+          _text(status, 'Agendada'),
+          const Color(0xFFF1F5F9),
+          const Color(0xFF334155),
+        ),
+      };
+
   @override
   Widget build(BuildContext context) {
     if (_tab == 4) {
@@ -164,19 +273,33 @@ class _HomePageState extends State<HomePage> {
         refreshGoogleSession: widget.refreshGoogleSession,
       );
     }
+
+    final unreadCount = _notifications.where((e) => e['read'] != true).length;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FC),
+      backgroundColor: const Color(0xFFF4F6FB),
       body: SafeArea(
         child: Column(
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(22, 16, 18, 22),
+              padding: const EdgeInsets.fromLTRB(22, 18, 18, 22),
               decoration: const BoxDecoration(
-                color: Color(0xFF2F3FB0),
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(30),
+                gradient: LinearGradient(
+                  colors: [Color(0xFF243296), Color(0xFF3E51D8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(28),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x222F3FB0),
+                    blurRadius: 16,
+                    offset: Offset(0, 6),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
@@ -185,55 +308,72 @@ class _HomePageState extends State<HomePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Olá, ${widget.userName?.trim().isNotEmpty == true ? widget.userName : 'morador'}!',
+                          'Olá, $_residentFirstName! 👋',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 23,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          _text(
-                            _condominium?['name'],
-                            widget.userEmail ?? 'Bem-vindo',
-                          ),
-                          style: const TextStyle(color: Colors.white70),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.apartment_rounded,
+                              size: 15,
+                              color: Colors.white70,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _text(
+                                  _condominium?['name'],
+                                  widget.userEmail ?? 'Bem-vindo ao app',
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
+                  if (_memberships.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Mais serviços do condomínio',
+                      onPressed: _showMoreMenus,
+                      icon: const Icon(
+                        Icons.grid_view_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
                   IconButton(
-                    tooltip: 'Outros menus',
-                    onPressed: _showMoreMenus,
-                    icon: const Icon(Icons.menu, color: Colors.white),
-                  ),
-                  IconButton(
-                    tooltip: 'Notificações',
-                    onPressed: () => _showNotifications(),
+                    tooltip: 'Central de notificações',
+                    onPressed: _showNotifications,
                     icon: Badge(
-                      label: Text(
-                        '${_notifications.where((e) => e['read'] != true).length}',
-                      ),
-                      isLabelVisible: _notifications.any(
-                        (e) => e['read'] != true,
-                      ),
+                      label: Text('$unreadCount'),
+                      isLabelVisible: unreadCount > 0,
                       child: const Icon(
-                        Icons.notifications_none,
+                        Icons.notifications_none_rounded,
                         color: Colors.white,
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Minha conta',
-                    onPressed: () => setState(() => _tab = 4),
-                    icon: CircleAvatar(
-                      radius: 17,
+                  const SizedBox(width: 4),
+                  InkWell(
+                    onTap: () => setState(() => _tab = 4),
+                    borderRadius: BorderRadius.circular(999),
+                    child: CircleAvatar(
+                      radius: 19,
                       backgroundColor: Colors.white24,
                       backgroundImage: _profileAvatarImage,
                       child: _profileAvatarImage == null
                           ? const Icon(
-                              Icons.person,
+                              Icons.person_rounded,
                               color: Colors.white,
                               size: 21,
                             )
@@ -248,16 +388,18 @@ class _HomePageState extends State<HomePage> {
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
                   ? _errorPanel()
-                  : _memberships.isEmpty
-                  ? _empty(
-                      'Nenhum condomínio vinculado à sua conta.',
-                      Icons.apartment_outlined,
-                    )
+                  : _memberships.isEmpty && _tab != 4
+                  ? _noCondominiumNotice()
                   : RefreshIndicator(
                       onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.all(18),
-                        children: [_pageContent()],
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 840),
+                          child: ListView(
+                            padding: const EdgeInsets.all(18),
+                            children: [_pageContent()],
+                          ),
+                        ),
                       ),
                     ),
             ),
@@ -265,34 +407,123 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (value) => setState(() => _tab = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Início',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.inventory_2_outlined),
-            label: 'Encomendas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.event_available_outlined),
-            label: 'Reservas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.campaign_outlined),
-            label: 'Comunicados',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            label: 'Perfil',
-          ),
-        ],
+        selectedIndex: _memberships.isEmpty ? (_tab == 4 ? 1 : 0) : _tab,
+        onDestinationSelected: (value) => setState(
+          () => _tab = _memberships.isEmpty ? (value == 1 ? 4 : 0) : value,
+        ),
+        destinations: _memberships.isEmpty
+            ? const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home_rounded),
+                  label: 'Início',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline_rounded),
+                  selectedIcon: Icon(Icons.person_rounded),
+                  label: 'Meu perfil',
+                ),
+              ]
+            : const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home_rounded),
+                  label: 'Início',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.inventory_2_outlined),
+                  selectedIcon: Icon(Icons.inventory_2_rounded),
+                  label: 'Encomendas',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.event_available_outlined),
+                  selectedIcon: Icon(Icons.event_available_rounded),
+                  label: 'Reservas',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.diversity_3_outlined),
+                  selectedIcon: Icon(Icons.diversity_3_rounded),
+                  label: 'Comunidade',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline_rounded),
+                  selectedIcon: Icon(Icons.person_rounded),
+                  label: 'Perfil',
+                ),
+              ],
       ),
     );
   }
+
+  Widget _noCondominiumNotice() => Center(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircleAvatar(
+                  radius: 36,
+                  backgroundColor: Color(0xFFE0E7FF),
+                  child: Icon(
+                    Icons.apartment_rounded,
+                    size: 38,
+                    color: Color(0xFF2F3FB0),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Sua conta ainda não está vinculada a um condomínio.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Você pode solicitar entrada em um condomínio existente para aprovação do síndico, ou verificar convites recebidos.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF15803D),
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: _openJoinCondominiumDialog,
+                    icon: const Icon(Icons.add_home_work_rounded),
+                    label: const Text('Solicitar entrada em condomínio'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _showNotifications,
+                    icon: const Icon(Icons.notifications_active_outlined),
+                    label: const Text('Abrir notificações e convites'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Verificar atualizações'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
   ImageProvider? get _profileAvatarImage {
     final image = _profile['profileImage'];
@@ -314,7 +545,12 @@ class _HomePageState extends State<HomePage> {
       case 2:
         return _reservationsPage();
       case 3:
-        return _announcementsPage();
+        return _condominium != null
+            ? CommunityHubView(
+                api: _communityApi,
+                condominiumId: _condominium!['id'],
+              )
+            : _announcementsPage();
       case 4:
         return _profilePage();
       default:
@@ -326,41 +562,129 @@ class _HomePageState extends State<HomePage> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Card(
-        child: ListTile(
-          leading: const CircleAvatar(child: Icon(Icons.apartment)),
-          title: Text(
-            _text(_condominium?['name']),
-            style: const TextStyle(fontWeight: FontWeight.bold),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              const CircleAvatar(
+                radius: 24,
+                backgroundColor: Color(0xFFE0E7FF),
+                child: Icon(
+                  Icons.apartment_rounded,
+                  color: Color(0xFF2F3FB0),
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(_condominium?['name']),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(_text(_condominium?['address'])),
+                  ],
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _openPaymentDialog,
+                    icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                    label: const Text('Taxa Condominial'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _showMoreMenus,
+                    icon: const Icon(Icons.grid_view_rounded, size: 18),
+                    label: const Text('Serviços'),
+                  ),
+                ],
+              ),
+            ],
           ),
-          subtitle: Text(_text(_condominium?['address'])),
-          trailing: const Icon(Icons.chevron_right),
         ),
       ),
-      const SizedBox(height: 20),
-      Text('Atalhos rápidos', style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 10),
-      Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: [
-          _action('Encomendas', Icons.inventory_2_outlined, 1),
-          _action('Reservas', Icons.event_available_outlined, 2),
-          _action('Comunicados', Icons.campaign_outlined, 3),
-        ],
+      const SizedBox(height: 18),
+      Text(
+        'Resumo e acesso rápido',
+        style: Theme.of(context).textTheme.titleLarge,
       ),
-      const SizedBox(height: 22),
+      const SizedBox(height: 10),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          const spacing = 12.0;
+          final cardWidth = (constraints.maxWidth - spacing) / 2;
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: [
+              _dashboardMetricCard(
+                width: cardWidth,
+                label: 'Minhas encomendas',
+                count: _packages.length,
+                icon: Icons.inventory_2_outlined,
+                accentBg: const Color(0xFFDBEAFE),
+                accentFg: const Color(0xFF1D4ED8),
+                cardTint: const Color(0xFFF8FAFF),
+                onTap: () => setState(() => _tab = 1),
+              ),
+              _dashboardMetricCard(
+                width: cardWidth,
+                label: 'Reservas agendadas',
+                count: _reservations
+                    .where((e) => e['status'] == 'CONFIRMED' || e['status'] == 'PENDING')
+                    .length,
+                icon: Icons.event_available_outlined,
+                accentBg: const Color(0xFFDCFCE7),
+                accentFg: const Color(0xFF15803D),
+                cardTint: const Color(0xFFF6FEF9),
+                onTap: () => setState(() => _tab = 2),
+              ),
+              _dashboardMetricCard(
+                width: cardWidth,
+                label: 'Comunidade (11 áreas)',
+                count: 11,
+                icon: Icons.diversity_3_outlined,
+                accentBg: const Color(0xFFFEF3C7),
+                accentFg: const Color(0xFFB45309),
+                cardTint: const Color(0xFFFFFBEB),
+                onTap: () => setState(() => _tab = 3),
+              ),
+              _dashboardMetricCard(
+                width: cardWidth,
+                label: 'Taxa Condominial',
+                count: 1,
+                icon: Icons.receipt_long_outlined,
+                accentBg: const Color(0xFFEDE9FE),
+                accentFg: const Color(0xFF6D28D9),
+                cardTint: const Color(0xFFFAF8FF),
+                onTap: _openPaymentDialog,
+              ),
+            ],
+          );
+        },
+      ),
+      const SizedBox(height: 20),
       _section(
         'Encomendas recentes',
-        _packages
-            .take(3)
-            .map(
-              (e) => _dataTile(
-                Icons.inventory_2_outlined,
-                _text(e['description'], 'Encomenda'),
-                _text(e['status']),
-              ),
-            )
-            .toList(),
+        _packages.take(3).map((e) {
+          final (statusLabel, bg, fg) = _packageStatusStyle(e['status']);
+          return _dataTile(
+            Icons.inventory_2_outlined,
+            _text(e['description'], 'Encomenda registrada'),
+            _formatDate(e['receivedAt']),
+            badgeLabel: statusLabel,
+            badgeBg: bg,
+            badgeFg: fg,
+          );
+        }).toList(),
         onSeeAll: () => setState(() => _tab = 1),
       ),
       _section(
@@ -371,22 +695,25 @@ class _HomePageState extends State<HomePage> {
               (e) => _dataTile(
                 Icons.campaign_outlined,
                 _text(e['title']),
-                _text(e['createdAt']),
+                _formatDate(e['createdAt']),
               ),
             )
             .toList(),
         onSeeAll: () => setState(() => _tab = 3),
       ),
       _section(
-        'Próximas reservas',
+        'Próximas reservas confirmadas',
         _reservations
             .where((e) => e['status'] == 'CONFIRMED')
             .take(3)
             .map(
               (e) => _dataTile(
-                Icons.event,
+                Icons.event_available_outlined,
                 _text(e['commonAreaName']),
-                _text(e['startAt']),
+                _formatDate(e['startAt']),
+                badgeLabel: 'Confirmada',
+                badgeBg: const Color(0xFFDCFCE7),
+                badgeFg: const Color(0xFF15803D),
               ),
             )
             .toList(),
@@ -395,16 +722,76 @@ class _HomePageState extends State<HomePage> {
     ],
   );
 
-  Widget _action(String label, IconData icon, int tab) => ActionChip(
-    avatar: Icon(icon, color: const Color(0xFF2F3FB0)),
-    label: Text(label),
-    onPressed: () => setState(() => _tab = tab),
+  Widget _dashboardMetricCard({
+    required double width,
+    required String label,
+    required int count,
+    required IconData icon,
+    required VoidCallback onTap,
+    Color accentBg = const Color(0xFFE8ECFF),
+    Color accentFg = const Color(0xFF2F3FB0),
+    Color cardTint = Colors.white,
+  }) => SizedBox(
+    width: width,
+    child: Card(
+      color: cardTint,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: accentFg.withValues(alpha: 0.22)),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: accentBg,
+                child: Icon(icon, color: accentFg, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: accentFg,
+                      ),
+                    ),
+                    Text(
+                      label,
+                      softWrap: true,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: accentFg.withValues(alpha: 0.7),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
   );
+
   Widget _section(String title, List<Widget> rows, {VoidCallback? onSeeAll}) =>
       Card(
         margin: const EdgeInsets.only(top: 12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -414,50 +801,136 @@ class _HomePageState extends State<HomePage> {
                     child: Text(
                       title,
                       style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16.5,
                       ),
                     ),
                   ),
                   if (onSeeAll != null)
                     TextButton(
                       onPressed: onSeeAll,
-                      child: const Text('Ver todos'),
+                      child: const Text('Ver tudo'),
                     ),
                 ],
               ),
               if (rows.isEmpty)
-                const Text('Nenhum registro encontrado.')
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Nenhum registro recente por aqui.'),
+                )
               else
                 ...rows,
             ],
           ),
         ),
       );
-  Widget _dataTile(IconData icon, String title, String subtitle) => ListTile(
+
+  Widget _dataTile(
+    IconData icon,
+    String title,
+    String subtitle, {
+    String? badgeLabel,
+    Color? badgeBg,
+    Color? badgeFg,
+  }) => ListTile(
     contentPadding: EdgeInsets.zero,
-    leading: Icon(icon, color: const Color(0xFF3E4CDF)),
-    title: Text(title),
+    leading: CircleAvatar(
+      backgroundColor: const Color(0xFFE8ECFF),
+      child: Icon(icon, color: const Color(0xFF2F3FB0), size: 20),
+    ),
+    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
     subtitle: Text(subtitle),
+    trailing: badgeLabel != null
+        ? Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: badgeBg ?? const Color(0xFFE8ECFF),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              badgeLabel,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: badgeFg ?? const Color(0xFF2F3FB0),
+              ),
+            ),
+          )
+        : null,
   );
 
   Widget _packagesPage() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('Suas encomendas', style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 12),
-      if (_packages.isEmpty)
-        _empty('Nenhuma encomenda encontrada.', Icons.inventory_2_outlined)
-      else
-        ..._packages.map(
-          (e) => Card(
-            child: _dataTile(
-              Icons.inventory_2_outlined,
-              _text(e['description'], 'Encomenda'),
-              '${_text(e['status'])} · ${_text(e['receivedAt'])}',
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Suas encomendas', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 2),
+                const Text(
+                  'Acompanhe o recebimento e a retirada das entregas destinadas à sua unidade.',
+                ),
+              ],
             ),
           ),
-        ),
+          FilledButton.icon(
+            onPressed: _openExpectedPackageDialog,
+            icon: const Icon(Icons.add_box_outlined, size: 18),
+            label: const Text('Avisar Encomenda'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      EnterSearchField(
+        hintText: 'Pesquisar encomendas (pressione Enter)',
+        onSubmitted: (query) => setState(() => _packageQuery = query),
+      ),
+      const SizedBox(height: 12),
+      if (_packages.where((e) => recordMatchesQuery(e, _packageQuery)).isEmpty)
+        _empty(
+          'Nenhuma encomenda encontrada para a sua conta.',
+          Icons.inventory_2_outlined,
+        )
+      else
+        ..._packages.where((e) => recordMatchesQuery(e, _packageQuery)).map((
+          e,
+        ) {
+          final (statusLabel, bg, fg) = _packageStatusStyle(e['status']);
+          final isWaitingPickup = e['status'] == 'RECEIVED' || e['status'] == 'NOTIFIED';
+
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Column(
+                children: [
+                  _dataTile(
+                    Icons.inventory_2_outlined,
+                    _text(e['description'], 'Encomenda'),
+                    'Recebida em: ${_formatDate(e['receivedAt'])}',
+                    badgeLabel: statusLabel,
+                    badgeBg: bg,
+                    badgeFg: fg,
+                  ),
+                  if (isWaitingPickup) ...[
+                    const Divider(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton.tonalIcon(
+                        icon: const Icon(Icons.hail_rounded, size: 16),
+                        label: const Text('Solicitar Retirada na Portaria'),
+                        onPressed: () => _requestPickup(e['id']),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
     ],
   );
 
@@ -467,69 +940,192 @@ class _HomePageState extends State<HomePage> {
       Row(
         children: [
           Expanded(
-            child: Text(
-              'Reservas',
-              style: Theme.of(context).textTheme.titleLarge,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reservas de áreas comuns',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Agende salão de festas, churrasqueira e outros espaços.',
+                ),
+              ],
             ),
           ),
           FilledButton.icon(
             onPressed: _createReservation,
-            icon: const Icon(Icons.add),
-            label: const Text('Reservar'),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Nova reserva'),
           ),
         ],
       ),
+      const SizedBox(height: 14),
+      EnterSearchField(
+        hintText: 'Pesquisar reservas por área ou data (Enter)',
+        onSubmitted: (query) => setState(() => _reservationQuery = query),
+      ),
       const SizedBox(height: 12),
-      if (_reservations.isEmpty)
+      if (_reservations
+          .where((e) => recordMatchesQuery(e, _reservationQuery))
+          .isEmpty)
         _empty(
-          'Você ainda não possui reservas.',
+          'Você ainda não possui reservas registradas.',
           Icons.event_available_outlined,
         )
       else
-        ..._reservations.map(
-          (e) => Card(
-            child: ListTile(
-              title: Text(_text(e['commonAreaName'])),
-              subtitle: Text(
-                '${_text(e['startAt'])} – ${_text(e['endAt'])}\n${_text(e['status'])}',
-              ),
-              isThreeLine: true,
-              trailing: e['status'] == 'CONFIRMED'
-                  ? IconButton(
-                      tooltip: 'Cancelar reserva',
-                      icon: const Icon(Icons.cancel_outlined),
-                      onPressed: () => _cancelReservation(e),
-                    )
-                  : null,
-            ),
-          ),
-        ),
+        ..._reservations
+            .where((e) => recordMatchesQuery(e, _reservationQuery))
+            .map((e) {
+              final (statusLabel, bg, fg) = _reservationStatusStyle(
+                e['status'],
+              );
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: bg,
+                    child: Icon(
+                      Icons.event_available_outlined,
+                      color: fg,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    _text(e['commonAreaName']),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    'De ${_formatDate(e['startAt'])} até ${_formatDate(e['endAt'])}\nSituação: $statusLabel${e['contactPhone'] != null && e['contactPhone'].toString().isNotEmpty ? ' • Tel.: ${formatPhone(e['contactPhone']?.toString())}' : ''}',
+                  ),
+                  isThreeLine: true,
+                  trailing: e['status'] == 'CONFIRMED'
+                      ? OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFDC2626),
+                            side: const BorderSide(color: Color(0xFFFECACA)),
+                          ),
+                          icon: const Icon(Icons.cancel_outlined, size: 18),
+                          label: const Text('Cancelar'),
+                          onPressed: () => _cancelReservation(e),
+                        )
+                      : null,
+                ),
+              );
+            }),
     ],
   );
 
   Widget _announcementsPage() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('Comunicados', style: Theme.of(context).textTheme.titleLarge),
+      Text(
+        'Mural de comunicados',
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
+      const SizedBox(height: 4),
+      const Text(
+        'Avisos oficiais publicados pela administração do seu condomínio.',
+      ),
+      const SizedBox(height: 14),
+      EnterSearchField(
+        hintText: 'Pesquisar comunicados (pressione Enter)',
+        onSubmitted: (query) => setState(() => _announcementQuery = query),
+      ),
       const SizedBox(height: 12),
-      if (_announcements.isEmpty)
-        _empty('Nenhum comunicado ativo.', Icons.campaign_outlined)
+      if (_announcements
+          .where((e) => recordMatchesQuery(e, _announcementQuery))
+          .isEmpty)
+        _empty('Nenhum comunicado ativo no momento.', Icons.campaign_outlined)
       else
-        ..._announcements.map(
-          (e) => Card(
-            child: ListTile(
-              leading: const Icon(
-                Icons.campaign_outlined,
-                color: Color(0xFF3E4CDF),
+        ..._announcements
+            .where((e) => recordMatchesQuery(e, _announcementQuery))
+            .map(
+              (e) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const CircleAvatar(
+                            backgroundColor: Color(0xFFFEF3C7),
+                            child: Icon(
+                              Icons.campaign_outlined,
+                              color: Color(0xFFD97706),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _text(e['title']),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                Text(
+                                  [
+                                    _formatDate(e['createdAt']),
+                                    if (e['createdByName'] != null &&
+                                        e['createdByName']
+                                            .toString()
+                                            .trim()
+                                            .isNotEmpty)
+                                      'Por ${e['createdByName']}',
+                                  ].join(' • '),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: e['unitName'] != null
+                                  ? const Color(0xFFE0E7FF)
+                                  : const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              e['unitName']?.toString() ?? 'Condomínio',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: e['unitName'] != null
+                                    ? const Color(0xFF2F3FB0)
+                                    : const Color(0xFFB45309),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _text(e['content']),
+                        style: const TextStyle(height: 1.45),
+                      ),
+                      if (e['imageUrl'] != null &&
+                          e['imageUrl'].toString().trim().isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        ClickableImagePreview(
+                          imageSource: e['imageUrl'].toString(),
+                          title: _text(e['title']),
+                          height: 190,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-              title: Text(_text(e['title'])),
-              subtitle: Text(
-                '${_text(e['content'])}\n${_text(e['createdAt'])}',
-              ),
-              isThreeLine: true,
             ),
-          ),
-        ),
     ],
   );
 
@@ -555,18 +1151,25 @@ class _HomePageState extends State<HomePage> {
     ),
   );
 
-  Widget _empty(String message, IconData icon) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 45),
-    child: Center(
-      child: Column(
-        children: [
-          Icon(icon, size: 42, color: Colors.blueGrey),
-          const SizedBox(height: 12),
-          Text(message, textAlign: TextAlign.center),
-        ],
+  Widget _empty(String message, IconData icon) => Card(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+      child: Center(
+        child: Column(
+          children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: const Color(0xFFE8ECFF),
+              child: Icon(icon, size: 28, color: const Color(0xFF2F3FB0)),
+            ),
+            const SizedBox(height: 12),
+            Text(message, textAlign: TextAlign.center),
+          ],
+        ),
       ),
     ),
   );
+
   Widget _errorPanel() => Center(
     child: Padding(
       padding: const EdgeInsets.all(24),
@@ -593,6 +1196,7 @@ class _HomePageState extends State<HomePage> {
         builder: (_) => NotificationsPage(
           api: _api,
           condominiumId: (_condominium?['id'] as num?)?.toInt(),
+          onInvitationChanged: _load,
         ),
       ),
     );
@@ -600,43 +1204,88 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _showMoreMenus() async {
-    final entries = <(String, String, IconData)>[
-      ('Áreas comuns', '/condominiums/{id}/common-areas', Icons.deck_outlined),
-      ('Planos', '/billing/plans?page=0&size=50', Icons.receipt_long_outlined),
+    final entries = <(String, String, IconData, String)>[
+      (
+        'Áreas comuns',
+        '/condominiums/{id}/common-areas',
+        Icons.deck_outlined,
+        'Espaços disponíveis para lazer e reservas',
+      ),
+      (
+        'Planos comerciais',
+        '/billing/plans?page=0&size=50',
+        Icons.receipt_long_outlined,
+        'Planos e recursos ativos no condomínio',
+      ),
       if (_canManage) ...[
-        ('Setores', '/sectors?page=0&size=50', Icons.domain_outlined),
-        ('Unidades', '/units?page=0&size=50', Icons.home_work_outlined),
-        ('Moradores', '/residents?page=0&size=50', Icons.groups_outlined),
         (
-          'Vínculos',
+          'Setores e blocos',
+          '/sectors?page=0&size=50',
+          Icons.domain_outlined,
+          'Blocos, torres e quadras do condomínio',
+        ),
+        (
+          'Unidades residenciais',
+          '/units?page=0&size=50',
+          Icons.home_work_outlined,
+          'Apartamentos e casas cadastradas',
+        ),
+        (
+          'Moradores',
+          '/residents?page=0&size=50',
+          Icons.groups_outlined,
+          'Cadastro de moradores por unidade',
+        ),
+        (
+          'Vínculos e acessos',
           '/memberships?page=0&size=50',
           Icons.admin_panel_settings_outlined,
+          'Permissões de moradores, porteiros e síndicos',
         ),
       ],
     ];
-    final selected = await showModalBottomSheet<(String, String, IconData)>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const ListTile(
-              title: Text(
-                'Outros menus',
-                style: TextStyle(fontWeight: FontWeight.bold),
+    final selected =
+        await showModalBottomSheet<(String, String, IconData, String)>(
+          context: context,
+          builder: (context) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  const ListTile(
+                    title: Text(
+                      'Mais serviços do condomínio',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Selecione uma área para consultar os registros detalhados',
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ...entries.map(
+                    (entry) => ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFFE8ECFF),
+                        child: Icon(entry.$3, color: const Color(0xFF2F3FB0)),
+                      ),
+                      title: Text(
+                        entry.$1,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(entry.$4),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.pop(context, entry),
+                    ),
+                  ),
+                ],
               ),
             ),
-            ...entries.map(
-              (entry) => ListTile(
-                leading: Icon(entry.$3),
-                title: Text(entry.$1),
-                onTap: () => Navigator.pop(context, entry),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+          ),
+        );
     if (selected == null || !mounted) return;
     final path = selected.$2.replaceAll('{id}', '${_condominium?['id']}');
     Navigator.of(context).push(
@@ -648,70 +1297,119 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _createReservation() async {
-    try {
-      final id = _condominium?['id'];
-      final areas = _list(await _api.get('/condominiums/$id/common-areas'));
-      if (!mounted) return;
-      if (areas.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Não há áreas comuns disponíveis.')),
-        );
-        return;
-      }
-      final area = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (context) => SimpleDialog(
-          title: const Text('Escolha uma área'),
-          children: areas
-              .map(
-                (a) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, a),
-                  child: Text(_text(a['name'])),
-                ),
-              )
-              .toList(),
+    if (_condominium == null) return;
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (context) => CommonAreaBookingDialog(
+        api: _communityApi,
+        condominiumId: _condominium!['id'],
+      ),
+    );
+    if (created == true) {
+      _load();
+    }
+  }
+
+  Future<void> _openJoinCondominiumDialog() async {
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (context) => JoinCondominiumDialog(api: _communityApi),
+    );
+    if (sent == true) {
+      _load();
+    }
+  }
+
+  Future<void> _openPaymentDialog() async {
+    if (_condominium == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => UnitPaymentConfirmationDialog(
+        api: _communityApi,
+        condominiumId: _condominium!['id'],
+      ),
+    );
+    _load();
+  }
+
+  Future<void> _openExpectedPackageDialog() async {
+    if (_condominium == null) return;
+    final desc = TextEditingController();
+    final tracking = TextEditingController();
+    final sender = TextEditingController();
+
+    final unitId = _memberships.isNotEmpty ? (_memberships.first['unitId'] as num?)?.toInt() : null;
+    if (unitId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sua conta precisa estar vinculada a uma unidade para pré-cadastrar encomenda.')),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Avisar Encomenda Prevista'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Cadastre o pacote previsto para a portaria já saber de quem se trata na entrega.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+              const SizedBox(height: 12),
+              TextField(
+                controller: desc,
+                decoration: const InputDecoration(labelText: 'Descrição do pacote *', hintText: 'Ex: Livros da Amazon / Suplementos'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: tracking,
+                decoration: const InputDecoration(labelText: 'Código de rastreio (opcional)', hintText: 'Ex: BR123456789BR'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: sender,
+                decoration: const InputDecoration(labelText: 'Remetente / Transportadora', hintText: 'Ex: Mercado Livre / Total Express'),
+              ),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Salvar Aviso')),
+        ],
+      ),
+    );
+
+    if (ok == true && desc.text.trim().isNotEmpty) {
+      await _communityApi.registerExpectedPackage(
+        condoId: _condominium!['id'],
+        unitId: unitId,
+        description: desc.text.trim(),
+        trackingCode: tracking.text.trim().isEmpty ? null : tracking.text.trim(),
+        sender: sender.text.trim().isEmpty ? null : sender.text.trim(),
       );
-      if (area == null || !mounted) return;
-      final tomorrow = DateTime.now().add(const Duration(days: 1));
-      final selectedDate = await showDatePicker(
-        context: context,
-        initialDate: tomorrow,
-        firstDate: DateTime.now(),
-        lastDate: DateTime.now().add(const Duration(days: 365)),
-      );
-      if (selectedDate == null || !mounted) return;
-      final selectedTime = await showTimePicker(
-        context: context,
-        initialTime: const TimeOfDay(hour: 14, minute: 0),
-      );
-      if (selectedTime == null || !mounted) return;
-      final start = DateTime(
-        selectedDate.year,
-        selectedDate.month,
-        selectedDate.day,
-        selectedTime.hour,
-        selectedTime.minute,
-      );
-      await _api.send(
-        'POST',
-        '/common-areas/${area['id']}/reservations',
-        body: {
-          'startAt': start.toIso8601String(),
-          'endAt': start.add(const Duration(hours: 2)).toIso8601String(),
-        },
-      );
-      await _load();
+      _load();
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Reserva criada.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Encomenda prevista cadastrada com sucesso!')),
+        );
       }
-    } catch (error) {
+    }
+  }
+
+  Future<void> _requestPickup(num packageId) async {
+    try {
+      await _communityApi.requestPackagePickup(packageId);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Portaria avisada que você está a caminho para retirar a encomenda!')),
+        );
+      }
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
       }
     }
   }
@@ -724,6 +1422,11 @@ class _HomePageState extends State<HomePage> {
     try {
       await _api.send('PATCH', '/reservations/$id/cancel');
       await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Reserva cancelada.')));
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -751,6 +1454,7 @@ class _CollectionPage extends StatefulWidget {
 
 class _CollectionPageState extends State<_CollectionPage> {
   late Future<dynamic> _data;
+  String _query = '';
 
   @override
   void initState() {
@@ -785,7 +1489,7 @@ class _CollectionPageState extends State<_CollectionPage> {
         return value.toString();
       }
     }
-    return 'Registro ${item['id'] ?? ''}';
+    return 'Registro sem identificação';
   }
 
   @override
@@ -794,9 +1498,9 @@ class _CollectionPageState extends State<_CollectionPage> {
       title: Text(widget.title),
       actions: [
         IconButton(
-          tooltip: 'Atualizar',
+          tooltip: 'Atualizar lista',
           onPressed: _refresh,
-          icon: const Icon(Icons.refresh),
+          icon: const Icon(Icons.refresh_rounded),
         ),
       ],
     ),
@@ -824,33 +1528,74 @@ class _CollectionPageState extends State<_CollectionPage> {
             ),
           );
         }
-        final items = _items(snapshot.data);
+        final items = _items(
+          snapshot.data,
+        ).where((item) => recordMatchesQuery(item, _query)).toList();
         if (items.isEmpty) {
-          return const Center(child: Text('Nenhum registro encontrado.'));
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: EnterSearchField(
+                  onSubmitted: (query) => setState(() => _query = query),
+                ),
+              ),
+              const Expanded(
+                child: Center(child: Text('Nenhum registro encontrado.')),
+              ),
+            ],
+          );
         }
         return RefreshIndicator(
           onRefresh: () async => _refresh(),
-          child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              final details = item.entries
-                  .where((entry) => entry.value != null && entry.key != 'id')
-                  .map((entry) => '${entry.key}: ${entry.value}')
-                  .join('\n');
-              return Card(
-                child: ListTile(
-                  title: Text(_title(item)),
-                  subtitle: Text(
-                    details,
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 780),
+              child: ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  EnterSearchField(
+                    onSubmitted: (query) => setState(() => _query = query),
                   ),
-                  trailing: Text('#${item['id'] ?? ''}'),
-                ),
-              );
-            },
+                  const SizedBox(height: 12),
+                  ...items.map((item) {
+                    return Card(
+                      child: ListTile(
+                        onTap: () => showRecordDetailsDialog(
+                          context: context,
+                          resource: widget.title,
+                          item: item,
+                          api: widget.api,
+                        ),
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFFE8ECFF),
+                          child: Icon(
+                            Icons.article_outlined,
+                            color: Color(0xFF2F3FB0),
+                          ),
+                        ),
+                        title: Text(
+                          _title(item),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: const Text(
+                          'Toque para abrir a ficha detalhada',
+                        ),
+                        trailing: OutlinedButton(
+                          onPressed: () => showRecordDetailsDialog(
+                            context: context,
+                            resource: widget.title,
+                            item: item,
+                            api: widget.api,
+                          ),
+                          child: const Text('Detalhes'),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
           ),
         );
       },

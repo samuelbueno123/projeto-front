@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 
+import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../home/data/home_service.dart';
 import '../widgets/google_login_button.dart';
 
@@ -142,7 +143,10 @@ class _UserProfilePageState extends State<UserProfilePage> {
           controller: controller,
           obscureText: true,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Senha atual'),
+          decoration: const InputDecoration(
+            labelText: 'Sua senha atual',
+            prefixIcon: Icon(Icons.lock_outline),
+          ),
           onSubmitted: (value) => Navigator.pop(context, value),
         ),
         actions: [
@@ -170,8 +174,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
       );
       if (file == null) return;
       final bytes = await file.readAsBytes();
-      if (bytes.length > 1024 * 1024) {
-        _message('Escolha uma imagem de até 1 MB.');
+      if (bytes.length > 5 * 1024 * 1024) {
+        _message('Escolha uma imagem de até 5 MB.');
         return;
       }
       final extension = file.name.toLowerCase().split('.').last;
@@ -188,10 +192,14 @@ class _UserProfilePageState extends State<UserProfilePage> {
     }
   }
 
+  Future<void> _removeImage() async {
+    setState(() => _profileImage = null);
+  }
+
   Future<void> _saveProfile() async {
     final parts = _name.text.trim().split(RegExp(r'\s+'));
     if (parts.isEmpty || parts.first.isEmpty || !_email.text.contains('@')) {
-      _message('Informe um nome e um email válidos.');
+      _message('Informe um nome e um e-mail válidos.');
       return;
     }
     final changingEmail =
@@ -200,7 +208,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
     String? password;
     String? googleIdToken;
     if (changingEmail) {
-      final proof = await _reauthenticate(action: 'alterar o email');
+      final proof = await _reauthenticate(action: 'alterar o e-mail');
       if (proof == null) return;
       if (widget.provider == 'google') {
         googleIdToken = proof;
@@ -222,6 +230,12 @@ class _UserProfilePageState extends State<UserProfilePage> {
           'googleIdToken': googleIdToken,
         },
       );
+      final updatedProfile = await _api.get('/users/me') as Map<String, dynamic>;
+      if (mounted) {
+        setState(() {
+          _profileImage = updatedProfile['profileImage'] as String?;
+        });
+      }
       if (changingEmail) {
         if (widget.provider == 'google') {
           await widget.refreshGoogleSession();
@@ -229,7 +243,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
           await widget.refreshWithCredentials(_email.text.trim(), password!);
         }
       }
-      _message('Perfil atualizado.');
+      _message('Seus dados foram atualizados com sucesso!');
       if (changingEmail) widget.onClose();
     } catch (error) {
       _message('Não foi possível salvar o perfil: $error');
@@ -245,31 +259,42 @@ class _UserProfilePageState extends State<UserProfilePage> {
     final values = await showDialog<List<String>?>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Alterar senha'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.provider != 'google')
+        title: const Text('Alterar senha de acesso'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.provider != 'google') ...[
+                TextField(
+                  controller: currentPassword,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Senha atual',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
-                controller: currentPassword,
+                controller: newPassword,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: 'Senha atual'),
+                decoration: const InputDecoration(
+                  labelText: 'Nova senha (mín. 8 caracteres)',
+                  prefixIcon: Icon(Icons.key_outlined),
+                ),
               ),
-            TextField(
-              controller: newPassword,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Nova senha (mín. 8 caracteres)',
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmation,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Confirme a nova senha',
+                  prefixIcon: Icon(Icons.verified_user_outlined),
+                ),
               ),
-            ),
-            TextField(
-              controller: confirmation,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Confirme a nova senha',
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -282,7 +307,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
               newPassword.text,
               confirmation.text,
             ]),
-            child: const Text('Salvar'),
+            child: const Text('Atualizar senha'),
           ),
         ],
       ),
@@ -310,7 +335,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       } else {
         await widget.refreshWithCredentials(_email.text.trim(), values[1]);
       }
-      _message('Senha alterada.');
+      _message('Senha alterada com sucesso!');
       widget.onClose();
     } catch (error) {
       _message('Não foi possível alterar a senha: $error');
@@ -322,135 +347,226 @@ class _UserProfilePageState extends State<UserProfilePage> {
     }
   }
 
-  ImageProvider? get _avatarImage {
-    final image = _profileImage;
-    if (image == null || image.isEmpty) return null;
-    try {
-      if (image.startsWith('data:')) {
-        return MemoryImage(base64Decode(image.split(',').last));
-      }
-      return NetworkImage(image);
-    } catch (_) {
-      return null;
-    }
-  }
+  ImageProvider? get _avatarImage => resolveAvatarImageProvider(_profileImage);
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFFF7F8FC),
     appBar: AppBar(
-      title: const Text('Minha conta'),
-      backgroundColor: const Color(0xFF2F3FB0),
-      foregroundColor: Colors.white,
+      title: const Text('Meu perfil e conta'),
       leading: IconButton(
         tooltip: 'Voltar',
         onPressed: widget.onClose,
-        icon: const Icon(Icons.arrow_back),
+        icon: const Icon(Icons.arrow_back_rounded),
       ),
     ),
     body: _loading
         ? const Center(child: CircularProgressIndicator())
-        : ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      Stack(
-                        alignment: Alignment.bottomRight,
+        : Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
                         children: [
-                          CircleAvatar(
-                            radius: 52,
-                            backgroundImage: _avatarImage,
-                            child: _avatarImage == null
-                                ? const Icon(Icons.person, size: 48)
-                                : null,
+                          Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              GestureDetector(
+                                onTap:
+                                    (_profileImage != null &&
+                                        _profileImage!.trim().isNotEmpty)
+                                    ? () => showFullScreenImage(
+                                        context,
+                                        imageSource: _profileImage!,
+                                        title: _name.text,
+                                      )
+                                    : null,
+                                child: CircleAvatar(
+                                  radius: 54,
+                                  backgroundColor: const Color(0xFFE0E7FF),
+                                  backgroundImage: _avatarImage,
+                                  child: _avatarImage == null
+                                      ? const Icon(
+                                          Icons.person_rounded,
+                                          size: 52,
+                                          color: Color(0xFF2F3FB0),
+                                        )
+                                      : null,
+                                ),
+                              ),
+                              IconButton.filled(
+                                onPressed: _pickImage,
+                                tooltip: 'Alterar foto de perfil',
+                                icon: const Icon(Icons.camera_alt_outlined),
+                              ),
+                            ],
                           ),
-                          IconButton.filled(
-                            onPressed: _pickImage,
-                            tooltip: 'Trocar foto',
-                            icon: const Icon(Icons.camera_alt),
+                          if (_profileImage != null &&
+                              _profileImage!.trim().isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (_profileImage!.startsWith('media/pictures/'))
+                                  Chip(
+                                    avatar: const Icon(
+                                      Icons.folder_outlined,
+                                      size: 16,
+                                    ),
+                                    label: Text(
+                                      _profileImage!,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                TextButton.icon(
+                                  onPressed: _removeImage,
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Remover foto'),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          Text(
+                            _name.text.isEmpty ? 'Seu perfil' : _name.text,
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _email.text,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8ECFF),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              widget.provider == 'google'
+                                  ? 'Conectado via Google'
+                                  : 'Acesso por e-mail e senha',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF2F3FB0),
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _name.text.isEmpty ? 'Seu perfil' : _name.text,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      Text(
-                        _email.text,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Dados da conta',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _name,
-                        decoration: const InputDecoration(
-                          labelText: 'Nome completo',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _email,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton.icon(
-                        onPressed: _saving ? null : _saveProfile,
-                        icon: const Icon(Icons.save_outlined),
-                        label: Text(_saving ? 'Salvando…' : 'Salvar perfil'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.lock_outline),
-                      title: const Text('Alterar senha'),
-                      subtitle: Text(
-                        widget.provider == 'google'
-                            ? 'Confirme sua conta Google para continuar'
-                            : 'Confirme sua senha atual para continuar',
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _saving ? null : _changePassword,
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.logout, color: Colors.red),
-                      title: const Text('Sair da conta'),
-                      onTap: _saving ? null : widget.onLogout,
+                  ),
+                  const SizedBox(height: 10),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Informações pessoais',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'As fotos de perfil são salvas no servidor em media/pictures e apenas o caminho é registrado no banco de dados.',
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _name,
+                            decoration: const InputDecoration(
+                              labelText: 'Nome de exibição',
+                              prefixIcon: Icon(Icons.badge_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _email,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
+                              labelText: 'E-mail da conta',
+                              prefixIcon: Icon(Icons.alternate_email_rounded),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          FilledButton.icon(
+                            onPressed: _saving ? null : _saveProfile,
+                            icon: const Icon(Icons.save_outlined),
+                            label: Text(
+                              _saving
+                                  ? 'Salvando alterações…'
+                                  : 'Salvar alterações',
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 10),
+                  Card(
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFE8ECFF),
+                            child: Icon(
+                              Icons.lock_outline_rounded,
+                              color: Color(0xFF2F3FB0),
+                            ),
+                          ),
+                          title: const Text(
+                            'Alterar minha senha',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            widget.provider == 'google'
+                                ? 'Confirme sua conta Google para definir uma nova senha'
+                                : 'Confirme sua senha atual para atualizar o acesso',
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: _saving ? null : _changePassword,
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFFEE2E2),
+                            child: Icon(
+                              Icons.logout_rounded,
+                              color: Color(0xFFDC2626),
+                            ),
+                          ),
+                          title: const Text(
+                            'Sair da conta',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFDC2626),
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Encerrar sessão atual neste dispositivo',
+                          ),
+                          onTap: _saving ? null : widget.onLogout,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
   );
 }
