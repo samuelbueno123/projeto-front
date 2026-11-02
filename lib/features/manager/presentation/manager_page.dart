@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/enter_search_field.dart';
+import '../../../core/widgets/role_switcher_pill.dart';
 import '../../community/data/community_api.dart';
+import '../../community/presentation/dialogs/counter_proposal_dialog.dart';
+import '../../community/presentation/dialogs/generate_boleto_dialog.dart';
+import '../../community/presentation/dialogs/plan_selection_dialog.dart';
 import '../../community/presentation/views/community_hub_view.dart';
+import '../../community/presentation/views/condominium_gallery_view.dart';
 import '../../announcements/presentation/announcement_composer.dart';
 import '../../directory/presentation/unit_directory.dart';
 import '../../home/data/home_service.dart';
@@ -17,11 +23,17 @@ class ManagerPage extends StatefulWidget {
     required this.token,
     required this.userName,
     required this.onLogout,
+    this.currentRole,
+    this.availableRoles = const [],
+    this.onSwitchRole,
   });
 
   final String? token;
   final String? userName;
   final Future<void> Function() onLogout;
+  final String? currentRole;
+  final List<String> availableRoles;
+  final ValueChanged<String>? onSwitchRole;
 
   @override
   State<ManagerPage> createState() => _ManagerPageState();
@@ -77,14 +89,36 @@ class _ManagerPageState extends State<ManagerPage> {
       _error = null;
     });
     try {
-      final result = await _api.get(
-        '/manager/dashboard?condominiumId=$_selected',
-      );
+      final results = await Future.wait([
+        _api.get('/manager/dashboard?condominiumId=$_selected'),
+        _api.get('/condominiums/$_selected'),
+      ]);
+      final result = results[0];
+      final condoData = results[1] is Map<String, dynamic> ? results[1] as Map<String, dynamic> : null;
+
       if (mounted) {
         setState(() {
           _dashboard = result as Map<String, dynamic>;
           _loading = false;
         });
+
+        if (condoData != null && condoData['planSelected'] != true) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) return;
+            await showDialog<void>(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => PlanSelectionDialog(
+                condominiumId: _selected!,
+                condominiumName: condoData['name']?.toString() ?? 'Seu Condomínio',
+                api: _communityApi,
+                onPlanSelected: () {
+                  _load();
+                },
+              ),
+            );
+          });
+        }
       }
     } catch (error) {
       if (mounted) {
@@ -94,6 +128,43 @@ class _ManagerPageState extends State<ManagerPage> {
         });
       }
     }
+  }
+
+  Future<void> _openGallery() async {
+    final condoId = _selected;
+    if (condoId == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Galeria de Fotos do Condomínio')),
+          body: CondominiumGalleryView(
+            condominiumId: condoId,
+            api: _communityApi,
+            canManage: true,
+          ),
+        ),
+      ),
+    );
+    if (mounted) _load();
+  }
+
+  Future<void> _generateBoleto() async {
+    final condoId = _selected;
+    if (condoId == null) return;
+    final units = (_dashboard?['units'] is List)
+        ? (_dashboard!['units'] as List).whereType<Map<String, dynamic>>().toList()
+        : <Map<String, dynamic>>[];
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => GenerateBoletoDialog(
+        condominiumId: condoId,
+        units: units,
+        api: _communityApi,
+        onGenerated: () {
+          _load();
+        },
+      ),
+    );
   }
 
   List<Map<String, dynamic>> _dashboardRecords(String key) {
@@ -144,6 +215,7 @@ class _ManagerPageState extends State<ManagerPage> {
           body: CommunityHubView(
             api: _communityApi,
             condominiumId: condoId,
+            canManage: true,
           ),
         ),
       ),
@@ -290,11 +362,149 @@ class _ManagerPageState extends State<ManagerPage> {
     }
   }
 
+  String _selectedCondoName() {
+    final condo = _condos.firstWhere(
+      (c) => c['condominiumId'] == _selected,
+      orElse: () => {},
+    );
+    return condo['condominiumName']?.toString() ?? 'Condomínio';
+  }
+
+  Future<void> _openReportsMenu() async {
+    if (_selected == null) return;
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+      final report = await _api.get('/condominiums/$_selected/reports/dashboard');
+      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+
+      final packages = report is Map ? report['packages'] : null;
+      final reservations = report is Map ? report['reservations'] : null;
+      final announcements = report is Map ? report['activeAnnouncements'] ?? 0 : 0;
+
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.assessment_outlined, color: Color(0xFF2F3FB0)),
+              SizedBox(width: 10),
+              Text('Relatório de Gestão'),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Resumo — ${_selectedCondoName()}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  _reportRow('📦 Encomendas Registradas', '${packages is Map ? packages['total'] ?? 0 : 0}'),
+                  _reportRow('📬 Encomendas Aguardando', '${packages is Map ? packages['pending'] ?? 0 : 0}'),
+                  _reportRow('✅ Encomendas Entregues', '${packages is Map ? packages['delivered'] ?? 0 : 0}'),
+                  const Divider(height: 20),
+                  _reportRow('📅 Total de Reservas', '${reservations is Map ? reservations['total'] ?? 0 : 0}'),
+                  _reportRow('⏳ Reservas Aguardando', '${reservations is Map ? reservations['pending'] ?? 0 : 0}'),
+                  _reportRow('🎉 Reservas Confirmadas', '${reservations is Map ? reservations['confirmed'] ?? 0 : 0}'),
+                  const Divider(height: 20),
+                  _reportRow('📢 Comunicados Ativos', '$announcements'),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Fechar'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                final text = '''
+====================================
+RELATÓRIO DE GESTÃO CONDOMINIAL
+Condomínio: ${_selectedCondoName()}
+Data de Emissão: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
+====================================
+ENCOMENDAS:
+- Total: ${packages is Map ? packages['total'] ?? 0 : 0}
+- Aguardando retirada: ${packages is Map ? packages['pending'] ?? 0 : 0}
+- Entregues: ${packages is Map ? packages['delivered'] ?? 0 : 0}
+
+RESERVAS:
+- Total: ${reservations is Map ? reservations['total'] ?? 0 : 0}
+- Aguardando aprovação: ${reservations is Map ? reservations['pending'] ?? 0 : 0}
+- Confirmadas: ${reservations is Map ? reservations['confirmed'] ?? 0 : 0}
+
+COMUNICADOS ATIVOS: $announcements
+====================================
+Emitido via Âncora Gestão
+''';
+                Clipboard.setData(ClipboardData(text: text));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Relatório copiado com sucesso!'),
+                    backgroundColor: Color(0xFF15803D),
+                  ),
+                );
+                Navigator.pop(ctx);
+              },
+              icon: const Icon(Icons.copy_rounded, size: 16),
+              label: const Text('Copiar Relatório'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível carregar o relatório: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _reportRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 13.5)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: const Text('Painel do Síndico'),
       actions: [
+        if (widget.currentRole != null && widget.onSwitchRole != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+            child: RoleSwitcherPill(
+              currentRole: widget.currentRole!,
+              availableRoles: widget.availableRoles,
+              onSwitchRole: widget.onSwitchRole!,
+              isLight: true,
+            ),
+          ),
+        IconButton(
+          tooltip: 'Relatórios de gestão',
+          onPressed: _selected == null ? null : _openReportsMenu,
+          icon: const Icon(Icons.assessment_outlined),
+        ),
         IconButton(
           tooltip: 'Publicar comunicado',
           onPressed: _selected == null ? null : _sendAnnouncement,
@@ -357,7 +567,7 @@ class _ManagerPageState extends State<ManagerPage> {
             onRefresh: _load,
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 880),
+                constraints: const BoxConstraints(maxWidth: 1200),
                 child: ListView(
                   padding: const EdgeInsets.all(20),
                   children: [
@@ -388,40 +598,63 @@ class _ManagerPageState extends State<ManagerPage> {
                             style: TextStyle(color: Colors.white70),
                           ),
                           const SizedBox(height: 16),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: [
-                              FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: const Color(0xFF2F3FB0),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: const Color(0xFF2F3FB0),
+                                  ),
+                                  onPressed: _openMemberships,
+                                  icon: const Icon(Icons.group_add_outlined),
+                                  label: const Text(
+                                    'Convidar moradores e porteiros',
+                                  ),
                                 ),
-                                onPressed: _openMemberships,
-                                icon: const Icon(Icons.group_add_outlined),
-                                label: const Text(
-                                  'Convidar moradores e porteiros',
+                                const SizedBox(width: 10),
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFFFEF3C7),
+                                    foregroundColor: const Color(0xFFB45309),
+                                  ),
+                                  onPressed: _sendAnnouncement,
+                                  icon: const Icon(Icons.campaign_outlined),
+                                  label: const Text('Enviar comunicado'),
                                 ),
-                              ),
-                              FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFFFEF3C7),
-                                  foregroundColor: const Color(0xFFB45309),
+                                const SizedBox(width: 10),
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFFDCFCE7),
+                                    foregroundColor: const Color(0xFF15803D),
+                                  ),
+                                  onPressed: _openCommunityHub,
+                                  icon: const Icon(Icons.diversity_3_outlined),
+                                  label: const Text('Comunidade & Chamados'),
                                 ),
-                                onPressed: _sendAnnouncement,
-                                icon: const Icon(Icons.campaign_outlined),
-                                label: const Text('Enviar comunicado'),
-                              ),
-                              FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFFDCFCE7),
-                                  foregroundColor: const Color(0xFF15803D),
+                                const SizedBox(width: 10),
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF3E8FF),
+                                    foregroundColor: const Color(0xFF7C3AED),
+                                  ),
+                                  onPressed: _openGallery,
+                                  icon: const Icon(Icons.photo_library_outlined),
+                                  label: const Text('Galeria de Fotos'),
                                 ),
-                                onPressed: _openCommunityHub,
-                                icon: const Icon(Icons.diversity_3_outlined),
-                                label: const Text('Comunidade & Chamados'),
-                              ),
-                            ],
+                                const SizedBox(width: 10),
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFFE0E7FF),
+                                    foregroundColor: const Color(0xFF2563EB),
+                                  ),
+                                  onPressed: _openReportsMenu,
+                                  icon: const Icon(Icons.assessment_outlined),
+                                  label: const Text('Relatórios de Gestão'),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -493,9 +726,19 @@ class _ManagerPageState extends State<ManagerPage> {
                       onSubmitted: (query) => setState(() => _query = query),
                     ),
                     const SizedBox(height: 22),
-                    Text(
-                      'Situação financeira das unidades',
-                      style: Theme.of(context).textTheme.titleLarge,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Situação financeira das unidades',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        FilledButton.icon(
+                          onPressed: _generateBoleto,
+                          icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                          label: const Text('Gerar Boleto'),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     if (_dashboardRecords('units').isEmpty)
@@ -870,37 +1113,115 @@ class _ManagerReservationsMenuPageState
                       ),
                       isThreeLine: true,
                       trailing: status == 'PENDING'
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF15803D),
-                                    foregroundColor: Colors.white,
+                          ? SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFF15803D),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    ),
+                                    onPressed: () async {
+                                      await widget.api.send('PATCH', '/reservations/${reservation['id']}/approve');
+                                      if (context.mounted) Navigator.pop(context);
+                                    },
+                                    icon: const Icon(Icons.check, size: 16),
+                                    label: const Text('Aprovar'),
                                   ),
-                                  onPressed: () async {
-                                    await widget.api.send('PATCH', '/reservations/${reservation['id']}/approve');
-                                    if (context.mounted) Navigator.pop(context);
-                                  },
-                                  icon: const Icon(Icons.check, size: 16),
-                                  label: const Text('Aprovar'),
-                                ),
-                                const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFFDC2626),
-                                    side: const BorderSide(color: Color(0xFFFECACA)),
+                                  const SizedBox(width: 6),
+                                  FilledButton.tonalIcon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFFFEF3C7),
+                                      foregroundColor: const Color(0xFFB45309),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    ),
+                                    onPressed: () async {
+                                      final communityApi = CommunityApi(api: widget.api);
+                                      await showDialog<void>(
+                                        context: context,
+                                        builder: (ctx) => CounterProposalDialog(
+                                          reservation: reservation,
+                                          api: communityApi,
+                                          onSubmitted: () {
+                                            if (context.mounted) Navigator.pop(context);
+                                          },
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                                    label: const Text('Contraproposta'),
                                   ),
-                                  onPressed: () async {
-                                    await widget.api.send('PATCH', '/reservations/${reservation['id']}/reject');
-                                    if (context.mounted) Navigator.pop(context);
-                                  },
-                                  icon: const Icon(Icons.close, size: 16),
-                                  label: const Text('Recusar'),
-                                ),
-                              ],
+                                  const SizedBox(width: 6),
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFFDC2626),
+                                      side: const BorderSide(color: Color(0xFFFECACA)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    ),
+                                    onPressed: () async {
+                                      final reasonCtrl = TextEditingController();
+                                      final ok = await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text('Recusar Solicitação de Reserva'),
+                                          content: TextField(
+                                            controller: reasonCtrl,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Motivo da recusa (opcional)',
+                                              hintText: 'Ex: Espaço em manutenção no período.',
+                                            ),
+                                            maxLines: 2,
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(ctx, false),
+                                              child: const Text('Voltar'),
+                                            ),
+                                            FilledButton(
+                                              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+                                              onPressed: () => Navigator.pop(ctx, true),
+                                              child: const Text('Confirmar Recusa'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      if (ok == true) {
+                                        await widget.api.send(
+                                          'PATCH',
+                                          '/reservations/${reservation['id']}/reject',
+                                          body: reasonCtrl.text.trim().isNotEmpty
+                                              ? {'reason': reasonCtrl.text.trim()}
+                                              : null,
+                                        );
+                                        if (context.mounted) Navigator.pop(context);
+                                      }
+                                    },
+                                    icon: const Icon(Icons.close, size: 16),
+                                    label: const Text('Recusar'),
+                                  ),
+                                ],
+                              ),
                             )
-                          : null,
+                          : (status == 'COUNTER_PROPOSED'
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Text(
+                                    'Contraproposta enviada',
+                                    style: TextStyle(
+                                      color: Color(0xFFB45309),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                )
+                              : null),
                     ),
                   );
                 }),

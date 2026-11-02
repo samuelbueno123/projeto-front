@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/enter_search_field.dart';
 import '../../../core/widgets/full_screen_image_viewer.dart';
+import '../../../core/widgets/role_switcher_pill.dart';
 import '../../home/data/home_service.dart';
 import '../../auth/presentation/pages/user_profile_page.dart';
 import '../../manager/presentation/membership_management_page.dart';
@@ -23,6 +24,9 @@ class AdminPage extends StatefulWidget {
     required this.reauthenticateWithGoogle,
     required this.refreshWithCredentials,
     required this.refreshGoogleSession,
+    this.currentRole,
+    this.availableRoles = const [],
+    this.onSwitchRole,
   });
 
   final String? token;
@@ -34,6 +38,9 @@ class AdminPage extends StatefulWidget {
   final Future<void> Function(String email, String password)
   refreshWithCredentials;
   final Future<void> Function() refreshGoogleSession;
+  final String? currentRole;
+  final List<String> availableRoles;
+  final ValueChanged<String>? onSwitchRole;
 
   @override
   State<AdminPage> createState() => _AdminPageState();
@@ -216,6 +223,15 @@ class _AdminPageState extends State<AdminPage> {
       backgroundColor: const Color(0xFF2F3FB0),
       foregroundColor: Colors.white,
       actions: [
+        if (widget.currentRole != null && widget.onSwitchRole != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+            child: RoleSwitcherPill(
+              currentRole: widget.currentRole!,
+              availableRoles: widget.availableRoles,
+              onSwitchRole: widget.onSwitchRole!,
+            ),
+          ),
         IconButton(
           tooltip: 'Criar entrada no banco',
           onPressed: _openCreateAnyEntityMenu,

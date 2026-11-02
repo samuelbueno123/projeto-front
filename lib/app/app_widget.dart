@@ -20,13 +20,17 @@ class AppWidget extends StatefulWidget {
 
 class _AppWidgetState extends State<AppWidget> {
   late final AuthController _authController;
+  String? _overrideRoleView;
 
   @override
   void initState() {
     super.initState();
     _authController = AuthController();
     _authController.addListener(_handleControllerChange);
-    HttpClientWrapper.onUnauthorized = _authController.signOut;
+    HttpClientWrapper.onUnauthorized = () {
+      _overrideRoleView = null;
+      _authController.signOut();
+    };
     _authController.bootstrap();
   }
 
@@ -43,13 +47,31 @@ class _AppWidgetState extends State<AppWidget> {
     setState(() {});
   }
 
+  void _switchRole(String role) {
+    setState(() {
+      _overrideRoleView = role;
+    });
+  }
+
+  Future<void> _handleLogout() async {
+    _overrideRoleView = null;
+    await _authController.signOut();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Âncora Gestão',
-      theme: AppTheme.light(),
-      home: _buildHome(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppTheme.themeModeNotifier,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Âncora Gestão',
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: themeMode,
+          home: _buildHome(),
+        );
+      },
     );
   }
 
@@ -60,46 +82,63 @@ class _AppWidgetState extends State<AppWidget> {
 
     if (_authController.isAuthenticated) {
       final session = _authController.session;
-      if (_isAdministrator(session?.token)) {
-        return AdminPage(
-          token: session?.token,
-          userName: session?.userName,
-          userEmail: session?.userEmail,
-          authProvider: session?.provider ?? 'password',
-          reauthenticateWithGoogle: _authController.reauthenticateWithGoogle,
-          refreshWithCredentials: (email, password) => _authController
-              .refreshAfterCredentialChange(email: email, password: password),
-          refreshGoogleSession:
-              _authController.refreshGoogleAfterCredentialChange,
-          onLogout: _authController.signOut,
-        );
+      final token = session?.token;
+      final availableRoles = _getAvailableRoles(token);
+      final effectiveRole = _determineEffectiveRole(token);
+
+      switch (effectiveRole) {
+        case 'ADMIN':
+          return AdminPage(
+            token: token,
+            userName: session?.userName,
+            userEmail: session?.userEmail,
+            authProvider: session?.provider ?? 'password',
+            reauthenticateWithGoogle: _authController.reauthenticateWithGoogle,
+            refreshWithCredentials: (email, password) => _authController
+                .refreshAfterCredentialChange(email: email, password: password),
+            refreshGoogleSession:
+                _authController.refreshGoogleAfterCredentialChange,
+            onLogout: _handleLogout,
+            currentRole: effectiveRole,
+            availableRoles: availableRoles,
+            onSwitchRole: _switchRole,
+          );
+        case 'MANAGER':
+          return ManagerPage(
+            token: token,
+            userName: session?.userName,
+            onLogout: _handleLogout,
+            currentRole: effectiveRole,
+            availableRoles: availableRoles,
+            onSwitchRole: _switchRole,
+          );
+        case 'DOORMAN':
+          return DoormanPage(
+            token: token,
+            userName: session?.userName,
+            onLogout: _handleLogout,
+            currentRole: effectiveRole,
+            availableRoles: availableRoles,
+            onSwitchRole: _switchRole,
+          );
+        case 'RESIDENT':
+        default:
+          return HomePage(
+            onLogout: _handleLogout,
+            token: token,
+            userName: session?.userName,
+            userEmail: session?.userEmail,
+            authProvider: session?.provider ?? 'password',
+            reauthenticateWithGoogle: _authController.reauthenticateWithGoogle,
+            refreshWithCredentials: (email, password) => _authController
+                .refreshAfterCredentialChange(email: email, password: password),
+            refreshGoogleSession:
+                _authController.refreshGoogleAfterCredentialChange,
+            currentRole: effectiveRole,
+            availableRoles: availableRoles,
+            onSwitchRole: _switchRole,
+          );
       }
-      if (_isManager(session?.token)) {
-        return ManagerPage(
-          token: session?.token,
-          userName: session?.userName,
-          onLogout: _authController.signOut,
-        );
-      }
-      if (_isDoorman(session?.token)) {
-        return DoormanPage(
-          token: session?.token,
-          userName: session?.userName,
-          onLogout: _authController.signOut,
-        );
-      }
-      return HomePage(
-        onLogout: _authController.signOut,
-        token: session?.token,
-        userName: session?.userName,
-        userEmail: session?.userEmail,
-        authProvider: session?.provider ?? 'password',
-        reauthenticateWithGoogle: _authController.reauthenticateWithGoogle,
-        refreshWithCredentials: (email, password) => _authController
-            .refreshAfterCredentialChange(email: email, password: password),
-        refreshGoogleSession:
-            _authController.refreshGoogleAfterCredentialChange,
-      );
     }
 
     return LoginPage(
@@ -109,6 +148,42 @@ class _AppWidgetState extends State<AppWidget> {
       isLoading: _authController.isLoading,
       errorMessage: _authController.errorMessage,
     );
+  }
+
+  List<String> _getAvailableRoles(String? token) {
+    if (token == null) return const ['RESIDENT'];
+    try {
+      final claims = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))),
+      );
+      final authorities = claims is Map ? claims['authorities'] : null;
+      if (authorities is List) {
+        if (authorities.contains('ROLE_ADMIN')) {
+          return const ['ADMIN', 'MANAGER', 'DOORMAN', 'RESIDENT'];
+        }
+        final roles = <String>[];
+        if (authorities.contains('ROLE_MANAGER')) {
+          roles.add('MANAGER');
+        }
+        if (authorities.contains('ROLE_DOORMAN')) {
+          roles.add('DOORMAN');
+        }
+        roles.add('RESIDENT');
+        return roles.isNotEmpty ? roles : const ['RESIDENT'];
+      }
+    } catch (_) {}
+    return const ['RESIDENT'];
+  }
+
+  String _determineEffectiveRole(String? token) {
+    final available = _getAvailableRoles(token);
+    if (_overrideRoleView != null && available.contains(_overrideRoleView)) {
+      return _overrideRoleView!;
+    }
+    if (_isAdministrator(token)) return 'ADMIN';
+    if (_isManager(token)) return 'MANAGER';
+    if (_isDoorman(token)) return 'DOORMAN';
+    return 'RESIDENT';
   }
 
   bool _isAdministrator(String? token) {

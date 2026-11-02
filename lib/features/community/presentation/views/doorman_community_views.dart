@@ -1,3 +1,4 @@
+import '../dialogs/counter_proposal_dialog.dart';
 import 'package:flutter/material.dart';
 import '../../data/community_api.dart';
 
@@ -93,7 +94,29 @@ class _DoormanPlateCheckViewState extends State<DoormanPlateCheckView> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                const Text('Exemplos de placa: ', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                ...['RIO2A18', 'BRA3E24', 'ABC1234', 'XYZ9876'].map(
+                  (sample) => Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      label: Text(sample, style: const TextStyle(fontSize: 11)),
+                      padding: EdgeInsets.zero,
+                      onPressed: () {
+                        _plateController.text = sample;
+                        _search();
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           if (_error != null)
             Text(_error!, style: const TextStyle(color: Colors.red))
           else if (_result != null && !found)
@@ -646,5 +669,391 @@ class _DoormanLostFoundViewState extends State<DoormanLostFoundView> {
         ],
       ),
     );
+  }
+}
+
+
+// ----------------------------------------------------
+// 6. GESTÃO DE RESERVAS NA PORTARIA (APROVAÇÃO & CONTRAPROPOSTAS)
+// ----------------------------------------------------
+class DoormanReservationsView extends StatefulWidget {
+  const DoormanReservationsView({
+    super.key,
+    required this.api,
+    required this.condominiumId,
+  });
+
+  final CommunityApi api;
+  final num condominiumId;
+
+  @override
+  State<DoormanReservationsView> createState() => _DoormanReservationsViewState();
+}
+
+class _DoormanReservationsViewState extends State<DoormanReservationsView> {
+  List<Map<String, dynamic>> _reservations = [];
+  bool _loading = true;
+  String _filter = 'ALL'; // ALL, PENDING, CONFIRMED, COUNTER_PROPOSED
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final list = await widget.api.getCondominiumReservations(widget.condominiumId);
+      if (mounted) setState(() { _reservations = list; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_filter == 'ALL') return _reservations;
+    return _reservations.where((r) => r['status'] == _filter).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Reservas de Áreas Comuns (${_reservations.length})',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+              IconButton(
+                tooltip: 'Atualizar',
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+                onPressed: _load,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _filterChip('Todas', 'ALL'),
+                const SizedBox(width: 8),
+                _filterChip('Pendentes de Aprovação', 'PENDING'),
+                const SizedBox(width: 8),
+                _filterChip('Contraproposta Enviada', 'COUNTER_PROPOSED'),
+                const SizedBox(width: 8),
+                _filterChip('Confirmadas', 'CONFIRMED'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      _filter == 'PENDING'
+                          ? 'Nenhuma reserva aguardando aprovação.'
+                          : 'Nenhuma reserva encontrada.',
+                      style: const TextStyle(color: Color(0xFF64748B)),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: _filtered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, idx) {
+                      final r = _filtered[idx];
+                      final id = r['id'] as num;
+                      final area = r['commonAreaName'] ?? r['commonArea'] ?? 'Área';
+                      final resident = r['reservedByName'] ?? r['residentName'] ?? 'Morador';
+                      final phone = r['contactPhone'] ?? '';
+                      final status = r['status']?.toString() ?? 'PENDING';
+                      final startAt = r['startAt']?.toString() ?? '';
+                      final endAt = r['endAt']?.toString() ?? '';
+                      final notes = r['notes']?.toString();
+                      final counterNotes = r['counterProposalNotes']?.toString();
+                      final propStart = r['proposedStartAt']?.toString();
+
+                      return Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  CircleAvatar(
+                                    backgroundColor: status == 'CONFIRMED'
+                                        ? const Color(0xFFDCFCE7)
+                                        : status == 'COUNTER_PROPOSED'
+                                        ? const Color(0xFFFEF3C7)
+                                        : const Color(0xFFDBEAFE),
+                                    child: Icon(
+                                      status == 'CONFIRMED'
+                                          ? Icons.check_circle_rounded
+                                          : status == 'COUNTER_PROPOSED'
+                                          ? Icons.schedule_send_rounded
+                                          : Icons.hourglass_top_rounded,
+                                      color: status == 'CONFIRMED'
+                                          ? const Color(0xFF15803D)
+                                          : status == 'COUNTER_PROPOSED'
+                                          ? const Color(0xFFB45309)
+                                          : const Color(0xFF2563EB),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          area.toString(),
+                                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                                        ),
+                                        Text(
+                                          'Morador: $resident ${phone.isNotEmpty ? "• $phone" : ""}',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Horário: ${_formatDt(startAt)} até ${_formatDt(endAt)}',
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                        ),
+                                        if (notes != null && notes.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text('Observação: $notes', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                                        ],
+                                        if (status == 'COUNTER_PROPOSED' && counterNotes != null) ...[
+                                          const SizedBox(height: 6),
+                                          Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFEF3C7),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              'Contraproposta enviada: $counterNotes ${propStart != null ? "(${_formatDt(propStart)})" : ""}',
+                                              style: const TextStyle(color: Color(0xFFB45309), fontSize: 12, fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (status == 'PENDING') ...[
+                                const SizedBox(height: 14),
+                                const Divider(height: 1),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(0xFF15803D),
+                                        foregroundColor: Colors.white,
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      icon: const Icon(Icons.check_rounded, size: 16),
+                                      label: const Text('Aceitar Reserva'),
+                                      onPressed: () => _approve(id),
+                                    ),
+                                    FilledButton.tonalIcon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: const Color(0xFFFEF3C7),
+                                        foregroundColor: const Color(0xFFB45309),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      icon: const Icon(Icons.schedule_send_rounded, size: 16),
+                                      label: const Text('Contraproposta'),
+                                      onPressed: () => _openCounterProposal(r),
+                                    ),
+                                    OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      icon: const Icon(Icons.edit_rounded, size: 16),
+                                      label: const Text('Ajustar & Salvar'),
+                                      onPressed: () => _openModifyAndConfirm(r),
+                                    ),
+                                    TextButton.icon(
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: const Color(0xFFDC2626),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      icon: const Icon(Icons.close_rounded, size: 16),
+                                      label: const Text('Recusar'),
+                                      onPressed: () => _reject(id),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String label, String code) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: _filter == code,
+      onSelected: (val) {
+        if (val) setState(() => _filter = code);
+      },
+    );
+  }
+
+  String _formatDt(String raw) {
+    if (raw.isEmpty) return '—';
+    try {
+      final dt = DateTime.parse(raw).toLocal();
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  Future<void> _approve(num id) async {
+    try {
+      await widget.api.approveReservation(id);
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reserva aprovada com sucesso!'), backgroundColor: Color(0xFF15803D)),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+    }
+  }
+
+  Future<void> _reject(num id) async {
+    final ctrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Recusar solicitação de reserva?'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(labelText: 'Motivo da recusa (opcional)'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmar Recusa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      try {
+        await widget.api.rejectReservation(id, ctrl.text.trim());
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
+  }
+
+  Future<void> _openCounterProposal(Map<String, dynamic> r) async {
+    // Import do CounterProposalDialog
+    await showDialog(
+      context: context,
+      builder: (context) => CounterProposalDialog(
+        reservation: r,
+        api: widget.api,
+        onSubmitted: _load,
+      ),
+    );
+  }
+
+  Future<void> _openModifyAndConfirm(Map<String, dynamic> r) async {
+    final startCtrl = TextEditingController(text: r['startAt']?.toString() ?? '');
+    final endCtrl = TextEditingController(text: r['endAt']?.toString() ?? '');
+    final notesCtrl = TextEditingController(text: r['notes']?.toString() ?? '');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ajustar e Confirmar Diretamente'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: startCtrl,
+                decoration: const InputDecoration(labelText: 'Início (ISO ex: 2026-11-10T14:00:00)'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: endCtrl,
+                decoration: const InputDecoration(labelText: 'Fim (ISO ex: 2026-11-10T18:00:00)'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notesCtrl,
+                decoration: const InputDecoration(labelText: 'Observação do Porteiro'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmar Reserva'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final start = DateTime.parse(startCtrl.text.trim());
+        final end = DateTime.parse(endCtrl.text.trim());
+        await widget.api.modifyAndConfirmReservation(
+          reservationId: r['id'] as num,
+          startAt: start,
+          endAt: end,
+          notes: notesCtrl.text.trim(),
+        );
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
   }
 }

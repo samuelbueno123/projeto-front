@@ -3,8 +3,10 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/enter_search_field.dart';
+import '../../../../core/widgets/role_switcher_pill.dart';
 import '../../../announcements/presentation/announcement_composer.dart';
 import '../../../community/data/community_api.dart';
+import '../../../community/presentation/views/doorman_chat_view.dart';
 import '../../../community/presentation/views/doorman_community_views.dart';
 import '../../../directory/presentation/unit_directory.dart';
 import '../../../home/data/home_service.dart';
@@ -16,11 +18,17 @@ class DoormanPage extends StatefulWidget {
     required this.token,
     required this.userName,
     required this.onLogout,
+    this.currentRole,
+    this.availableRoles = const [],
+    this.onSwitchRole,
   });
 
   final String? token;
   final String? userName;
   final Future<void> Function() onLogout;
+  final String? currentRole;
+  final List<String> availableRoles;
+  final ValueChanged<String>? onSwitchRole;
 
   @override
   State<DoormanPage> createState() => _DoormanPageState();
@@ -28,7 +36,7 @@ class DoormanPage extends StatefulWidget {
 
 class _DoormanPageState extends State<DoormanPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 5, vsync: this);
+  late final TabController _tabs = TabController(length: 7, vsync: this);
   DirectoryApi? _directory;
   late final HomeService _api;
   late final CommunityApi _communityApi;
@@ -299,6 +307,78 @@ class _DoormanPageState extends State<DoormanPage>
     }
   }
 
+  Future<void> _quickPickupByPin() async {
+    final pinCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF0F766E)),
+            SizedBox(width: 10),
+            Text('Baixa por PIN ou QR Code'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Digite o código PIN (ou ID) informado pelo morador:',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: pinCtrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 4),
+              textAlign: TextAlign.center,
+              decoration: InputDecoration(
+                hintText: '000000',
+                hintStyle: const TextStyle(color: Colors.black26),
+                filled: true,
+                fillColor: const Color(0xFFF1F5F9),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0F766E)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirmar Retirada'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && pinCtrl.text.trim().isNotEmpty) {
+      final raw = pinCtrl.text.trim();
+      final parsedId = int.tryParse(raw);
+      final matching = _packages.firstWhere(
+        (p) => p['id'] == parsedId || p['id']?.toString() == raw || p['trackingCode']?.toString().toUpperCase() == raw.toUpperCase(),
+        orElse: () => {},
+      );
+      final targetId = (matching['id'] as num?)?.toInt() ?? parsedId;
+      if (targetId != null) {
+        try {
+          await _updatePackageStatus(targetId, 'pick-up');
+        } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Código PIN não encontrado para as encomendas deste condomínio.')),
+          );
+        }
+      }
+    }
+  }
+
   (String, Color, Color) _statusBadge(String? status) => switch (status) {
     'EXPECTED' => (
       'Aguardando chegada',
@@ -430,9 +510,26 @@ class _DoormanPageState extends State<DoormanPage>
             Tab(icon: Icon(Icons.directions_car_outlined), text: 'Consulta de Placas'),
             Tab(icon: Icon(Icons.people_outline_rounded), text: 'Eventos & Convidados'),
             Tab(icon: Icon(Icons.apartment_rounded), text: 'Unidades & Achados'),
+            Tab(icon: Icon(Icons.event_available_outlined), text: 'Reservas & Áreas'),
+            Tab(icon: Icon(Icons.chat_bubble_outline_rounded), text: 'Chat Moradores'),
           ],
         ),
         actions: [
+          if (widget.currentRole != null && widget.onSwitchRole != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              child: RoleSwitcherPill(
+                currentRole: widget.currentRole!,
+                availableRoles: widget.availableRoles,
+                onSwitchRole: widget.onSwitchRole!,
+                isLight: true,
+              ),
+            ),
+          IconButton(
+            tooltip: 'Baixa rápida com PIN / QR Code',
+            onPressed: _selectedCondominium == null ? null : _quickPickupByPin,
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+          ),
           IconButton(
             tooltip: 'Enviar comunicado a uma unidade',
             onPressed: _selectedCondominium == null ? null : _sendAnnouncement,
@@ -476,7 +573,7 @@ class _DoormanPageState extends State<DoormanPage>
           : null,
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 860),
+          constraints: const BoxConstraints(maxWidth: 1200),
           child: Column(
             children: [
               if (_condominiums.isNotEmpty) ...[
@@ -516,35 +613,50 @@ class _DoormanPageState extends State<DoormanPage>
                           style: TextStyle(color: Colors.white70, fontSize: 13),
                         ),
                         const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 8,
-                          children: [
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF0F766E),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: const Color(0xFF0F766E),
+                                ),
+                                onPressed: () => _registerReceivedPackage(),
+                                icon: const Icon(
+                                  Icons.add_box_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('Nova encomenda'),
                               ),
-                              onPressed: () => _registerReceivedPackage(),
-                              icon: const Icon(
-                                Icons.add_box_outlined,
-                                size: 18,
+                              const SizedBox(width: 8),
+                              FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFFCCFBF1),
+                                  foregroundColor: const Color(0xFF0F766E),
+                                ),
+                                onPressed: _quickPickupByPin,
+                                icon: const Icon(
+                                  Icons.qr_code_scanner_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text('Baixa rápida (PIN / QR)'),
                               ),
-                              label: const Text('Nova encomenda'),
-                            ),
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFFFEF3C7),
-                                foregroundColor: const Color(0xFFB45309),
+                              const SizedBox(width: 8),
+                              FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFFFEF3C7),
+                                  foregroundColor: const Color(0xFFB45309),
+                                ),
+                                onPressed: _sendAnnouncement,
+                                icon: const Icon(
+                                  Icons.campaign_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('Comunicado à unidade'),
                               ),
-                              onPressed: _sendAnnouncement,
-                              icon: const Icon(
-                                Icons.campaign_outlined,
-                                size: 18,
-                              ),
-                              label: const Text('Comunicado à unidade'),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -629,6 +741,15 @@ class _DoormanPageState extends State<DoormanPage>
                                 ),
                               ),
                             ],
+                          ),
+                          DoormanReservationsView(
+                            api: _communityApi,
+                            condominiumId: _selectedCondominium!['id'],
+                          ),
+                          DoormanChatView(
+                            api: _communityApi,
+                            condominiumId: _selectedCondominium!['id'],
+                            isDoormanMode: true,
                           ),
                         ],
                       ),

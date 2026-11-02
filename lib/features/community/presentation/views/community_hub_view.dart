@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../data/community_api.dart';
+import '../dialogs/plan_selection_dialog.dart';
 
 class CommunityHubView extends StatefulWidget {
   const CommunityHubView({
@@ -7,11 +9,15 @@ class CommunityHubView extends StatefulWidget {
     required this.api,
     required this.condominiumId,
     this.initialCategoryIndex = 0,
+    this.canManage = false,
+    this.enabledFeatures,
   });
 
   final CommunityApi api;
   final num condominiumId;
   final int initialCategoryIndex;
+  final bool canManage;
+  final List<String>? enabledFeatures;
 
   @override
   State<CommunityHubView> createState() => _CommunityHubViewState();
@@ -47,6 +53,100 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Widget _buildPlanGatedWrapper({
+    required String? requiredFeature,
+    required Widget child,
+    required String featureName,
+  }) {
+    if (requiredFeature == null || widget.enabledFeatures == null) {
+      return child;
+    }
+    final isEnabled = widget.enabledFeatures!
+        .map((e) => e.toUpperCase())
+        .contains(requiredFeature.toUpperCase());
+    if (isEnabled) {
+      return child;
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(24),
+        constraints: const BoxConstraints(maxWidth: 480),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFEF3C7),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.workspace_premium_rounded, size: 36, color: Color(0xFFD97706)),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Recurso Exclusivo de Plano',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'O recurso "$featureName" não está habilitado no plano atual deste condomínio.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF64748B), fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Faça upgrade para os planos Profissional ou Premium para desbloquear acesso total a esta e outras funcionalidades operacionais.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
+            ),
+            if (widget.canManage) ...[
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.rocket_launch_rounded, size: 18),
+                label: const Text('Ver Planos de Assinatura'),
+                onPressed: () {
+                  showDialog<void>(
+                    context: context,
+                    builder: (ctx) => PlanSelectionDialog(
+                      condominiumId: widget.condominiumId,
+                      condominiumName: 'Condomínio',
+                      api: widget.api,
+                      onPlanSelected: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Plano atualizado com sucesso!')),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -85,17 +185,33 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
           child: TabBarView(
             controller: _tabController,
             children: [
-              _TicketsSubView(api: widget.api, condominiumId: widget.condominiumId),
+              _TicketsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               _VisitorsSubView(api: widget.api, condominiumId: widget.condominiumId),
               _PollsSubView(api: widget.api, condominiumId: widget.condominiumId),
-              _ClassifiedsSubView(api: widget.api, condominiumId: widget.condominiumId),
+              _buildPlanGatedWrapper(
+                requiredFeature: 'MARKETPLACE_INTEGRATION',
+                featureName: 'Classificados e Vagas',
+                child: _ClassifiedsSubView(api: widget.api, condominiumId: widget.condominiumId),
+              ),
               _VehiclesSubView(api: widget.api, condominiumId: widget.condominiumId),
               _PetsSubView(api: widget.api, condominiumId: widget.condominiumId),
-              _MovingSubView(api: widget.api, condominiumId: widget.condominiumId),
+              _MovingSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               _DocumentsSubView(api: widget.api, condominiumId: widget.condominiumId),
-              _InfractionsSubView(api: widget.api, condominiumId: widget.condominiumId),
-              _LockersSubView(api: widget.api, condominiumId: widget.condominiumId),
-              _GuestListsSubView(api: widget.api, condominiumId: widget.condominiumId),
+              _buildPlanGatedWrapper(
+                requiredFeature: 'NOTIFICATIONS',
+                featureName: 'Notificações & Multas',
+                child: _InfractionsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
+              ),
+              _buildPlanGatedWrapper(
+                requiredFeature: 'PACKAGES',
+                featureName: 'Armários Inteligentes (Lockers)',
+                child: _LockersSubView(api: widget.api, condominiumId: widget.condominiumId),
+              ),
+              _buildPlanGatedWrapper(
+                requiredFeature: 'RESERVATIONS',
+                featureName: 'Lista de Convidados',
+                child: _GuestListsSubView(api: widget.api, condominiumId: widget.condominiumId),
+              ),
             ],
           ),
         ),
@@ -108,9 +224,10 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
 // 1. OCORRÊNCIAS & CHAMADOS
 // ----------------------------------------------------
 class _TicketsSubView extends StatefulWidget {
-  const _TicketsSubView({required this.api, required this.condominiumId});
+  const _TicketsSubView({required this.api, required this.condominiumId, this.canManage = false});
   final CommunityApi api;
   final num condominiumId;
+  final bool canManage;
 
   @override
   State<_TicketsSubView> createState() => _TicketsSubViewState();
@@ -221,6 +338,153 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
     }
   }
 
+  Future<void> _openUpdateStatusDialog(Map<String, dynamic> ticket) async {
+    String currentStatus = (ticket['status']?.toString() ?? 'OPEN').toUpperCase();
+    if (currentStatus != 'OPEN' && currentStatus != 'IN_PROGRESS' && currentStatus != 'RESOLVED' && currentStatus != 'REJECTED') {
+      currentStatus = 'OPEN';
+    }
+    String selectedStatus = currentStatus;
+    final responseCtrl = TextEditingController(text: ticket['adminResponse']?.toString() ?? '');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setDState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Atualizar Status do Chamado'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(ticket['title'] ?? 'Ocorrência', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedStatus,
+                    decoration: const InputDecoration(labelText: 'Novo Status'),
+                    items: const [
+                      DropdownMenuItem(value: 'OPEN', child: Text('Aberto (Pendente)')),
+                      DropdownMenuItem(value: 'IN_PROGRESS', child: Text('Em Análise / Atendimento')),
+                      DropdownMenuItem(value: 'RESOLVED', child: Text('Resolvido / Concluído')),
+                      DropdownMenuItem(value: 'REJECTED', child: Text('Recusado / Arquivado')),
+                    ],
+                    onChanged: (v) => setDState(() => selectedStatus = v ?? selectedStatus),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: responseCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Resposta / Parecer Administrativo',
+                      hintText: 'Explique as providências tomadas ou resolução...',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Salvar Alteração'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      await widget.api.updateTicketStatus(
+        ticketId: ticket['id'],
+        status: selectedStatus,
+        adminResponse: responseCtrl.text.trim().isEmpty ? null : responseCtrl.text.trim(),
+      );
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chamado atualizado com sucesso!')),
+        );
+      }
+    }
+  }
+
+  Widget _buildStatusTimeline(String rawStatus) {
+    final status = rawStatus.toUpperCase();
+    final isResolved = status == 'RESOLVED';
+    final isInProgress = status == 'IN_PROGRESS' || isResolved;
+    final isOpen = true;
+    final isRejected = status == 'REJECTED';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: isRejected
+          ? const Row(
+              children: [
+                Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 16),
+                SizedBox(width: 6),
+                Text(
+                  'Chamado Recusado / Arquivado',
+                  style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700, fontSize: 11.5),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                _buildTimelineStep(title: 'Aberto', isActive: isOpen, isDone: isInProgress, activeColor: const Color(0xFFD97706)),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: isInProgress ? const Color(0xFF1D4ED8) : const Color(0xFFCBD5E1),
+                  ),
+                ),
+                _buildTimelineStep(title: 'Em Análise', isActive: isInProgress, isDone: isResolved, activeColor: const Color(0xFF1D4ED8)),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: isResolved ? const Color(0xFF15803D) : const Color(0xFFCBD5E1),
+                  ),
+                ),
+                _buildTimelineStep(title: 'Resolvido', isActive: isResolved, isDone: isResolved, activeColor: const Color(0xFF15803D)),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildTimelineStep({
+    required String title,
+    required bool isActive,
+    required bool isDone,
+    required Color activeColor,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          isDone ? Icons.check_circle_rounded : (isActive ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded),
+          size: 15,
+          color: isActive ? activeColor : const Color(0xFF94A3B8),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+            color: isActive ? activeColor : const Color(0xFF64748B),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -288,6 +552,8 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
                                       ],
                                     ),
                                   ],
+                                  const SizedBox(height: 10),
+                                  _buildStatusTimeline(status ?? 'OPEN'),
                                   if (t['adminResponse'] != null) ...[
                                     const SizedBox(height: 8),
                                     Container(
@@ -297,6 +563,24 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
                                       child: Text('Resposta da administração: ${t['adminResponse']}', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
                                     ),
                                   ],
+                                  const SizedBox(height: 10),
+                                  SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        FilledButton.tonalIcon(
+                                          style: FilledButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                          icon: const Icon(Icons.rate_review_outlined, size: 15),
+                                          label: const Text('Responder / Atualizar Status', style: TextStyle(fontSize: 11.5)),
+                                          onPressed: () => _openUpdateStatusDialog(t),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -440,9 +724,39 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
                               ),
                               title: Text(v['visitorName'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: Text('Código: $code • Placa: ${v['vehiclePlate'] ?? 'Pedestre'} • ${v['visitorType'] ?? ''}'),
-                              trailing: Chip(
-                                label: Text(status, style: const TextStyle(fontSize: 11)),
-                                backgroundColor: status == 'CHECKED_IN' ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                              trailing: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Compartilhar Convite no WhatsApp',
+                                      icon: const Icon(Icons.share_rounded, color: Color(0xFF16A34A), size: 20),
+                                      onPressed: () {
+                                        final invite = '''
+🏢 *CONVITE DE ACESSO — CONDOMÍNIO ÂNCORA*
+Olá, *${v['visitorName']}*!
+Você possui acesso pré-autorizado ao condomínio.
+🔑 *Código de Acesso:* $code
+🚗 *Veículo:* ${v['vehiclePlate'] ?? 'A pé / Pedestre'}
+Por favor, apresente este código ou seu documento na portaria ao chegar.
+''';
+                                        Clipboard.setData(ClipboardData(text: invite));
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Convite formatado copiado! Cole no WhatsApp do visitante.'),
+                                            backgroundColor: Color(0xFF15803D),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Chip(
+                                      label: Text(status, style: const TextStyle(fontSize: 11)),
+                                      backgroundColor: status == 'CHECKED_IN' ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           );
@@ -759,11 +1073,45 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('Contato: ${a['contactPhone'] ?? 'Direto no app'}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                                      FilledButton.tonalIcon(
-                                        icon: const Icon(Icons.send_rounded, size: 16),
-                                        label: const Text('Tenho Interesse'),
-                                        onPressed: () => _sendInterest(a['id']),
+                                      Expanded(
+                                        child: Text('Contato: ${a['contactPhone'] ?? 'Direto no app'}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                      ),
+                                      SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (a['contactPhone'] != null && a['contactPhone'].toString().trim().isNotEmpty) ...[
+                                              IconButton(
+                                                tooltip: 'Copiar mensagem para WhatsApp',
+                                                icon: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF16A34A), size: 19),
+                                                onPressed: () {
+                                                  final digits = a['contactPhone'].toString().replaceAll(RegExp(r'\D'), '');
+                                                  final title = a['title'] ?? 'anúncio';
+                                                  final msg = 'Olá! Vi seu anúncio "$title" nos Classificados do Condomínio e gostaria de informações.';
+                                                  Clipboard.setData(ClipboardData(text: msg));
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('Mensagem de contato copiada! Envie para o WhatsApp ($digits).'),
+                                                      backgroundColor: const Color(0xFF15803D),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                              const SizedBox(width: 4),
+                                            ],
+                                            FilledButton.tonalIcon(
+                                              style: FilledButton.styleFrom(
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                minimumSize: Size.zero,
+                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              ),
+                                              icon: const Icon(Icons.send_rounded, size: 15),
+                                              label: const Text('Tenho Interesse', style: TextStyle(fontSize: 12)),
+                                              onPressed: () => _sendInterest(a['id']),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -1083,9 +1431,10 @@ class _PetsSubViewState extends State<_PetsSubView> {
 // 7. MUDANÇAS & CARGAS PESADAS
 // ----------------------------------------------------
 class _MovingSubView extends StatefulWidget {
-  const _MovingSubView({required this.api, required this.condominiumId});
+  const _MovingSubView({required this.api, required this.condominiumId, this.canManage = false});
   final CommunityApi api;
   final num condominiumId;
+  final bool canManage;
 
   @override
   State<_MovingSubView> createState() => _MovingSubViewState();
@@ -1108,6 +1457,87 @@ class _MovingSubViewState extends State<_MovingSubView> {
       if (mounted) setState(() { _requests = list; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _approveMoving(num id) async {
+    try {
+      await widget.api.approveMovingRequest(id);
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Agendamento de mudança aprovado!'), backgroundColor: Color(0xFF15803D)),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao aprovar: $e')));
+    }
+  }
+
+  Future<void> _rejectMoving(num id) async {
+    final reason = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recusar Agendamento de Mudança'),
+        content: TextField(
+          controller: reason,
+          maxLines: 2,
+          decoration: const InputDecoration(labelText: 'Motivo da recusa *', hintText: 'Ex: Horário reservado para manutenção predial'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Voltar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirmar Recusa'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && reason.text.isNotEmpty) {
+      try {
+        await widget.api.rejectMovingRequest(id, reason.text.trim());
+        _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Agendamento recusado.'), backgroundColor: Color(0xFFDC2626)),
+          );
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
+  }
+
+  Future<void> _cancelMoving(num id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancelar agendamento?'),
+        content: const Text('Deseja realmente cancelar este agendamento de mudança? O turno será liberado para outros moradores.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Voltar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      try {
+        await widget.api.rejectMovingRequest(id, 'Cancelado pelo morador');
+        _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Agendamento cancelado com sucesso.')),
+          );
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
     }
   }
 
@@ -1241,17 +1671,100 @@ class _MovingSubViewState extends State<_MovingSubView> {
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, idx) {
                           final r = _requests[idx];
-                          final status = r['status']?.toString() ?? 'PENDING';
+                          final status = (r['status']?.toString() ?? 'PENDING').toUpperCase();
+                          final isPending = status == 'PENDING';
+                          final isApproved = status == 'APPROVED';
+                          final isRejected = status == 'REJECTED';
+                          final color = isApproved ? const Color(0xFF15803D) : (isRejected ? const Color(0xFFDC2626) : const Color(0xFFB45309));
+                          final bg = isApproved ? const Color(0xFFDCFCE7) : (isRejected ? const Color(0xFFFEE2E2) : const Color(0xFFFEF3C7));
+
                           return Card(
                             elevation: 0,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
-                            child: ListTile(
-                              leading: const CircleAvatar(backgroundColor: Color(0xFFE0E7FF), child: Icon(Icons.local_shipping_rounded, color: Color(0xFF2F3FB0))),
-                              title: Text('${r['type'] ?? 'MUDANÇA'} • ${r['movingDate'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('Turno: ${r['period'] ?? ''} • Transportadora: ${r['companyName'] ?? 'Própria'}'),
-                              trailing: Chip(
-                                label: Text(status, style: const TextStyle(fontSize: 11)),
-                                backgroundColor: status == 'APPROVED' ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const CircleAvatar(
+                                        backgroundColor: Color(0xFFE0E7FF),
+                                        child: Icon(Icons.local_shipping_rounded, color: Color(0xFF2F3FB0)),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('${r['type'] ?? 'MUDANÇA'} • ${r['movingDate'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                            const SizedBox(height: 2),
+                                            Text('Turno: ${r['period'] ?? ''} • Transportadora: ${r['companyName'] ?? 'Própria'}', style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
+                                            if (r['notes'] != null && r['notes'].toString().isNotEmpty)
+                                              Text('Obs: ${r['notes']}', style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                                            if (r['rejectionReason'] != null)
+                                              Text('Motivo da recusa: ${r['rejectionReason']}', style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626), fontWeight: FontWeight.w600)),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+                                        child: Text(isApproved ? 'Aprovado' : (isRejected ? 'Recusado' : 'Pendente'), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11)),
+                                      ),
+                                    ],
+                                  ),
+                                  if (isPending) ...[
+                                    const SizedBox(height: 10),
+                                    SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children: [
+                                          if (widget.canManage) ...[
+                                            FilledButton.icon(
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor: const Color(0xFF15803D),
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                minimumSize: Size.zero,
+                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              ),
+                                              icon: const Icon(Icons.check_rounded, size: 15),
+                                              label: const Text('Aprovar Mudança', style: TextStyle(fontSize: 11.5)),
+                                              onPressed: () => _approveMoving(r['id']),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: const Color(0xFFDC2626),
+                                                side: const BorderSide(color: Color(0xFFF87171)),
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                minimumSize: Size.zero,
+                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              ),
+                                              icon: const Icon(Icons.close_rounded, size: 15),
+                                              label: const Text('Recusar', style: TextStyle(fontSize: 11.5)),
+                                              onPressed: () => _rejectMoving(r['id']),
+                                            ),
+                                          ] else ...[
+                                            OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: const Color(0xFFDC2626),
+                                                side: const BorderSide(color: Color(0xFFF87171)),
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                minimumSize: Size.zero,
+                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              ),
+                                              icon: const Icon(Icons.close_rounded, size: 15),
+                                              label: const Text('Cancelar Agendamento', style: TextStyle(fontSize: 11.5)),
+                                              onPressed: () => _cancelMoving(r['id']),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           );
@@ -1341,9 +1854,10 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
 // 9. INFRAÇÕES, NOTIFICAÇÕES & DEFESAS
 // ----------------------------------------------------
 class _InfractionsSubView extends StatefulWidget {
-  const _InfractionsSubView({required this.api, required this.condominiumId});
+  const _InfractionsSubView({required this.api, required this.condominiumId, this.canManage = false});
   final CommunityApi api;
   final num condominiumId;
+  final bool canManage;
 
   @override
   State<_InfractionsSubView> createState() => _InfractionsSubViewState();
@@ -1366,6 +1880,94 @@ class _InfractionsSubViewState extends State<_InfractionsSubView> {
       if (mounted) setState(() { _infractions = list; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openNewInfractionDialog() async {
+    final title = TextEditingController();
+    final desc = TextEditingController();
+    final amount = TextEditingController();
+    final unit = TextEditingController();
+    String type = 'WARNING';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Registrar Notificação ou Multa'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: type,
+                    decoration: const InputDecoration(labelText: 'Tipo de Notificação'),
+                    items: const [
+                      DropdownMenuItem(value: 'WARNING', child: Text('Advertência Formal')),
+                      DropdownMenuItem(value: 'FINE', child: Text('Multa por Infração ao Regimento')),
+                    ],
+                    onChanged: (v) => setD(() => type = v ?? type),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: unit,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'ID da Unidade / Apartamento *', hintText: 'Ex: 101'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: title,
+                    decoration: const InputDecoration(labelText: 'Título da Ocorrência *', hintText: 'Ex: Barulho após horário permitido'),
+                  ),
+                  if (type == 'FINE') ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: amount,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Valor da Multa (R\$) *', hintText: '150.00'),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: desc,
+                    maxLines: 3,
+                    decoration: const InputDecoration(labelText: 'Descrição e artigo do regimento *', hintText: 'Descreva a ocorrência constatada...'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Emitir Notificação'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true && title.text.isNotEmpty && unit.text.isNotEmpty) {
+      final unitId = num.tryParse(unit.text.trim()) ?? 1;
+      final fineVal = double.tryParse(amount.text.trim());
+      await widget.api.createInfraction(
+        condoId: widget.condominiumId,
+        unitId: unitId,
+        type: type,
+        title: title.text.trim(),
+        description: desc.text.trim(),
+        fineAmount: fineVal,
+      );
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Notificação registrada com sucesso!')),
+        );
+      }
     }
   }
 
@@ -1394,65 +1996,165 @@ class _InfractionsSubViewState extends State<_InfractionsSubView> {
     }
   }
 
+  Future<void> _judgeDefense(num id, String status, String defaultJudgment) async {
+    final notes = TextEditingController(text: defaultJudgment);
+    final isCancel = status == 'CANCELLED';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(isCancel ? 'Acatar Defesa (Cancelar Multa)' : 'Indeferir Defesa (Manter Infração)'),
+        content: TextField(
+          controller: notes,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Parecer do síndico / administração',
+            hintText: 'Justifique a decisão para o morador...',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Voltar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: isCancel ? const Color(0xFF15803D) : const Color(0xFFDC2626)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(isCancel ? 'Acatar Defesa' : 'Manter Infração'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await widget.api.judgeInfraction(id, status, notes.text.trim());
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Decisão registrada com sucesso!')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _infractions.isEmpty
-              ? const Center(child: Text('Nenhuma advertência ou multa registrada para sua unidade. Parabéns! 🎉'))
-              : ListView.separated(
-                  itemCount: _infractions.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, idx) {
-                    final inf = _infractions[idx];
-                    final status = inf['status']?.toString() ?? 'ISSUED';
-                    final canDefend = status == 'ISSUED';
-
-                    return Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('${inf['type'] == 'FINE' ? 'Multa' : 'Advertência'}: ${inf['title']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                Chip(label: Text(status, style: const TextStyle(fontSize: 11)), backgroundColor: const Color(0xFFFEF3C7)),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(inf['description'] ?? '', style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
-                            if (inf['defense'] != null) ...[
-                              const SizedBox(height: 8),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
-                                child: Text('Sua defesa: ${inf['defense']}', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
-                              ),
-                            ],
-                            if (canDefend) ...[
-                              const SizedBox(height: 10),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: FilledButton.tonalIcon(
-                                  icon: const Icon(Icons.shield_outlined, size: 16),
-                                  label: const Text('Apresentar Defesa Prévia'),
-                                  onPressed: () => _submitDefense(inf['id']),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+      child: Column(
+        children: [
+          if (widget.canManage) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Total: ${_infractions.length} ocorrências', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                FilledButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Nova Notificação'),
+                  onPressed: _openNewInfractionDialog,
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _infractions.isEmpty
+                    ? const Center(child: Text('Nenhuma advertência ou multa registrada para sua unidade. Parabéns! 🎉'))
+                    : ListView.separated(
+                        itemCount: _infractions.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final inf = _infractions[idx];
+                          final status = (inf['status']?.toString() ?? 'ISSUED').toUpperCase();
+                          final canDefend = status == 'ISSUED';
+                          final hasDefense = inf['defense'] != null && inf['defense'].toString().isNotEmpty;
+
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('${inf['type'] == 'FINE' ? 'Multa' : 'Advertência'}: ${inf['title']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                      Chip(label: Text(status, style: const TextStyle(fontSize: 11)), backgroundColor: const Color(0xFFFEF3C7)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(inf['description'] ?? '', style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
+                                  if (hasDefense) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
+                                      child: Text('Defesa do morador: ${inf['defense']}', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                                    ),
+                                  ],
+                                  if (inf['judgment'] != null) ...[
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(6)),
+                                      child: Text('Parecer da administração: ${inf['judgment']}', style: const TextStyle(fontSize: 12, color: Color(0xFF065F46))),
+                                    ),
+                                  ],
+                                  if (widget.canManage && hasDefense && status != 'CANCELLED' && status != 'CONFIRMED') ...[
+                                    const SizedBox(height: 10),
+                                    SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children: [
+                                          FilledButton.icon(
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor: const Color(0xFF15803D),
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                            icon: const Icon(Icons.check_rounded, size: 15),
+                                            label: const Text('Acatar Defesa (Cancelar)', style: TextStyle(fontSize: 11.5)),
+                                            onPressed: () => _judgeDefense(inf['id'], 'CANCELLED', 'Defesa acolhida pela administração.'),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: const Color(0xFFDC2626),
+                                              side: const BorderSide(color: Color(0xFFF87171)),
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                            icon: const Icon(Icons.close_rounded, size: 15),
+                                            label: const Text('Manter Multa', style: TextStyle(fontSize: 11.5)),
+                                            onPressed: () => _judgeDefense(inf['id'], 'CONFIRMED', 'Defesa indeferida. Infração mantida.'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ] else if (canDefend && !widget.canManage) ...[
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: FilledButton.tonalIcon(
+                                        icon: const Icon(Icons.shield_outlined, size: 16),
+                                        label: const Text('Apresentar Defesa Prévia'),
+                                        onPressed: () => _submitDefense(inf['id']),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
     );
   }
 }
