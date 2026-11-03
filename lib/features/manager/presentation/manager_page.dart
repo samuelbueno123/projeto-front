@@ -1,10 +1,16 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../core/design_system/saas_design_system.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/enter_search_field.dart';
+import '../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../core/widgets/role_switcher_pill.dart';
+import '../../auth/presentation/pages/user_profile_page.dart';
 import '../../community/data/community_api.dart';
 import '../../community/presentation/dialogs/counter_proposal_dialog.dart';
 import '../../community/presentation/dialogs/generate_boleto_dialog.dart';
@@ -43,6 +49,8 @@ class _ManagerPageState extends State<ManagerPage> {
   late final HomeService _api = HomeService(token: widget.token);
   late final CommunityApi _communityApi = CommunityApi(api: _api);
   List<Map<String, dynamic>> _condos = [];
+  Map<String, dynamic> _profile = {};
+  Map<String, dynamic>? _condoDetails;
   int? _selected;
   Map<String, dynamic>? _dashboard;
   bool _loading = true;
@@ -52,7 +60,84 @@ class _ManagerPageState extends State<ManagerPage> {
   @override
   void initState() {
     super.initState();
+    _loadProfile();
     _init();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final data = await _api.get('/users/me');
+      if (mounted && data is Map<String, dynamic>) {
+        setState(() => _profile = data);
+      }
+    } catch (_) {}
+  }
+
+  ImageProvider? get _profileAvatarImage =>
+      resolveAvatarImageProvider(_profile['profileImage'] as String?);
+
+  void _openProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserProfilePage(
+          token: widget.token,
+          userName: widget.userName,
+          userEmail: _profile['email'] as String?,
+          provider: 'password',
+          onLogout: widget.onLogout,
+          onClose: () {
+            Navigator.of(context).pop();
+            _loadProfile();
+          },
+          reauthenticateWithGoogle: () async => '',
+          refreshWithCredentials: (_, __) async {},
+          refreshGoogleSession: () async {},
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changeCondominiumImage() async {
+    if (_selected == null) return;
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1600,
+        maxHeight: 900,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.split('.').last.toLowerCase();
+      final mime = switch (ext) {
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        _ => 'image/jpeg',
+      };
+      final dataUri = 'data:$mime;base64,${base64Encode(bytes)}';
+
+      await _api.send('PATCH', '/condominiums/$_selected/image', body: {
+        'imageUrl': dataUri,
+      });
+
+      if (mounted) {
+        setState(() {
+          if (_condoDetails != null) {
+            _condoDetails!['imageUrl'] = dataUri;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto do condomínio atualizada com sucesso!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao atualizar foto: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _init() async {
@@ -99,6 +184,7 @@ class _ManagerPageState extends State<ManagerPage> {
       if (mounted) {
         setState(() {
           _dashboard = result as Map<String, dynamic>;
+          _condoDetails = condoData;
           _loading = false;
         });
 
@@ -205,7 +291,7 @@ class _ManagerPageState extends State<ManagerPage> {
     if (mounted) _load();
   }
 
-  Future<void> _openCommunityHub() async {
+  Future<void> _openCommunityHub({int initialIndex = 0}) async {
     final condoId = _selected;
     if (condoId == null) return;
     await Navigator.of(context).push(
@@ -216,11 +302,199 @@ class _ManagerPageState extends State<ManagerPage> {
             api: _communityApi,
             condominiumId: condoId,
             canManage: true,
+            initialCategoryIndex: initialIndex,
           ),
         ),
       ),
     );
     if (mounted) _load();
+  }
+
+  Future<void> _openCondoAssistant() async {
+    final condoId = _selected;
+    if (condoId == null) return;
+    final questionCtrl = TextEditingController();
+    Map<String, dynamic>? assistantResponse;
+    bool asking = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 650),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.auto_awesome, color: Color(0xFFD97706)),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Assistente do Condomínio (IA)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                          Text('Respostas sobre regimento, leis e minutas', style: TextStyle(color: Color(0xFF64748B), fontSize: 12.5)),
+                        ],
+                      ),
+                    ),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: questionCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'Ex: Qual a regra para barulho? Ou redigir aviso de obra...',
+                          isDense: true,
+                        ),
+                        onSubmitted: (q) async {
+                          if (q.trim().isEmpty) return;
+                          setModalState(() => asking = true);
+                          try {
+                            final res = await _communityApi.askAssistant(condoId, q.trim());
+                            setModalState(() { assistantResponse = res; asking = false; });
+                          } catch (e) {
+                            setModalState(() => asking = false);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                      onPressed: asking ? null : () async {
+                        final q = questionCtrl.text.trim();
+                        if (q.isEmpty) return;
+                        setModalState(() => asking = true);
+                        try {
+                          final res = await _communityApi.askAssistant(condoId, q);
+                          setModalState(() { assistantResponse = res; asking = false; });
+                        } catch (e) {
+                          setModalState(() => asking = false);
+                        }
+                      },
+                      child: asking
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Text('Perguntar'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (assistantResponse != null)
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.psychology_outlined, size: 18, color: Color(0xFF2563EB)),
+                                SizedBox(width: 6),
+                                Text('Orientação Especializada:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            SelectableText(
+                              assistantResponse!['answer'] ?? '',
+                              style: const TextStyle(fontSize: 14, height: 1.45, color: Color(0xFF1E293B)),
+                            ),
+                            if (assistantResponse!['legalBasis'] != null) ...[
+                              const Divider(height: 20),
+                              Row(
+                                children: [
+                                  const Icon(Icons.gavel_outlined, size: 16, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'Fundamento: ${assistantResponse!['legalBasis']}',
+                                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontStyle: FontStyle.italic),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (assistantResponse!['suggestedFollowUps'] is List) ...[
+                              const SizedBox(height: 12),
+                              const Text('Perguntas relacionadas:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: (assistantResponse!['suggestedFollowUps'] as List).map((f) => ActionChip(
+                                  label: Text(f.toString(), style: const TextStyle(fontSize: 11)),
+                                  onPressed: () {
+                                    questionCtrl.text = f.toString();
+                                  },
+                                )).toList(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.volume_off_outlined, size: 16),
+                        label: const Text('Horário de Silêncio'),
+                        onPressed: () => questionCtrl.text = 'Quais os horários de silêncio e multas por barulho?',
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.local_shipping_outlined, size: 16),
+                        label: const Text('Regras de Mudança'),
+                        onPressed: () => questionCtrl.text = 'Quais os horários permitidos e regras para mudanças?',
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.pets_outlined, size: 16),
+                        label: const Text('Regras para Pets'),
+                        onPressed: () => questionCtrl.text = 'Quais as regras e direitos para animais de estimação?',
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.construction_outlined, size: 16),
+                        label: const Text('Reformas & ART'),
+                        onPressed: () => questionCtrl.text = 'O que é exigido para reformas nos apartamentos?',
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.campaign_outlined, size: 16),
+                        label: const Text('Redigir Comunicado'),
+                        onPressed: () => questionCtrl.text = 'Redigir minuta de comunicado sobre manutenção preventiva na caixa d\'água',
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _openUnitsMenu() async {
@@ -486,343 +760,932 @@ Emitido via Âncora Gestão
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Painel do Síndico'),
-      actions: [
-        if (widget.currentRole != null && widget.onSwitchRole != null)
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: SaaSColors.background(isDark),
+      appBar: AppBar(
+        title: const Text('Painel do Síndico'),
+        backgroundColor: SaaSColors.surface(isDark),
+        actions: [
+          if (widget.currentRole != null && widget.onSwitchRole != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              child: RoleSwitcherPill(
+                currentRole: widget.currentRole!,
+                availableRoles: widget.availableRoles,
+                onSwitchRole: widget.onSwitchRole!,
+                isLight: !isDark,
+              ),
+            ),
+          // User Profile Avatar
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-            child: RoleSwitcherPill(
-              currentRole: widget.currentRole!,
-              availableRoles: widget.availableRoles,
-              onSwitchRole: widget.onSwitchRole!,
-              isLight: true,
-            ),
-          ),
-        IconButton(
-          tooltip: 'Relatórios de gestão',
-          onPressed: _selected == null ? null : _openReportsMenu,
-          icon: const Icon(Icons.assessment_outlined),
-        ),
-        IconButton(
-          tooltip: 'Publicar comunicado',
-          onPressed: _selected == null ? null : _sendAnnouncement,
-          icon: const Icon(Icons.campaign_outlined),
-        ),
-        IconButton(
-          tooltip: 'Central de notificações',
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) =>
-                  NotificationsPage(api: _api, condominiumId: _selected),
-            ),
-          ),
-          icon: const Icon(Icons.notifications_none_rounded),
-        ),
-        IconButton(
-          tooltip: 'Atualizar painel',
-          onPressed: _load,
-          icon: const Icon(Icons.refresh_rounded),
-        ),
-        IconButton(
-          tooltip: 'Sair da conta',
-          onPressed: widget.onLogout,
-          icon: const Icon(Icons.logout_rounded),
-        ),
-      ],
-    ),
-    body: _loading
-        ? const Center(child: CircularProgressIndicator())
-        : _error != null
-        ? Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.cloud_off_outlined, size: 44),
-                  const SizedBox(height: 12),
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: _load,
-                    child: const Text('Tentar novamente'),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            child: InkWell(
+              onTap: _openProfile,
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    width: 1.5,
                   ),
-                ],
-              ),
-            ),
-          )
-        : _condos.isEmpty
-        ? const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'Sua conta ainda não está vinculada como síndico a nenhum condomínio.',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          )
-        : RefreshIndicator(
-            onRefresh: _load,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1200),
-                child: ListView(
-                  padding: const EdgeInsets.all(20),
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF2F3FB0), Color(0xFF4B5DE7)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Olá, ${firstNameOf(widget.userName, fallback: 'síndico')}! 👋',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Gerencie moradores, porteiros, reservas e pagamentos do seu condomínio.',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                          const SizedBox(height: 16),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: const Color(0xFF2F3FB0),
-                                  ),
-                                  onPressed: _openMemberships,
-                                  icon: const Icon(Icons.group_add_outlined),
-                                  label: const Text(
-                                    'Convidar moradores e porteiros',
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFFFEF3C7),
-                                    foregroundColor: const Color(0xFFB45309),
-                                  ),
-                                  onPressed: _sendAnnouncement,
-                                  icon: const Icon(Icons.campaign_outlined),
-                                  label: const Text('Enviar comunicado'),
-                                ),
-                                const SizedBox(width: 10),
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFFDCFCE7),
-                                    foregroundColor: const Color(0xFF15803D),
-                                  ),
-                                  onPressed: _openCommunityHub,
-                                  icon: const Icon(Icons.diversity_3_outlined),
-                                  label: const Text('Comunidade & Chamados'),
-                                ),
-                                const SizedBox(width: 10),
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFFF3E8FF),
-                                    foregroundColor: const Color(0xFF7C3AED),
-                                  ),
-                                  onPressed: _openGallery,
-                                  icon: const Icon(Icons.photo_library_outlined),
-                                  label: const Text('Galeria de Fotos'),
-                                ),
-                                const SizedBox(width: 10),
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFFE0E7FF),
-                                    foregroundColor: const Color(0xFF2563EB),
-                                  ),
-                                  onPressed: _openReportsMenu,
-                                  icon: const Icon(Icons.assessment_outlined),
-                                  label: const Text('Relatórios de Gestão'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      initialValue: _selected,
-                      decoration: const InputDecoration(
-                        labelText: 'Condomínio em gestão',
-                        prefixIcon: Icon(Icons.apartment_rounded),
-                      ),
-                      items: _condos
-                          .map(
-                            (membership) => DropdownMenuItem<int>(
-                              value: (membership['condominiumId'] as num)
-                                  .toInt(),
-                              child: Text(
-                                membership['condominiumName']
-                                            ?.toString()
-                                            .trim()
-                                            .isNotEmpty ==
-                                        true
-                                    ? '${membership['condominiumName']}'
-                                    : 'Condomínio vinculado',
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() => _selected = value);
-                        _load();
-                      },
-                    ),
-                    const SizedBox(height: 18),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        _metric(
-                          'Unidades cadastradas',
-                          _dashboard?['totalUnits'],
-                          Icons.home_work_outlined,
-                          accentBg: const Color(0xFFE0E7FF),
-                          accentFg: const Color(0xFF2F3FB0),
-                          onTap: _openUnitsMenu,
-                        ),
-                        _metric(
-                          'Pessoas vinculadas',
-                          _dashboard?['totalUsers'],
-                          Icons.groups_outlined,
-                          accentBg: const Color(0xFFCCFBF1),
-                          accentFg: const Color(0xFF0F766E),
-                          onTap: _openMemberships,
-                        ),
-                        _metric(
-                          'Reservas registradas',
-                          _dashboard?['totalReservations'],
-                          Icons.event_available_outlined,
-                          accentBg: const Color(0xFFDCFCE7),
-                          accentFg: const Color(0xFF15803D),
-                          onTap: _openReservationsMenu,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    EnterSearchField(
-                      hintText:
-                          'Pesquisar unidades, setores ou reservas (Enter)',
-                      onSubmitted: (query) => setState(() => _query = query),
-                    ),
-                    const SizedBox(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Situação financeira das unidades',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        FilledButton.icon(
-                          onPressed: _generateBoleto,
-                          icon: const Icon(Icons.receipt_long_rounded, size: 18),
-                          label: const Text('Gerar Boleto'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    if (_dashboardRecords('units').isEmpty)
-                      const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(20),
-                          child: Text('Nenhuma unidade encontrada.'),
-                        ),
-                      )
-                    else
-                      ..._dashboardRecords('units').map((unit) {
-                        final (label, bg, fg) = _statusStyle(
-                          unit['paymentStatus'],
-                        );
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: bg,
-                              child: Icon(
-                                Icons.home_outlined,
-                                color: fg,
-                                size: 20,
-                              ),
-                            ),
-                            title: Text(
-                              '${unit['sector']} • Unidade ${unit['identifier']}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'Status: $label${unit['dueDate'] == null ? '' : ' • Vencimento: ${_formatDate(unit['dueDate'])}'}${unit['amount'] == null ? '' : ' • R\$ ${unit['amount']}'}',
-                            ),
-                            trailing: OutlinedButton.icon(
-                              onPressed: () => _editPayment(unit),
-                              icon: const Icon(Icons.edit_outlined, size: 18),
-                              label: const Text('Atualizar'),
-                            ),
-                          ),
-                        );
-                      }),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Agendamentos de áreas comuns',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    if (_dashboardRecords('reservations').isEmpty)
-                      const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(20),
-                          child: Text('Nenhum agendamento encontrado.'),
-                        ),
-                      )
-                    else
-                      ..._dashboardRecords('reservations').map((reservation) {
-                        return Card(
-                          child: ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: Color(0xFFE0E7FF),
-                              child: Icon(
-                                Icons.event_available_outlined,
-                                color: Color(0xFF2F3FB0),
-                              ),
-                            ),
-                            title: Text(
-                              '${reservation['commonArea']} • ${reservation['residentName']}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            subtitle: Text(
-                              '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}\n${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''} • ${_translateStatus(reservation['status'])}',
-                            ),
-                            isThreeLine: true,
-                          ),
-                        );
-                      }),
-                  ],
+                ),
+                child: CircleAvatar(
+                  radius: 17,
+                  backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                  backgroundImage: _profileAvatarImage,
+                  child: _profileAvatarImage == null
+                      ? Icon(
+                          Icons.person_rounded,
+                          size: 20,
+                          color: isDark ? Colors.white70 : SaaSColors.primary,
+                        )
+                      : null,
                 ),
               ),
             ),
           ),
-  );
+          IconButton(
+            tooltip: 'Relatórios de gestão',
+            onPressed: _selected == null ? null : _openReportsMenu,
+            icon: const Icon(Icons.assessment_outlined),
+          ),
+          IconButton(
+            tooltip: 'Publicar comunicado',
+            onPressed: _selected == null ? null : _sendAnnouncement,
+            icon: const Icon(Icons.campaign_outlined),
+          ),
+          IconButton(
+            tooltip: 'Central de notificações',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    NotificationsPage(api: _api, condominiumId: _selected),
+              ),
+            ),
+            icon: const Icon(Icons.notifications_none_rounded),
+          ),
+          IconButton(
+            tooltip: 'Atualizar painel',
+            onPressed: _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+          IconButton(
+            tooltip: 'Sair da conta',
+            onPressed: widget.onLogout,
+            icon: const Icon(Icons.logout_rounded),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off_outlined, size: 44),
+                        const SizedBox(height: 12),
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: _load,
+                          child: const Text('Tentar novamente'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _condos.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'Sua conta ainda não está vinculada como síndico a nenhum condomínio.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth >= 980) {
+                          return _buildDesktopManagerLayout(isDark);
+                        }
+                        return _buildMobileManagerLayout(isDark);
+                      },
+                    ),
+    );
+  }
+
+  Widget _buildCondominiumCoverBanner(bool isDark) {
+    final condoName = _selectedCondoName();
+    final rawImageUrl = _condoDetails?['imageUrl'] as String?;
+    final imageProvider = resolveAvatarImageProvider(rawImageUrl);
+
+    if (imageProvider != null) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        height: 120,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          image: DecorationImage(
+            image: imageProvider,
+            fit: BoxFit.cover,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.15),
+                Colors.black.withValues(alpha: 0.75),
+              ],
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      condoName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                        letterSpacing: -0.3,
+                        shadows: [Shadow(blurRadius: 4, color: Colors.black)],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const Text(
+                      'Condomínio em gestão • Imagem de fachada ativa',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        shadows: [Shadow(blurRadius: 4, color: Colors.black)],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (rawImageUrl != null)
+                    FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white.withValues(alpha: 0.85),
+                        foregroundColor: Colors.black87,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      onPressed: () => showFullScreenImage(
+                        context,
+                        imageSource: rawImageUrl,
+                        title: condoName,
+                      ),
+                      icon: const Icon(Icons.fullscreen, size: 16),
+                      label: const Text('Ampliar', style: TextStyle(fontSize: 12.5)),
+                    ),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: SaaSColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    onPressed: _changeCondominiumImage,
+                    icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                    label: const Text('Alterar Foto', style: TextStyle(fontSize: 12.5)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: SaaSColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.apartment_rounded, color: SaaSColors.primary, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  condoName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                Text(
+                  'Personalize a identidade do condomínio adicionando uma foto da fachada.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: _changeCondominiumImage,
+            icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+            label: const Text('Adicionar foto'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // DESKTOP LAYOUT (Multi-Panel, Zero Scroll)
+  // ==========================================
+  Widget _buildDesktopManagerLayout(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 16, 28, 16),
+      child: Column(
+        children: [
+          // Condominium Cover Banner
+          _buildCondominiumCoverBanner(isDark),
+
+          // Top bar: Condominium selector + Action pills
+          Row(
+            children: [
+              Expanded(
+                flex: 4,
+                child: DropdownButtonFormField<int>(
+                  initialValue: _selected,
+                  decoration: const InputDecoration(
+                    labelText: 'Condomínio em gestão',
+                    prefixIcon: Icon(Icons.apartment_rounded),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                  items: _condos
+                      .map(
+                        (membership) => DropdownMenuItem<int>(
+                          value: (membership['condominiumId'] as num).toInt(),
+                          child: Text(
+                            membership['condominiumName']?.toString().trim().isNotEmpty == true
+                                ? '${membership['condominiumName']}'
+                                : 'Condomínio vinculado',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    setState(() => _selected = value);
+                    _load();
+                  },
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                flex: 8,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(backgroundColor: SaaSColors.primary),
+                        onPressed: _openMemberships,
+                        icon: const Icon(Icons.group_add_outlined, size: 16),
+                        label: const Text('Convidar / Vínculos'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _sendAnnouncement,
+                        icon: const Icon(Icons.campaign_outlined, size: 16),
+                        label: const Text('Comunicado'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _generateBoleto,
+                        icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                        label: const Text('Gerar Boleto'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _openCommunityHub,
+                        icon: const Icon(Icons.diversity_3_outlined, size: 16),
+                        label: const Text('Hub Geral'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => _openCommunityHub(initialIndex: 11),
+                        icon: const Icon(Icons.build_circle_outlined, size: 16),
+                        label: const Text('Manutenções'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => _openCommunityHub(initialIndex: 12),
+                        icon: const Icon(Icons.groups_outlined, size: 16),
+                        label: const Text('Assembleias'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => _openCommunityHub(initialIndex: 13),
+                        icon: const Icon(Icons.account_balance_wallet_outlined, size: 16),
+                        label: const Text('Financeiro'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _openGallery,
+                        icon: const Icon(Icons.photo_library_outlined, size: 16),
+                        label: const Text('Galeria'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 4 Metric cards
+          Row(
+            children: [
+              Expanded(
+                child: SaaSMetricCard(
+                  title: 'Unidades Cadastradas',
+                  value: '${_dashboard?['totalUnits'] ?? 0}',
+                  icon: Icons.home_work_outlined,
+                  iconColor: SaaSColors.primary,
+                  subtitle: 'Total registrado',
+                  onTap: _openUnitsMenu,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: SaaSMetricCard(
+                  title: 'Pessoas Vinculadas',
+                  value: '${_dashboard?['totalUsers'] ?? 0}',
+                  icon: Icons.groups_outlined,
+                  iconColor: const Color(0xFF10B981),
+                  subtitle: 'Moradores e porteiros',
+                  onTap: _openMemberships,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: SaaSMetricCard(
+                  title: 'Reservas Registradas',
+                  value: '${_dashboard?['totalReservations'] ?? 0}',
+                  icon: Icons.event_available_outlined,
+                  iconColor: const Color(0xFFF59E0B),
+                  subtitle: 'Áreas comuns',
+                  onTap: _openReservationsMenu,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: SaaSMetricCard(
+                  title: 'Assistente IA Síndico',
+                  value: 'Ativo',
+                  icon: Icons.auto_awesome,
+                  iconColor: const Color(0xFF8B5CF6),
+                  subtitle: 'Análise de dados do condomínio',
+                  onTap: _openCondoAssistant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 2-Column Split Workspace (Zero Page Scroll)
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left Panel: Situação Financeira das Unidades
+                Expanded(
+                  flex: 6,
+                  child: SaaSCard(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SaaSSectionHeader(
+                          title: 'Situação Financeira das Unidades',
+                          action: FilledButton.icon(
+                            onPressed: _generateBoleto,
+                            icon: const Icon(Icons.receipt_long_rounded, size: 16),
+                            label: const Text('Novo Boleto'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: SaaSColors.primary,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            ),
+                          ),
+                        ),
+                        EnterSearchField(
+                          hintText: 'Pesquisar unidades ou moradores (Enter)',
+                          onSubmitted: (query) => setState(() => _query = query),
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: _dashboardRecords('units').isEmpty
+                              ? const SaaSEmptyState(
+                                  icon: Icons.home_work_outlined,
+                                  title: 'Nenhuma unidade encontrada',
+                                  description: 'Verifique a busca ou cadastre novas unidades.',
+                                )
+                              : ListView.separated(
+                                  itemCount: _dashboardRecords('units').length,
+                                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final unit = _dashboardRecords('units')[index];
+                                    final (label, bg, fg) = _statusStyle(unit['paymentStatus']);
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: SaaSColors.surfaceSubtle(isDark),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: SaaSColors.border(isDark)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 18,
+                                            backgroundColor: bg,
+                                            child: Icon(Icons.home_outlined, color: fg, size: 18),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  '${unit['sector']} • Unidade ${unit['identifier']}',
+                                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  'Status: $label${unit['dueDate'] == null ? '' : ' • Venc: ${_formatDate(unit['dueDate'])}'}${unit['amount'] == null ? '' : ' • R\$ ${unit['amount']}'}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: SaaSColors.textSecondary(isDark),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          OutlinedButton.icon(
+                                            onPressed: () => _editPayment(unit),
+                                            icon: const Icon(Icons.edit_outlined, size: 15),
+                                            label: const Text('Atualizar'),
+                                            style: OutlinedButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+
+                // Right Panel: Agendamentos de Áreas Comuns
+                Expanded(
+                  flex: 6,
+                  child: SaaSCard(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SaaSSectionHeader(
+                          title: 'Agendamentos de Áreas Comuns',
+                          badge: SaaSBadge(
+                            label: '${_dashboardRecords('reservations').length}',
+                            variant: SaaSBadgeVariant.warning,
+                          ),
+                          action: OutlinedButton.icon(
+                            onPressed: _openReservationsMenu,
+                            icon: const Icon(Icons.visibility_outlined, size: 16),
+                            label: const Text('Ver todas'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: _dashboardRecords('reservations').isEmpty
+                              ? const SaaSEmptyState(
+                                  icon: Icons.event_available_outlined,
+                                  title: 'Nenhum agendamento pendente',
+                                  description: 'Não há solicitações de áreas comuns registradas no momento.',
+                                )
+                              : ListView.separated(
+                                  itemCount: _dashboardRecords('reservations').length,
+                                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final reservation = _dashboardRecords('reservations')[index];
+                                    return Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: SaaSColors.surfaceSubtle(isDark),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: SaaSColors.border(isDark)),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: const Icon(Icons.event_available_outlined, color: SaaSColors.primary, size: 20),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  '${reservation['commonArea']} • ${reservation['residentName']}',
+                                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: SaaSColors.textSecondary(isDark),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  '${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''} • ${_translateStatus(reservation['status'])}',
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    color: SaaSColors.textSecondary(isDark),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // MOBILE LAYOUT (Vertical, Touch-Optimized)
+  // ==========================================
+  Widget _buildMobileManagerLayout(bool isDark) {
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _buildCondominiumCoverBanner(isDark),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Olá, ${firstNameOf(widget.userName, fallback: 'síndico')}! 👋',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Gerencie moradores, porteiros, reservas e pagamentos.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    const SizedBox(height: 14),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF1E3A8A),
+                            ),
+                            onPressed: _openMemberships,
+                            icon: const Icon(Icons.group_add_outlined, size: 16),
+                            label: const Text('Vínculos'),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFEF3C7),
+                              foregroundColor: const Color(0xFFB45309),
+                            ),
+                            onPressed: _sendAnnouncement,
+                            icon: const Icon(Icons.campaign_outlined, size: 16),
+                            label: const Text('Comunicado'),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFDCFCE7),
+                              foregroundColor: const Color(0xFF15803D),
+                            ),
+                            onPressed: _openCommunityHub,
+                            icon: const Icon(Icons.diversity_3_outlined, size: 16),
+                            label: const Text('Hub Geral'),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFE0E7FF),
+                              foregroundColor: const Color(0xFF1D4ED8),
+                            ),
+                            onPressed: () => _openCommunityHub(initialIndex: 11),
+                            icon: const Icon(Icons.build_circle_outlined, size: 16),
+                            label: const Text('Manutenções'),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFF3E8FF),
+                              foregroundColor: const Color(0xFF6D28D9),
+                            ),
+                            onPressed: () => _openCommunityHub(initialIndex: 12),
+                            icon: const Icon(Icons.groups_outlined, size: 16),
+                            label: const Text('Assembleias'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                initialValue: _selected,
+                decoration: const InputDecoration(
+                  labelText: 'Condomínio em gestão',
+                  prefixIcon: Icon(Icons.apartment_rounded),
+                ),
+                items: _condos
+                    .map(
+                      (membership) => DropdownMenuItem<int>(
+                        value: (membership['condominiumId'] as num).toInt(),
+                        child: Text(
+                          membership['condominiumName']?.toString().trim().isNotEmpty == true
+                              ? '${membership['condominiumName']}'
+                              : 'Condomínio vinculado',
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() => _selected = value);
+                  _load();
+                },
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _metric(
+                    'Unidades cadastradas',
+                    _dashboard?['totalUnits'],
+                    Icons.home_work_outlined,
+                    accentBg: isDark ? const Color(0xFF1E293B) : const Color(0xFFE0E7FF),
+                    accentFg: SaaSColors.primary,
+                    onTap: _openUnitsMenu,
+                  ),
+                  _metric(
+                    'Pessoas vinculadas',
+                    _dashboard?['totalUsers'],
+                    Icons.groups_outlined,
+                    accentBg: isDark ? const Color(0xFF064E3B) : const Color(0xFFCCFBF1),
+                    accentFg: const Color(0xFF0F766E),
+                    onTap: _openMemberships,
+                  ),
+                  _metric(
+                    'Reservas registradas',
+                    _dashboard?['totalReservations'],
+                    Icons.event_available_outlined,
+                    accentBg: isDark ? const Color(0xFF78350F) : const Color(0xFFDCFCE7),
+                    accentFg: const Color(0xFF15803D),
+                    onTap: _openReservationsMenu,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              EnterSearchField(
+                hintText: 'Pesquisar unidades ou reservas (Enter)',
+                onSubmitted: (query) => setState(() => _query = query),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Situação financeira das unidades',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: SaaSColors.textPrimary(isDark),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _generateBoleto,
+                    icon: const Icon(Icons.receipt_long_rounded, size: 16),
+                    label: const Text('Gerar Boleto'),
+                    style: FilledButton.styleFrom(backgroundColor: SaaSColors.primary),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (_dashboardRecords('units').isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text('Nenhuma unidade encontrada.'),
+                  ),
+                )
+              else
+                ..._dashboardRecords('units').map((unit) {
+                  final (label, bg, fg) = _statusStyle(unit['paymentStatus']);
+                  return SaaSCard(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: bg,
+                          child: Icon(Icons.home_outlined, color: fg, size: 18),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${unit['sector']} • Unidade ${unit['identifier']}',
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Status: $label${unit['dueDate'] == null ? '' : ' • Vencimento: ${_formatDate(unit['dueDate'])}'}${unit['amount'] == null ? '' : ' • R\$ ${unit['amount']}'}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: SaaSColors.textSecondary(isDark),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => _editPayment(unit),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('Atualizar'),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              const SizedBox(height: 20),
+              Text(
+                'Agendamentos de áreas comuns',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: SaaSColors.textPrimary(isDark),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (_dashboardRecords('reservations').isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text('Nenhum agendamento encontrado.'),
+                  ),
+                )
+              else
+                ..._dashboardRecords('reservations').map((reservation) {
+                  return SaaSCard(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.event_available_outlined, color: SaaSColors.primary, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${reservation['commonArea']} • ${reservation['residentName']}',
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: SaaSColors.textSecondary(isDark),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''} • ${_translateStatus(reservation['status'])}',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: SaaSColors.textSecondary(isDark),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   String _formatDate(dynamic dateString) {
     if (dateString == null) return '';
@@ -1056,6 +1919,7 @@ class _ManagerReservationsMenuPage extends StatefulWidget {
 class _ManagerReservationsMenuPageState
     extends State<_ManagerReservationsMenuPage> {
   String _query = '';
+  String _selectedTab = 'SCHEDULED'; // 'SCHEDULED', 'PAST', 'CANCELLED'
 
   String _formatDateTime(dynamic dateTimeString) {
     if (dateTimeString == null) return '';
@@ -1067,16 +1931,49 @@ class _ManagerReservationsMenuPageState
     }
   }
 
+  bool _isCancelled(Map<String, dynamic> r) {
+    final status = r['status']?.toString().toUpperCase();
+    return status == 'CANCELLED' || status == 'REJECTED';
+  }
+
+  bool _isPast(Map<String, dynamic> r) {
+    if (_isCancelled(r)) return false;
+    final endAt = r['endAt'];
+    if (endAt == null) return false;
+    try {
+      final dt = DateTime.parse(endAt.toString()).toLocal();
+      return dt.isBefore(DateTime.now());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isScheduled(Map<String, dynamic> r) {
+    return !_isCancelled(r) && !_isPast(r);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filtered = widget.reservations
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final allFiltered = widget.reservations
         .where((item) => recordMatchesQuery(item, _query))
         .toList();
+
+    final scheduled = allFiltered.where(_isScheduled).toList();
+    final past = allFiltered.where(_isPast).toList();
+    final cancelled = allFiltered.where(_isCancelled).toList();
+
+    final currentList = switch (_selectedTab) {
+      'PAST' => past,
+      'CANCELLED' => cancelled,
+      _ => scheduled,
+    };
+
     return Scaffold(
       appBar: AppBar(title: const Text('Reservas registradas')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
+          constraints: const BoxConstraints(maxWidth: 860),
           child: ListView(
             padding: const EdgeInsets.all(18),
             children: [
@@ -1085,31 +1982,167 @@ class _ManagerReservationsMenuPageState
                 onSubmitted: (value) => setState(() => _query = value),
               ),
               const SizedBox(height: 14),
-              if (filtered.isEmpty)
-                const Card(
+              // Segmented Category Tabs
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ChoiceChip(
+                      label: Text('Agendadas (${scheduled.length})'),
+                      selected: _selectedTab == 'SCHEDULED',
+                      onSelected: (val) {
+                        if (val) setState(() => _selectedTab = 'SCHEDULED');
+                      },
+                      avatar: const Icon(Icons.calendar_month_outlined, size: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Text('Já passaram (${past.length})'),
+                      selected: _selectedTab == 'PAST',
+                      onSelected: (val) {
+                        if (val) setState(() => _selectedTab = 'PAST');
+                      },
+                      avatar: const Icon(Icons.history_rounded, size: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Text(
+                        'Canceladas (${cancelled.length})',
+                        style: TextStyle(
+                          color: _selectedTab == 'CANCELLED'
+                              ? Colors.white
+                              : const Color(0xFFDC2626),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      selected: _selectedTab == 'CANCELLED',
+                      selectedColor: const Color(0xFFDC2626),
+                      backgroundColor: isDark
+                          ? const Color(0xFF450A0A).withValues(alpha: 0.3)
+                          : const Color(0xFFFEE2E2),
+                      side: BorderSide(
+                        color: _selectedTab == 'CANCELLED'
+                            ? const Color(0xFFDC2626)
+                            : const Color(0xFFFCA5A5),
+                      ),
+                      onSelected: (val) {
+                        if (val) setState(() => _selectedTab = 'CANCELLED');
+                      },
+                      avatar: Icon(
+                        Icons.cancel_outlined,
+                        size: 16,
+                        color: _selectedTab == 'CANCELLED'
+                            ? Colors.white
+                            : const Color(0xFFDC2626),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (currentList.isEmpty)
+                Card(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('Nenhuma reserva encontrada.'),
+                    padding: const EdgeInsets.all(28),
+                    child: Center(
+                      child: Text(
+                        _selectedTab == 'CANCELLED'
+                            ? 'Nenhuma reserva cancelada.'
+                            : _selectedTab == 'PAST'
+                                ? 'Nenhuma reserva finalizada.'
+                                : 'Nenhuma reserva agendada no momento.',
+                        style: TextStyle(
+                          color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ),
                   ),
                 )
               else
-                ...filtered.map((reservation) {
+                ...currentList.map((reservation) {
                   final status = reservation['status']?.toString();
+                  final isItemCancelled = _isCancelled(reservation);
+
                   return Card(
+                    color: isItemCancelled
+                        ? (isDark
+                            ? const Color(0xFF450A0A).withValues(alpha: 0.35)
+                            : const Color(0xFFFEF2F2))
+                        : null,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(
+                        color: isItemCancelled
+                            ? const Color(0xFFFCA5A5)
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        width: isItemCancelled ? 1.5 : 1.0,
+                      ),
+                    ),
+                    margin: const EdgeInsets.only(bottom: 10),
                     child: ListTile(
-                      leading: const CircleAvatar(
-                        backgroundColor: Color(0xFFE0E7FF),
+                      leading: CircleAvatar(
+                        backgroundColor: isItemCancelled
+                            ? const Color(0xFFFEE2E2)
+                            : const Color(0xFFE0E7FF),
                         child: Icon(
-                          Icons.event_available_outlined,
-                          color: Color(0xFF2F3FB0),
+                          isItemCancelled
+                              ? Icons.cancel_outlined
+                              : Icons.event_available_outlined,
+                          color: isItemCancelled
+                              ? const Color(0xFFDC2626)
+                              : const Color(0xFF2F3FB0),
                         ),
                       ),
                       title: Text(
                         '${reservation['commonArea']} • ${reservation['residentName']}',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: isItemCancelled ? const Color(0xFFB91C1C) : null,
+                        ),
                       ),
-                      subtitle: Text(
-                        '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}\n${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''} • ${status == 'CONFIRMED' ? 'Confirmada' : (status == 'PENDING' ? 'Aguardando Aprovação' : 'Cancelada / Recusada')}',
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 2),
+                          Text(
+                            '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}',
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                          Text(
+                            '${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                            ),
+                          ),
+                          if (isItemCancelled) ...[
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEE2E2),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFF87171)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.cancel_rounded, size: 13, color: Color(0xFFDC2626)),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'CANCELADA / RECUSADA',
+                                    style: TextStyle(
+                                      color: Color(0xFFDC2626),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 10.5,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       isThreeLine: true,
                       trailing: status == 'PENDING'

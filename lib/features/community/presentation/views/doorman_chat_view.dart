@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../../core/responsive/responsive_layout.dart';
+import '../../../../core/services/realtime_service.dart';
 import '../../data/community_api.dart';
 
 class DoormanChatView extends StatefulWidget {
@@ -27,11 +29,20 @@ class DoormanChatView extends StatefulWidget {
 class _DoormanChatViewState extends State<DoormanChatView> {
   final TextEditingController _msgCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
+  final TextEditingController _searchCtrl = TextEditingController();
+
   List<Map<String, dynamic>> _messages = [];
   bool _loading = true;
   bool _sending = false;
   String? _error;
   Timer? _timer;
+  StreamSubscription<RealtimeEvent>? _sseSub;
+
+  // Conversations list for Doorman mode
+  List<Map<String, dynamic>> _conversations = [];
+  bool _loadingConversations = false;
+  String _searchQuery = '';
+  Map<String, dynamic>? _selectedResident;
 
   static const _residentPresets = [
     'Minha encomenda já chegou?',
@@ -50,17 +61,114 @@ class _DoormanChatViewState extends State<DoormanChatView> {
   @override
   void initState() {
     super.initState();
-    _loadMessages();
-    // Real-time polling every 3 seconds
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _pollMessages());
+
+    if (widget.isDoormanMode) {
+      if (widget.targetUserId != null) {
+        _selectedResident = {
+          'userId': widget.targetUserId,
+          'userName': widget.targetUserName ?? 'Morador',
+          'unitLabel': widget.targetUnitLabel ?? 'Unidade',
+        };
+        _loadMessages();
+      }
+      _loadConversations();
+    } else {
+      _loadMessages();
+    }
+
+    // Sincronização em tempo real via Server-Sent Events (SSE)
+    _sseSub = RealtimeService.instance.events.listen((event) {
+      if (event.type == 'CHAT_MESSAGE') {
+        if (event.condominiumId == null || event.condominiumId == widget.condominiumId) {
+          _handleIncomingChatMessage(event.data);
+          if (widget.isDoormanMode) {
+            _loadConversations(silent: true);
+          }
+        }
+      }
+    });
+
+    // Fallback de polling a cada 20 segundos
+    _timer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) return;
+      if (!widget.isDoormanMode || _selectedResident != null) {
+        _pollMessages(silent: true);
+      }
+      if (widget.isDoormanMode) {
+        _loadConversations(silent: true);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _sseSub?.cancel();
     _timer?.cancel();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
+  }
+
+  num? get _activeTargetUserId {
+    if (!widget.isDoormanMode) return null;
+    return _selectedResident?['userId'] as num? ?? widget.targetUserId;
+  }
+
+  String get _activeTargetUserName {
+    if (!widget.isDoormanMode) return 'Portaria & Guarita';
+    return _selectedResident?['userName']?.toString() ?? widget.targetUserName ?? 'Conversa com Morador';
+  }
+
+  String? get _activeTargetUnitLabel {
+    if (!widget.isDoormanMode) return null;
+    return _selectedResident?['unitLabel']?.toString() ?? widget.targetUnitLabel;
+  }
+
+  void _handleIncomingChatMessage(dynamic data) {
+    if (!mounted || data == null) return;
+    final Map<String, dynamic> msg =
+        data is Map<String, dynamic> ? data : <String, dynamic>{};
+    if (msg.isEmpty) return;
+
+    final targetId = _activeTargetUserId;
+    if (widget.isDoormanMode) {
+      if (targetId == null) return;
+      final senderId = msg['senderId'];
+      final recipientId = msg['recipientId'];
+      if (senderId != targetId && recipientId != targetId) {
+        return;
+      }
+    }
+
+    final id = msg['id'];
+    if (id != null && _messages.any((m) => m['id'] == id)) {
+      return;
+    }
+
+    setState(() {
+      _messages.add(msg);
+    });
+    _scrollToBottom();
+    widget.api.markChatAsRead(widget.condominiumId).catchError((_) {});
+  }
+
+  Future<void> _loadConversations({bool silent = false}) async {
+    if (!widget.isDoormanMode) return;
+    if (!silent) setState(() => _loadingConversations = true);
+    try {
+      final list = await widget.api.getChatConversations(widget.condominiumId);
+      if (mounted) {
+        setState(() {
+          _conversations = list;
+          _loadingConversations = false;
+        });
+      }
+    } catch (_) {
+      if (mounted && !silent) {
+        setState(() => _loadingConversations = false);
+      }
+    }
   }
 
   Future<void> _loadMessages() async {
@@ -74,21 +182,26 @@ class _DoormanChatViewState extends State<DoormanChatView> {
     _scrollToBottom();
   }
 
-  Future<void> _pollMessages() async {
+  Future<void> _pollMessages({bool silent = false}) async {
+    final targetId = _activeTargetUserId;
+    if (widget.isDoormanMode && targetId == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+
     try {
       final list = await widget.api.getChatMessages(
         widget.condominiumId,
-        targetUserId: widget.targetUserId,
+        targetUserId: targetId,
       );
       if (!mounted) return;
-      if (list.length != _messages.length) {
+      if (list.length != _messages.length || _messages.isEmpty) {
         setState(() => _messages = list);
         _scrollToBottom();
+        await widget.api.markChatAsRead(widget.condominiumId);
       }
-      // Marca como lido
-      await widget.api.markChatAsRead(widget.condominiumId);
     } catch (e) {
-      if (_loading && mounted) {
+      if (!silent && _loading && mounted) {
         setState(() => _error = e.toString());
       }
     }
@@ -106,11 +219,326 @@ class _DoormanChatViewState extends State<DoormanChatView> {
     });
   }
 
+  void _selectResident(Map<String, dynamic> resident) {
+    setState(() {
+      _selectedResident = resident;
+      _messages = [];
+    });
+    _loadMessages();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final isDesktop = ResponsiveLayout.isDesktop(context);
 
+    // If Doorman mode on Desktop: 2-column view (residents list on left, chat on right)
+    if (widget.isDoormanMode && isDesktop) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Left: Conversations list
+          SizedBox(
+            width: 320,
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                border: Border(
+                  right: BorderSide(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+              ),
+              child: _buildConversationsList(isDark),
+            ),
+          ),
+
+          // Right: Active Chat Area
+          Expanded(
+            child: _selectedResident != null
+                ? _buildChatConversationView(isDark, theme, showBack: false)
+                : _buildNoConversationSelectedPlaceholder(isDark),
+          ),
+        ],
+      );
+    }
+
+    // Doorman mode on Mobile/Tablet:
+    if (widget.isDoormanMode) {
+      if (_selectedResident == null) {
+        return _buildConversationsList(isDark);
+      }
+      return _buildChatConversationView(isDark, theme, showBack: true);
+    }
+
+    // Resident Mode (Direct Chat with Portaria)
+    return _buildChatConversationView(isDark, theme, showBack: false);
+  }
+
+  Widget _buildConversationsList(bool isDark) {
+    final filtered = _conversations.where((c) {
+      if (_searchQuery.trim().isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      final name = (c['userName'] ?? '').toString().toLowerCase();
+      final unit = (c['unitLabel'] ?? '').toString().toLowerCase();
+      final last = (c['lastMessage'] ?? '').toString().toLowerCase();
+      return name.contains(q) || unit.contains(q) || last.contains(q);
+    }).toList();
+
+    return Column(
+      children: [
+        // Header & Search
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+            border: Border(
+              bottom: BorderSide(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.forum_outlined, size: 20, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Conversas com Moradores',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    tooltip: 'Atualizar lista de moradores',
+                    onPressed: () => _loadConversations(silent: false),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _searchCtrl,
+                onChanged: (val) => setState(() => _searchQuery = val),
+                decoration: InputDecoration(
+                  hintText: 'Buscar morador ou unidade...',
+                  hintStyle: const TextStyle(fontSize: 12.5),
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // List
+        Expanded(
+          child: _loadingConversations
+              ? const Center(child: CircularProgressIndicator())
+              : filtered.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.search_off_rounded,
+                              size: 40,
+                              color: isDark ? const Color(0xFF475569) : const Color(0xFF94A3B8),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _searchQuery.isEmpty
+                                  ? 'Nenhum morador cadastrado neste condomínio.'
+                                  : 'Nenhum morador encontrado para "$_searchQuery".',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                      ),
+                      itemBuilder: (context, index) {
+                        final item = filtered[index];
+                        final isSelected = _selectedResident != null &&
+                            _selectedResident!['userId'] == item['userId'];
+                        final unread = (item['unreadCount'] as num?)?.toInt() ?? 0;
+                        final lastMsg = item['lastMessage']?.toString();
+                        final name = item['userName']?.toString() ?? 'Morador';
+                        final unit = item['unitLabel']?.toString() ?? '';
+
+                        return InkWell(
+                          onTap: () => _selectResident(item),
+                          child: Container(
+                            color: isSelected
+                                ? (isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF))
+                                : null,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: isSelected
+                                      ? const Color(0xFF2563EB)
+                                      : (isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0)),
+                                  child: Text(
+                                    name.isNotEmpty ? name[0].toUpperCase() : 'M',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                                fontSize: 13.5,
+                                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                              ),
+                                            ),
+                                          ),
+                                          if (unread > 0)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFEF4444),
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                '$unread',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      if (unit.isNotEmpty)
+                                        Text(
+                                          unit,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 11.5,
+                                            color: Color(0xFF2563EB),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      if (lastMsg != null && lastMsg.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          lastMsg,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNoConversationSelectedPlaceholder(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.chat_bubble_outline_rounded,
+                size: 48,
+                color: Color(0xFF2563EB),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Atendimento Privado da Portaria',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Selecione um morador na lista ao lado para abrir o chat privado individual com ele.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatConversationView(bool isDark, ThemeData theme, {required bool showBack}) {
     return Column(
       children: [
         // Top chat bar
@@ -122,6 +550,12 @@ class _DoormanChatViewState extends State<DoormanChatView> {
           ),
           child: Row(
             children: [
+              if (showBack)
+                IconButton(
+                  tooltip: 'Voltar às conversas',
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () => setState(() => _selectedResident = null),
+                ),
               CircleAvatar(
                 radius: 20,
                 backgroundColor: widget.isDoormanMode
@@ -139,27 +573,30 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.isDoormanMode
-                          ? (widget.targetUserName ?? 'Conversa com Morador')
-                          : 'Portaria & Guarita',
+                      _activeTargetUserName,
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
                     ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF22C55E),
-                            shape: BoxShape.circle,
-                          ),
+                        StreamBuilder<RealtimeConnectionState>(
+                          stream: RealtimeService.instance.connectionState,
+                          initialData: RealtimeService.instance.state,
+                          builder: (context, snapshot) {
+                            final connected = snapshot.data == RealtimeConnectionState.connected;
+                            return Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: connected ? const Color(0xFF22C55E) : Colors.orange,
+                                shape: BoxShape.circle,
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          widget.isDoormanMode && widget.targetUnitLabel != null
-                              ? widget.targetUnitLabel!
-                              : 'Conectado em tempo real',
+                          _activeTargetUnitLabel ?? 'Conectado em tempo real',
                           style: TextStyle(
                             fontSize: 12,
                             color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
@@ -173,108 +610,159 @@ class _DoormanChatViewState extends State<DoormanChatView> {
               IconButton(
                 tooltip: 'Atualizar mensagens',
                 icon: const Icon(Icons.refresh_rounded, size: 20),
-                onPressed: _pollMessages,
+                onPressed: () => _pollMessages(silent: false),
               ),
             ],
           ),
         ),
 
-        // Message area
+        // Message list
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
-              ? Center(child: Text('Erro: $_error'))
-              : _messages.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.chat_bubble_outline_rounded,
-                          size: 48, color: theme.disabledColor),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Nenhuma mensagem ainda.\nEnvie uma mensagem para a portaria!',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF64748B), height: 1.4),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  controller: _scrollCtrl,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, i) {
-                    final msg = _messages[i];
-                    final isMe = widget.isDoormanMode
-                        ? (msg['senderRole'] == 'DOORMAN' || msg['senderRole'] == 'MANAGER')
-                        : msg['senderRole'] == 'RESIDENT';
-                    final senderName = msg['senderName']?.toString() ?? '';
-                    final text = msg['message']?.toString() ?? '';
-                    final sentAt = msg['sentAt']?.toString() ?? '';
-                    final timeStr = sentAt.contains('T')
-                        ? sentAt.split('T').last.substring(0, 5)
-                        : '';
-
-                    return Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.75,
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isMe
-                              ? const Color(0xFF2563EB)
-                              : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(16),
-                            topRight: const Radius.circular(16),
-                            bottomLeft: Radius.circular(isMe ? 16 : 4),
-                            bottomRight: Radius.circular(isMe ? 4 : 16),
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline_rounded, size: 40, color: Colors.redAccent),
+                          const SizedBox(height: 8),
+                          Text('Erro: $_error', textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          FilledButton.icon(
+                            onPressed: _loadMessages,
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text('Tentar novamente'),
                           ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment:
-                              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                          children: [
-                            if (!isMe)
+                        ],
+                      ),
+                    )
+                  : _messages.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 52,
+                                color: isDark ? const Color(0xFF475569) : const Color(0xFF94A3B8),
+                              ),
+                              const SizedBox(height: 10),
                               Text(
-                                senderName,
+                                'Nenhuma mensagem trocada ainda.',
                                 style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11,
-                                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF1E3A8A),
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                                 ),
                               ),
-                            Text(
-                              text,
-                              style: TextStyle(
-                                color: isMe
-                                    ? Colors.white
-                                    : (isDark ? Colors.white : const Color(0xFF0F172A)),
-                                fontSize: 14,
-                                height: 1.35,
+                              const SizedBox(height: 4),
+                              Text(
+                                widget.isDoormanMode
+                                    ? 'Inicie uma conversa privada com o morador abaixo.'
+                                    : 'Envie um aviso ou tire dúvidas direto com os porteiros de plantão.',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              timeStr,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: isMe
-                                    ? Colors.white.withValues(alpha: 0.7)
-                                    : (isDark ? Colors.white60 : Colors.black45),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: _scrollCtrl,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          itemCount: _messages.length,
+                          itemBuilder: (ctx, i) {
+                            final m = _messages[i];
+                            final role = m['senderRole']?.toString() ?? 'RESIDENT';
+                            final isMe = widget.isDoormanMode
+                                ? (role == 'DOORMAN' || role == 'MANAGER')
+                                : (role == 'RESIDENT');
+
+                            final sender = m['senderName']?.toString() ?? (isMe ? 'Eu' : 'Portaria');
+                            final text = m['message']?.toString() ?? '';
+                            final timeRaw = m['sentAt']?.toString() ?? '';
+                            String time = '';
+                            if (timeRaw.isNotEmpty) {
+                              final dt = DateTime.tryParse(timeRaw);
+                              if (dt != null) {
+                                time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                              }
+                            }
+
+                            return Align(
+                              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                constraints: BoxConstraints(
+                                  maxWidth: MediaQuery.of(context).size.width * 0.76,
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isMe
+                                      ? const Color(0xFF2563EB)
+                                      : isDark
+                                          ? const Color(0xFF1E293B)
+                                          : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(16),
+                                    topRight: const Radius.circular(16),
+                                    bottomLeft: Radius.circular(isMe ? 16 : 4),
+                                    bottomRight: Radius.circular(isMe ? 4 : 16),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.04),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                  children: [
+                                    if (!isMe)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 3),
+                                        child: Text(
+                                          sender,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF2563EB),
+                                          ),
+                                        ),
+                                      ),
+                                    Text(
+                                      text,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: isMe
+                                            ? Colors.white
+                                            : isDark
+                                                ? Colors.white
+                                                : const Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      time,
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: isMe
+                                            ? Colors.white.withValues(alpha: 0.7)
+                                            : isDark
+                                                ? const Color(0xFF94A3B8)
+                                                : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
-                ),
         ),
 
         // Respostas Rápidas
@@ -324,7 +812,7 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                   maxLines: 4,
                   decoration: InputDecoration(
                     hintText: widget.isDoormanMode
-                        ? 'Responder ao morador...'
+                        ? 'Enviar mensagem privada para $_activeTargetUserName...'
                         : 'Escreva uma mensagem para a portaria...',
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     border: OutlineInputBorder(
@@ -362,15 +850,28 @@ class _DoormanChatViewState extends State<DoormanChatView> {
   Future<void> _send() async {
     final text = _msgCtrl.text.trim();
     if (text.isEmpty) return;
+
+    final targetId = _activeTargetUserId;
+    if (widget.isDoormanMode && targetId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, selecione um morador para conversar.')),
+      );
+      return;
+    }
+
     setState(() => _sending = true);
     try {
       await widget.api.sendChatMessage(
         widget.condominiumId,
         message: text,
-        recipientId: widget.targetUserId,
+        recipientId: targetId,
+        unitId: _selectedResident?['unitId'] as num?,
       );
       _msgCtrl.clear();
-      await _pollMessages();
+      await _pollMessages(silent: true);
+      if (widget.isDoormanMode) {
+        _loadConversations(silent: true);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

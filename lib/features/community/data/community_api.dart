@@ -630,6 +630,11 @@ class CommunityApi {
   }
 
   // 14. CHAT EM TEMPO REAL COM A PORTARIA
+  Future<List<Map<String, dynamic>>> getChatConversations(num condoId) async {
+    final res = await api.get('/condominiums/$condoId/doorman-chat/conversations');
+    return _asList(res);
+  }
+
   Future<List<Map<String, dynamic>>> getChatMessages(num condoId, {num? targetUserId}) async {
     final query = targetUserId != null ? '?targetUserId=$targetUserId' : '';
     final res = await api.get('/condominiums/$condoId/doorman-chat/messages$query');
@@ -737,6 +742,187 @@ class CommunityApi {
   // 18. TEMA DO USUÁRIO
   Future<void> updateThemePreference(String theme) async {
     await api.send('PATCH', '/users/me/theme', body: {'theme': theme});
+  }
+
+  // 19. GESTÃO FINANCEIRA E DESPESAS
+  Future<Map<String, dynamic>> getFinancialSummary(num condoId) async {
+    final res = await api.get('/condominiums/$condoId/financial/summary');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<List<Map<String, dynamic>>> listExpenses(num condoId) async {
+    final res = await api.get('/condominiums/$condoId/financial/expenses');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> createExpense(
+    num condoId, {
+    required String category,
+    required String description,
+    required double amount,
+    required DateTime dueDate,
+    String? supplier,
+    String? documentNumber,
+    String? receiptUrl,
+  }) async {
+    final dateStr = '${dueDate.year.toString().padLeft(4, '0')}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}';
+    final res = await api.send('POST', '/condominiums/$condoId/financial/expenses', body: {
+      'category': category,
+      'description': description,
+      'amount': amount,
+      'dueDate': dateStr,
+      if (supplier != null && supplier.isNotEmpty) 'supplier': supplier,
+      if (documentNumber != null && documentNumber.isNotEmpty) 'documentNumber': documentNumber,
+      if (receiptUrl != null && receiptUrl.isNotEmpty) 'receiptUrl': receiptUrl,
+    });
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> payExpense(num expenseId) async {
+    final res = await api.send('PATCH', '/financial/expenses/$expenseId/pay');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> cancelExpense(num expenseId) async {
+    final res = await api.send('PATCH', '/financial/expenses/$expenseId/cancel');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  // 20. MANUTENÇÃO PREDIAL E ORDENS DE SERVIÇO
+  Future<List<Map<String, dynamic>>> listMaintenanceOrders(num condoId, [String? status]) async {
+    final query = status != null && status.isNotEmpty ? '?status=$status' : '';
+    final res = await api.get('/condominiums/$condoId/maintenance/orders$query');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> getMaintenanceOrder(num id) async {
+    final res = await api.get('/maintenance/orders/$id');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> createMaintenanceOrder(
+    num condoId, {
+    required String title,
+    required String description,
+    required String category,
+    String? type,
+    String? priority,
+    String? contractorName,
+    String? contractorContact,
+    DateTime? scheduledDate,
+    double? estimatedCost,
+    String? notes,
+  }) async {
+    final dateStr = scheduledDate != null
+        ? '${scheduledDate.year.toString().padLeft(4, '0')}-${scheduledDate.month.toString().padLeft(2, '0')}-${scheduledDate.day.toString().padLeft(2, '0')}'
+        : null;
+    final res = await api.send('POST', '/condominiums/$condoId/maintenance/orders', body: {
+      'title': title,
+      'description': description,
+      'category': category,
+      if (type != null) 'type': type,
+      if (priority != null) 'priority': priority,
+      if (contractorName != null) 'contractorName': contractorName,
+      if (contractorContact != null) 'contractorContact': contractorContact,
+      if (dateStr != null) 'scheduledDate': dateStr,
+      if (estimatedCost != null) 'estimatedCost': estimatedCost,
+      if (notes != null) 'notes': notes,
+    });
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> updateMaintenanceOrderStatus(
+    num id, {
+    required String status,
+    double? actualCost,
+    String? notes,
+  }) async {
+    final res = await api.send('PATCH', '/maintenance/orders/$id/status', body: {
+      'status': status,
+      if (actualCost != null) 'actualCost': actualCost,
+      if (notes != null) 'notes': notes,
+    });
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  // 21. ASSEMBLEIAS E VOTAÇÃO DE PAUTAS
+  Future<List<Map<String, dynamic>>> listAssemblies(num condoId) async {
+    final res = await api.get('/condominiums/$condoId/assemblies');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> getAssembly(num id) async {
+    final res = await api.get('/assemblies/$id');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> createAssembly(
+    num condoId, {
+    required String title,
+    String? description,
+    String? type,
+    required DateTime meetingDate,
+    DateTime? secondCallDate,
+    String? locationOrLink,
+    String? callNoticeUrl,
+  }) async {
+    final res = await api.send('POST', '/condominiums/$condoId/assemblies', body: {
+      'title': title,
+      if (description != null) 'description': description,
+      if (type != null) 'type': type,
+      'meetingDate': meetingDate.toIso8601String(),
+      if (secondCallDate != null) 'secondCallDate': secondCallDate.toIso8601String(),
+      if (locationOrLink != null) 'locationOrLink': locationOrLink,
+      if (callNoticeUrl != null) 'callNoticeUrl': callNoticeUrl,
+    });
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> addAssemblyTopic(
+    num assemblyId, {
+    required String title,
+    String? description,
+    int? displayOrder,
+  }) async {
+    final res = await api.send('POST', '/assemblies/$assemblyId/topics', body: {
+      'title': title,
+      if (description != null) 'description': description,
+      if (displayOrder != null) 'displayOrder': displayOrder,
+    });
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> toggleAssemblyTopicVoting(num topicId, bool open) async {
+    final res = await api.send('PATCH', '/assembly-topics/$topicId/voting?open=$open');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> castAssemblyVote(num topicId, String voteChoice) async {
+    final res = await api.send('POST', '/assembly-topics/$topicId/votes', body: {
+      'voteChoice': voteChoice,
+    });
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> updateAssemblyStatus(
+    num id, {
+    required String status,
+    String? minutesUrl,
+  }) async {
+    final res = await api.send('PATCH', '/assemblies/$id/status', body: {
+      'status': status,
+      if (minutesUrl != null) 'minutesUrl': minutesUrl,
+    });
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  // 22. ASSISTENTE INTELIGENTE CONDOMINIAL
+  Future<Map<String, dynamic>> askAssistant(num condoId, String question, [String? category]) async {
+    final res = await api.send('POST', '/condominiums/$condoId/assistant/query', body: {
+      'question': question,
+      if (category != null) 'category': category,
+    });
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   List<Map<String, dynamic>> _asList(dynamic data) {

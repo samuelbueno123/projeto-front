@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 
+import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../home/data/home_service.dart';
 import '../widgets/google_login_button.dart';
@@ -91,9 +92,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   void _message(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<String?> _reauthenticate({required String action}) async {
@@ -104,7 +103,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
           builder: (dialogContext) => AlertDialog(
             title: Text('Confirme sua conta Google para $action'),
             content: SizedBox(
-              width: 300,
+              width: 320,
               child: buildGoogleLoginButton(
                 onPressed: () async {
                   try {
@@ -350,223 +349,300 @@ class _UserProfilePageState extends State<UserProfilePage> {
   ImageProvider? get _avatarImage => resolveAvatarImageProvider(_profileImage);
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Meu perfil e conta'),
-      leading: IconButton(
-        tooltip: 'Voltar',
-        onPressed: widget.onClose,
-        icon: const Icon(Icons.arrow_back_rounded),
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: SaaSColors.background(isDark),
+      appBar: AppBar(
+        title: const Text('Meu perfil e conta'),
+        elevation: 0,
+        backgroundColor: SaaSColors.surface(isDark),
+        leading: IconButton(
+          tooltip: 'Voltar',
+          onPressed: widget.onClose,
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
       ),
-    ),
-    body: _loading
-        ? const Center(child: CircularProgressIndicator())
-        : Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 680),
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        children: [
-                          Stack(
-                            alignment: Alignment.bottomRight,
-                            children: [
-                              GestureDetector(
-                                onTap:
-                                    (_profileImage != null &&
-                                        _profileImage!.trim().isNotEmpty)
-                                    ? () => showFullScreenImage(
-                                        context,
-                                        imageSource: _profileImage!,
-                                        title: _name.text,
-                                      )
-                                    : null,
-                                child: CircleAvatar(
-                                  radius: 54,
-                                  backgroundColor: const Color(0xFFE0E7FF),
-                                  backgroundImage: _avatarImage,
-                                  child: _avatarImage == null
-                                      ? const Icon(
-                                          Icons.person_rounded,
-                                          size: 52,
-                                          color: Color(0xFF2F3FB0),
-                                        )
-                                      : null,
-                                ),
-                              ),
-                              IconButton.filled(
-                                onPressed: _pickImage,
-                                tooltip: 'Alterar foto de perfil',
-                                icon: const Icon(Icons.camera_alt_outlined),
-                              ),
-                            ],
-                          ),
-                          if (_profileImage != null &&
-                              _profileImage!.trim().isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                if (_profileImage!.startsWith('media/pictures/'))
-                                  Chip(
-                                    avatar: const Icon(
-                                      Icons.folder_outlined,
-                                      size: 16,
-                                    ),
-                                    label: Text(
-                                      _profileImage!,
-                                      style: const TextStyle(fontSize: 11),
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                TextButton.icon(
-                                  onPressed: _removeImage,
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Remover foto'),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 10),
-                          Text(
-                            _name.text.isEmpty ? 'Seu perfil' : _name.text,
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _email.text,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE8ECFF),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              widget.provider == 'google'
-                                  ? 'Conectado via Google'
-                                  : 'Acesso por e-mail e senha',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF2F3FB0),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Informações pessoais',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'As fotos de perfil são salvas no servidor em media/pictures e apenas o caminho é registrado no banco de dados.',
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _name,
-                            decoration: const InputDecoration(
-                              labelText: 'Nome de exibição',
-                              prefixIcon: Icon(Icons.badge_outlined),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextField(
-                            controller: _email,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
-                              labelText: 'E-mail da conta',
-                              prefixIcon: Icon(Icons.alternate_email_rounded),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          FilledButton.icon(
-                            onPressed: _saving ? null : _saveProfile,
-                            icon: const Icon(Icons.save_outlined),
-                            label: Text(
-                              _saving
-                                  ? 'Salvando alterações…'
-                                  : 'Salvar alterações',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Card(
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: const CircleAvatar(
-                            backgroundColor: Color(0xFFE8ECFF),
-                            child: Icon(
-                              Icons.lock_outline_rounded,
-                              color: Color(0xFF2F3FB0),
-                            ),
-                          ),
-                          title: const Text(
-                            'Alterar minha senha',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(
-                            widget.provider == 'google'
-                                ? 'Confirme sua conta Google para definir uma nova senha'
-                                : 'Confirme sua senha atual para atualizar o acesso',
-                          ),
-                          trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: _saving ? null : _changePassword,
-                        ),
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: const CircleAvatar(
-                            backgroundColor: Color(0xFFFEE2E2),
-                            child: Icon(
-                              Icons.logout_rounded,
-                              color: Color(0xFFDC2626),
-                            ),
-                          ),
-                          title: const Text(
-                            'Sair da conta',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFDC2626),
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Encerrar sessão atual neste dispositivo',
-                          ),
-                          onTap: _saving ? null : widget.onLogout,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth >= 900) {
+                  return _buildDesktopLayout(isDark);
+                }
+                return _buildMobileLayout(isDark);
+              },
+            ),
+    );
+  }
+
+  // ==========================================
+  // DESKTOP LAYOUT (2 Columns, Contained)
+  // ==========================================
+  Widget _buildDesktopLayout(bool isDark) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1040),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Left Column: Avatar & Account Summary
+              Expanded(
+                flex: 4,
+                child: Column(
+                  children: [
+                    _buildIdentityCard(isDark),
+                    const SizedBox(height: 16),
+                    _buildSecurityCard(isDark),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+
+              // Right Column: Personal Information Form
+              Expanded(
+                flex: 6,
+                child: _buildDetailsCard(isDark),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================
+  // MOBILE LAYOUT (Single Column, Scrollable)
+  // ==========================================
+  Widget _buildMobileLayout(bool isDark) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            _buildIdentityCard(isDark),
+            const SizedBox(height: 16),
+            _buildDetailsCard(isDark),
+            const SizedBox(height: 16),
+            _buildSecurityCard(isDark),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIdentityCard(bool isDark) {
+    return SaaSCard(
+      child: Column(
+        children: [
+          Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              GestureDetector(
+                onTap: (_profileImage != null && _profileImage!.trim().isNotEmpty)
+                    ? () => showFullScreenImage(
+                          context,
+                          imageSource: _profileImage!,
+                          title: _name.text,
+                        )
+                    : null,
+                child: CircleAvatar(
+                  radius: 52,
+                  backgroundColor: isDark
+                      ? const Color(0xFF1E293B)
+                      : const Color(0xFFEFF6FF),
+                  backgroundImage: _avatarImage,
+                  child: _avatarImage == null
+                      ? Icon(
+                          Icons.person_rounded,
+                          size: 50,
+                          color: isDark
+                              ? const Color(0xFF93C5FD)
+                              : SaaSColors.primary,
+                        )
+                      : null,
+                ),
+              ),
+              IconButton.filled(
+                onPressed: _pickImage,
+                tooltip: 'Alterar foto de perfil',
+                icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                style: IconButton.styleFrom(
+                  backgroundColor: SaaSColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          if (_profileImage != null && _profileImage!.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            TextButton.icon(
+              onPressed: _removeImage,
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text('Remover foto'),
+              style: TextButton.styleFrom(
+                foregroundColor: SaaSColors.error,
               ),
             ),
+          ],
+          const SizedBox(height: 14),
+          Text(
+            _name.text.isEmpty ? 'Seu perfil' : _name.text,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: SaaSColors.textPrimary(isDark),
+              letterSpacing: -0.4,
+            ),
+            textAlign: TextAlign.center,
           ),
-  );
+          const SizedBox(height: 4),
+          Text(
+            _email.text,
+            style: TextStyle(
+              fontSize: 13,
+              color: SaaSColors.textSecondary(isDark),
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          SaaSBadge(
+            label: widget.provider == 'google'
+                ? 'Conectado via Google'
+                : 'Acesso por e-mail e senha',
+            icon: widget.provider == 'google'
+                ? Icons.g_mobiledata_rounded
+                : Icons.badge_outlined,
+            variant: SaaSBadgeVariant.primary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailsCard(bool isDark) {
+    return SaaSCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SaaSSectionHeader(
+            title: 'Informações Pessoais',
+            subtitle: 'Atualize seus dados de cadastro e foto de exibição',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(
+              labelText: 'Nome de exibição',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'E-mail da conta',
+              prefixIcon: Icon(Icons.alternate_email_rounded),
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _saving ? null : _saveProfile,
+            icon: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.save_outlined, size: 18),
+            label: Text(
+              _saving ? 'Salvando alterações…' : 'Salvar alterações',
+            ),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              backgroundColor: SaaSColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecurityCard(bool isDark) {
+    return SaaSCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.lock_outline_rounded,
+                color: SaaSColors.primary,
+                size: 20,
+              ),
+            ),
+            title: const Text(
+              'Alterar minha senha',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            subtitle: Text(
+              widget.provider == 'google'
+                  ? 'Confirme sua conta Google para definir uma nova senha'
+                  : 'Confirme sua senha atual para atualizar o acesso',
+              style: TextStyle(
+                fontSize: 12,
+                color: SaaSColors.textSecondary(isDark),
+              ),
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: _saving ? null : _changePassword,
+          ),
+          Divider(height: 1, color: SaaSColors.border(isDark)),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.logout_rounded,
+                color: SaaSColors.error,
+                size: 20,
+              ),
+            ),
+            title: const Text(
+              'Sair da conta',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: SaaSColors.error,
+                fontSize: 14,
+              ),
+            ),
+            subtitle: Text(
+              'Encerrar sessão atual neste dispositivo',
+              style: TextStyle(
+                fontSize: 12,
+                color: SaaSColors.textSecondary(isDark),
+              ),
+            ),
+            onTap: _saving ? null : widget.onLogout,
+          ),
+        ],
+      ),
+    );
+  }
 }

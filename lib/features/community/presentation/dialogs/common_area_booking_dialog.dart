@@ -164,7 +164,6 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat('dd/MM/yyyy');
     final timeFormat = DateFormat('HH:mm');
 
     return AlertDialog(

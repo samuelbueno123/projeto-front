@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import '../../../../core/services/realtime_service.dart';
 import '../../data/community_api.dart';
 import '../dialogs/plan_selection_dialog.dart';
 
@@ -37,6 +40,9 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
     'Multas & Notificações',
     'Smart Lockers',
     'Lista de Convidados',
+    'Manutenção & O.S.',
+    'Assembleias',
+    'Financeiro',
   ];
 
   @override
@@ -151,18 +157,19 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
         // Compact Category TabBar avoiding page vertical scroll
         Container(
-          color: Colors.white,
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
           child: TabBar(
             controller: _tabController,
             isScrollable: true,
             tabAlignment: TabAlignment.start,
-            labelColor: const Color(0xFF2F3FB0),
-            unselectedLabelColor: const Color(0xFF64748B),
-            indicatorColor: const Color(0xFF2F3FB0),
+            labelColor: const Color(0xFF2563EB),
+            unselectedLabelColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            indicatorColor: const Color(0xFF2563EB),
             indicatorWeight: 3,
             tabs: const [
               Tab(icon: Icon(Icons.report_problem_outlined, size: 20), text: 'Ocorrências'),
@@ -176,6 +183,9 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
               Tab(icon: Icon(Icons.gavel_outlined, size: 20), text: 'Notificações & Multas'),
               Tab(icon: Icon(Icons.lock_clock_outlined, size: 20), text: 'Lockers'),
               Tab(icon: Icon(Icons.people_outline_rounded, size: 20), text: 'Convidados'),
+              Tab(icon: Icon(Icons.build_circle_outlined, size: 20), text: 'Manutenção & O.S.'),
+              Tab(icon: Icon(Icons.groups_outlined, size: 20), text: 'Assembleias'),
+              Tab(icon: Icon(Icons.account_balance_wallet_outlined, size: 20), text: 'Financeiro'),
             ],
           ),
         ),
@@ -212,6 +222,9 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
                 featureName: 'Lista de Convidados',
                 child: _GuestListsSubView(api: widget.api, condominiumId: widget.condominiumId),
               ),
+              _MaintenanceSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
+              _AssembliesSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
+              _FinancialSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
             ],
           ),
         ),
@@ -1953,7 +1966,7 @@ class _InfractionsSubViewState extends State<_InfractionsSubView> {
 
     if (ok == true && title.text.isNotEmpty && unit.text.isNotEmpty) {
       final unitId = num.tryParse(unit.text.trim()) ?? 1;
-      final fineVal = double.tryParse(amount.text.trim());
+      final fineVal = amount.text.trim().isNotEmpty ? amount.text.trim() : null;
       await widget.api.createInfraction(
         condoId: widget.condominiumId,
         unitId: unitId,
@@ -2373,3 +2386,1137 @@ class _GuestListsSubViewState extends State<_GuestListsSubView> {
     );
   }
 }
+
+// ----------------------------------------------------
+// 12. MANUTENÇÃO PREDIAL & ORDENS DE SERVIÇO
+// ----------------------------------------------------
+class _MaintenanceSubView extends StatefulWidget {
+  const _MaintenanceSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final CommunityApi api;
+  final num condominiumId;
+  final bool canManage;
+
+  @override
+  State<_MaintenanceSubView> createState() => _MaintenanceSubViewState();
+}
+
+class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _orders = [];
+  String? _statusFilter;
+  StreamSubscription<RealtimeEvent>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _sub = RealtimeService.instance.events.listen((event) {
+      if (event.type == 'MAINTENANCE_UPDATED' && mounted) {
+        _load(silent: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) setState(() => _loading = true);
+    try {
+      final list = await widget.api.listMaintenanceOrders(widget.condominiumId, _statusFilter);
+      if (mounted) setState(() { _orders = list; _loading = false; });
+    } catch (_) {
+      if (mounted && !silent) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openNewOrderDialog() async {
+    final title = TextEditingController();
+    final desc = TextEditingController();
+    final contractor = TextEditingController();
+    final contact = TextEditingController();
+    final cost = TextEditingController();
+    final notes = TextEditingController();
+    String category = 'HIDRAULICA';
+    String type = 'CORRECTIVE';
+    String priority = 'MEDIUM';
+    DateTime? scheduledDate;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.build_circle_outlined, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Text('Nova Ordem de Serviço'),
+            ],
+          ),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: title, decoration: const InputDecoration(labelText: 'Título da Manutenção *')),
+                  const SizedBox(height: 10),
+                  TextField(controller: desc, maxLines: 2, decoration: const InputDecoration(labelText: 'Descrição do Problema / Serviço *')),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: const InputDecoration(labelText: 'Categoria'),
+                    items: const [
+                      DropdownMenuItem(value: 'HIDRAULICA', child: Text('Hidráulica')),
+                      DropdownMenuItem(value: 'ELETRICA', child: Text('Elétrica')),
+                      DropdownMenuItem(value: 'ELEVADORES', child: Text('Elevadores')),
+                      DropdownMenuItem(value: 'ESTRUTURAL', child: Text('Estrutural / Alvenaria')),
+                      DropdownMenuItem(value: 'SEGURANCA', child: Text('Segurança / CFTV')),
+                      DropdownMenuItem(value: 'AVCB_INCENDIO', child: Text('Incêndio / AVCB')),
+                      DropdownMenuItem(value: 'LIMPEZA', child: Text('Limpeza / Conservação')),
+                      DropdownMenuItem(value: 'OUTROS', child: Text('Outros')),
+                    ],
+                    onChanged: (v) => setDState(() => category = v ?? 'OUTROS'),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: type,
+                          decoration: const InputDecoration(labelText: 'Tipo'),
+                          items: const [
+                            DropdownMenuItem(value: 'CORRECTIVE', child: Text('Corretiva')),
+                            DropdownMenuItem(value: 'PREVENTIVE', child: Text('Preventiva')),
+                          ],
+                          onChanged: (v) => setDState(() => type = v ?? 'CORRECTIVE'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: priority,
+                          decoration: const InputDecoration(labelText: 'Prioridade'),
+                          items: const [
+                            DropdownMenuItem(value: 'LOW', child: Text('Baixa')),
+                            DropdownMenuItem(value: 'MEDIUM', child: Text('Média')),
+                            DropdownMenuItem(value: 'HIGH', child: Text('Alta')),
+                            DropdownMenuItem(value: 'URGENT', child: Text('Urgente')),
+                          ],
+                          onChanged: (v) => setDState(() => priority = v ?? 'MEDIUM'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(controller: contractor, decoration: const InputDecoration(labelText: 'Empresa / Prestador Contratado')),
+                  const SizedBox(height: 10),
+                  TextField(controller: contact, decoration: const InputDecoration(labelText: 'Contato do Prestador (Telefone/Email)')),
+                  const SizedBox(height: 10),
+                  TextField(controller: cost, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Custo Estimado (R\$)')),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_outlined),
+                    title: Text(scheduledDate == null ? 'Data Agendada: Não definida' : 'Data: ${DateFormat('dd/MM/yyyy').format(scheduledDate!)}'),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now().add(const Duration(days: 1)),
+                          firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (picked != null) setDState(() => scheduledDate = picked);
+                      },
+                      child: const Text('Selecionar'),
+                    ),
+                  ),
+                  TextField(controller: notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Observações / Recomendações')),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (title.text.trim().isEmpty || desc.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Salvar Ordem'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      try {
+        await widget.api.createMaintenanceOrder(
+          widget.condominiumId,
+          title: title.text.trim(),
+          description: desc.text.trim(),
+          category: category,
+          type: type,
+          priority: priority,
+          contractorName: contractor.text.trim().isNotEmpty ? contractor.text.trim() : null,
+          contractorContact: contact.text.trim().isNotEmpty ? contact.text.trim() : null,
+          scheduledDate: scheduledDate,
+          estimatedCost: double.tryParse(cost.text.replaceAll(',', '.')),
+          notes: notes.text.trim().isNotEmpty ? notes.text.trim() : null,
+        );
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
+  }
+
+  Future<void> _updateStatusDialog(Map<String, dynamic> order) async {
+    final statusCtrl = TextEditingController(text: order['status'] ?? 'OPEN');
+    final actualCost = TextEditingController(text: order['actualCost']?.toString() ?? '');
+    final notes = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => AlertDialog(
+          title: Text('Atualizar O.S. #${order['id']}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: statusCtrl.text,
+                decoration: const InputDecoration(labelText: 'Novo Status'),
+                items: const [
+                  DropdownMenuItem(value: 'OPEN', child: Text('Aberta')),
+                  DropdownMenuItem(value: 'IN_PROGRESS', child: Text('Em Andamento')),
+                  DropdownMenuItem(value: 'COMPLETED', child: Text('Concluída')),
+                  DropdownMenuItem(value: 'CANCELLED', child: Text('Cancelada')),
+                ],
+                onChanged: (v) => setDState(() => statusCtrl.text = v ?? 'OPEN'),
+              ),
+              const SizedBox(height: 10),
+              if (statusCtrl.text == 'COMPLETED') ...[
+                TextField(controller: actualCost, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Custo Real Finalizado (R\$)')),
+                const SizedBox(height: 10),
+              ],
+              TextField(controller: notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Notas da Conclusão / Andamento')),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Confirmar')),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      try {
+        await widget.api.updateMaintenanceOrderStatus(
+          order['id'] as num,
+          status: statusCtrl.text,
+          actualCost: double.tryParse(actualCost.text.replaceAll(',', '.')),
+          notes: notes.text.trim().isNotEmpty ? notes.text.trim() : null,
+        );
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
+  }
+
+  Color _statusColor(String? status) {
+    switch (status) {
+      case 'OPEN': return const Color(0xFFF59E0B);
+      case 'IN_PROGRESS': return const Color(0xFF2563EB);
+      case 'COMPLETED': return const Color(0xFF10B981);
+      case 'CANCELLED': return const Color(0xFFEF4444);
+      default: return Colors.grey;
+    }
+  }
+
+  String _statusLabel(String? status) {
+    switch (status) {
+      case 'OPEN': return 'Aberta';
+      case 'IN_PROGRESS': return 'Em Andamento';
+      case 'COMPLETED': return 'Concluída';
+      case 'CANCELLED': return 'Cancelada';
+      default: return status ?? 'Aberta';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: const Color(0xFF2563EB),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('Nova Ordem de Serviço'),
+        onPressed: _openNewOrderDialog,
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      FilterChip(
+                        label: const Text('Todas'),
+                        selected: _statusFilter == null,
+                        onSelected: (_) { setState(() => _statusFilter = null); _load(); },
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Abertas'),
+                        selected: _statusFilter == 'OPEN',
+                        onSelected: (_) { setState(() => _statusFilter = 'OPEN'); _load(); },
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Em Andamento'),
+                        selected: _statusFilter == 'IN_PROGRESS',
+                        onSelected: (_) { setState(() => _statusFilter = 'IN_PROGRESS'); _load(); },
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Concluídas'),
+                        selected: _statusFilter == 'COMPLETED',
+                        onSelected: (_) { setState(() => _statusFilter = 'COMPLETED'); _load(); },
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: _orders.isEmpty
+                      ? const Center(child: Text('Nenhuma ordem de serviço encontrada.'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                          itemCount: _orders.length,
+                          itemBuilder: (context, index) {
+                            final o = _orders[index];
+                            final status = o['status']?.toString() ?? 'OPEN';
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                              elevation: 0,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: _statusColor(status).withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            _statusLabel(status),
+                                            style: TextStyle(color: _statusColor(status), fontWeight: FontWeight.bold, fontSize: 12),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                                          child: Text(o['category'] ?? 'Geral', style: const TextStyle(color: Color(0xFF475569), fontSize: 12)),
+                                        ),
+                                        const Spacer(),
+                                        if (widget.canManage)
+                                          IconButton(
+                                            icon: const Icon(Icons.edit_note_rounded, color: Color(0xFF2563EB)),
+                                            tooltip: 'Atualizar Status',
+                                            onPressed: () => _updateStatusDialog(o),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(o['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    const SizedBox(height: 4),
+                                    Text(o['description'] ?? '', style: const TextStyle(color: Color(0xFF64748B), fontSize: 13.5)),
+                                    const Divider(height: 20),
+                                    Wrap(
+                                      spacing: 16,
+                                      runSpacing: 8,
+                                      children: [
+                                        if (o['contractorName'] != null)
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.engineering_outlined, size: 16, color: Color(0xFF64748B)),
+                                              const SizedBox(width: 4),
+                                              Text('Prestador: ${o['contractorName']}', style: const TextStyle(fontSize: 12.5)),
+                                            ],
+                                          ),
+                                        if (o['scheduledDate'] != null)
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.calendar_today_outlined, size: 15, color: Color(0xFF64748B)),
+                                              const SizedBox(width: 4),
+                                              Text('Data: ${o['scheduledDate']}', style: const TextStyle(fontSize: 12.5)),
+                                            ],
+                                          ),
+                                        if (o['estimatedCost'] != null)
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.attach_money_rounded, size: 16, color: Color(0xFF64748B)),
+                                              Text('Est.: R\$ ${(o['estimatedCost'] as num).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12.5)),
+                                            ],
+                                          ),
+                                        if (o['actualCost'] != null)
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF10B981)),
+                                              const SizedBox(width: 4),
+                                              Text('Final: R\$ ${(o['actualCost'] as num).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                                            ],
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// ----------------------------------------------------
+// 13. ASSEMBLEIAS & DELIBERAÇÕES
+// ----------------------------------------------------
+class _AssembliesSubView extends StatefulWidget {
+  const _AssembliesSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final CommunityApi api;
+  final num condominiumId;
+  final bool canManage;
+
+  @override
+  State<_AssembliesSubView> createState() => _AssembliesSubViewState();
+}
+
+class _AssembliesSubViewState extends State<_AssembliesSubView> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _assemblies = [];
+  StreamSubscription<RealtimeEvent>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _sub = RealtimeService.instance.events.listen((event) {
+      if (event.type == 'ASSEMBLY_UPDATED' && mounted) {
+        _load(silent: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) setState(() => _loading = true);
+    try {
+      final list = await widget.api.listAssemblies(widget.condominiumId);
+      if (mounted) setState(() { _assemblies = list; _loading = false; });
+    } catch (_) {
+      if (mounted && !silent) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openCreateAssemblyDialog() async {
+    final title = TextEditingController();
+    final desc = TextEditingController();
+    final location = TextEditingController();
+    String type = 'ORDINARY';
+    DateTime meetingDate = DateTime.now().add(const Duration(days: 7));
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.groups_outlined, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Text('Convocar Nova Assembleia'),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: title, decoration: const InputDecoration(labelText: 'Título da Assembleia *')),
+                  const SizedBox(height: 10),
+                  TextField(controller: desc, maxLines: 2, decoration: const InputDecoration(labelText: 'Descrição / Pauta Preliminar')),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: type,
+                    decoration: const InputDecoration(labelText: 'Tipo de Assembleia'),
+                    items: const [
+                      DropdownMenuItem(value: 'ORDINARY', child: Text('Assembleia Geral Ordinária (AGO)')),
+                      DropdownMenuItem(value: 'EXTRAORDINARY', child: Text('Assembleia Geral Extraordinária (AGE)')),
+                    ],
+                    onChanged: (v) => setDState(() => type = v ?? 'ORDINARY'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(controller: location, decoration: const InputDecoration(labelText: 'Local ou Link da Videochamada (Meet/Zoom)')),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_outlined),
+                    title: Text('Data/Hora: ${DateFormat('dd/MM/yyyy HH:mm').format(meetingDate)}'),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: meetingDate,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (d != null && context.mounted) {
+                          final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(meetingDate));
+                          if (t != null) {
+                            setDState(() => meetingDate = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+                          }
+                        }
+                      },
+                      child: const Text('Alterar'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (title.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Convocar Assembleia'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      try {
+        await widget.api.createAssembly(
+          widget.condominiumId,
+          title: title.text.trim(),
+          description: desc.text.trim().isNotEmpty ? desc.text.trim() : null,
+          type: type,
+          meetingDate: meetingDate,
+          locationOrLink: location.text.trim().isNotEmpty ? location.text.trim() : null,
+        );
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
+  }
+
+  Future<void> _openAddTopicDialog(num assemblyId) async {
+    final title = TextEditingController();
+    final desc = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Adicionar Pauta de Votação'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: title, decoration: const InputDecoration(labelText: 'Título da Pauta *')),
+            const SizedBox(height: 10),
+            TextField(controller: desc, maxLines: 2, decoration: const InputDecoration(labelText: 'Detalhamento da Proposta')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () {
+              if (title.text.trim().isEmpty) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Adicionar Pauta'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      try {
+        await widget.api.addAssemblyTopic(
+          assemblyId,
+          title: title.text.trim(),
+          description: desc.text.trim().isNotEmpty ? desc.text.trim() : null,
+        );
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
+  }
+
+  Future<void> _castVote(num topicId, String choice) async {
+    try {
+      await widget.api.castAssemblyVote(topicId, choice);
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Voto registrado com sucesso!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao votar: $e')));
+    }
+  }
+
+  Future<void> _toggleVoting(num topicId, bool open) async {
+    try {
+      await widget.api.toggleAssemblyTopicVoting(topicId, open);
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      floatingActionButton: widget.canManage
+          ? FloatingActionButton.extended(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('Convocar Assembleia'),
+              onPressed: _openCreateAssemblyDialog,
+            )
+          : null,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _assemblies.isEmpty
+              ? const Center(child: Text('Nenhuma assembleia agendada no momento.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  itemCount: _assemblies.length,
+                  itemBuilder: (context, index) {
+                    final a = _assemblies[index];
+                    final topics = (a['topics'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
+                    final dateStr = a['meetingDate'] != null ? a['meetingDate'].toString().replaceFirst('T', ' ') : '';
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                      elevation: 0,
+                      child: ExpansionTile(
+                        initiallyExpanded: index == 0,
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFFEFF6FF),
+                          child: Icon(Icons.groups_outlined, color: Color(0xFF2563EB)),
+                        ),
+                        title: Text(a['title'] ?? 'Assembleia', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        subtitle: Text(
+                          '${a['type'] == 'ORDINARY' ? 'AGO' : 'AGE'} • $dateStr',
+                          style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                        ),
+                        trailing: widget.canManage
+                            ? IconButton(
+                                icon: const Icon(Icons.post_add_rounded, color: Color(0xFF2563EB)),
+                                tooltip: 'Adicionar Pauta',
+                                onPressed: () => _openAddTopicDialog(a['id']),
+                              )
+                            : null,
+                        children: [
+                          if (a['description'] != null && a['description'].toString().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              child: Text(a['description'], style: const TextStyle(color: Color(0xFF334155))),
+                            ),
+                          if (a['locationOrLink'] != null && a['locationOrLink'].toString().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.link_rounded, size: 16, color: Color(0xFF2563EB)),
+                                  const SizedBox(width: 6),
+                                  Expanded(child: Text('Acesso: ${a['locationOrLink']}', style: const TextStyle(color: Color(0xFF2563EB), fontSize: 13))),
+                                ],
+                              ),
+                            ),
+                          const Divider(height: 20),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              children: [
+                                Text('Pautas & Deliberações (${topics.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (topics.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text('Nenhuma pauta cadastrada para esta assembleia.', style: TextStyle(color: Colors.grey)),
+                            )
+                          else
+                            ...topics.map((t) {
+                              final open = t['votingOpen'] == true;
+                              final userVote = t['userVote'];
+                              final inFavor = t['inFavorCount'] ?? 0;
+                              final against = t['againstCount'] ?? 0;
+                              final abstain = t['abstainCount'] ?? 0;
+                              return Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(t['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                        ),
+                                        if (widget.canManage)
+                                          TextButton.icon(
+                                            icon: Icon(open ? Icons.lock_outline : Icons.lock_open, size: 16),
+                                            label: Text(open ? 'Encerrar Votação' : 'Abrir Votação'),
+                                            onPressed: () => _toggleVoting(t['id'], !open),
+                                          ),
+                                      ],
+                                    ),
+                                    if (t['description'] != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(t['description'], style: const TextStyle(color: Color(0xFF64748B), fontSize: 12.5)),
+                                    ],
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(6)),
+                                          child: Text('Sim: $inFavor', style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.bold, fontSize: 11.5)),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(6)),
+                                          child: Text('Não: $against', style: const TextStyle(color: Color(0xFFB91C1C), fontWeight: FontWeight.bold, fontSize: 11.5)),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
+                                          child: Text('Abstenções: $abstain', style: const TextStyle(color: Color(0xFF475569), fontSize: 11.5)),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (userVote != null)
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16),
+                                          const SizedBox(width: 6),
+                                          Text('Seu voto registrado: ${_voteLabel(userVote)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981), fontSize: 12)),
+                                        ],
+                                      )
+                                    else if (open) ...[
+                                      const Text('Votação aberta aos moradores:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                                      const SizedBox(height: 6),
+                                      Wrap(
+                                        spacing: 8,
+                                        children: [
+                                          FilledButton.tonal(
+                                            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDCFCE7), foregroundColor: const Color(0xFF15803D)),
+                                            onPressed: () => _castVote(t['id'], 'IN_FAVOR'),
+                                            child: const Text('A Favor'),
+                                          ),
+                                          FilledButton.tonal(
+                                            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFEE2E2), foregroundColor: const Color(0xFFB91C1C)),
+                                            onPressed: () => _castVote(t['id'], 'AGAINST'),
+                                            child: const Text('Contra'),
+                                          ),
+                                          FilledButton.tonal(
+                                            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFF1F5F9), foregroundColor: const Color(0xFF475569)),
+                                            onPressed: () => _castVote(t['id'], 'ABSTAIN'),
+                                            child: const Text('Abstenção'),
+                                          ),
+                                        ],
+                                      ),
+                                    ] else
+                                      const Text('Votação encerrada ou aguardando abertura pelo síndico.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                  ],
+                                ),
+                              );
+                            }),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+
+  String _voteLabel(String choice) {
+    switch (choice) {
+      case 'IN_FAVOR': return 'A Favor';
+      case 'AGAINST': return 'Contra';
+      case 'ABSTAIN': return 'Abstenção';
+      default: return choice;
+    }
+  }
+}
+
+// ----------------------------------------------------
+// 14. TRANSPARÊNCIA FINANCEIRA & DESPESAS
+// ----------------------------------------------------
+class _FinancialSubView extends StatefulWidget {
+  const _FinancialSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final CommunityApi api;
+  final num condominiumId;
+  final bool canManage;
+
+  @override
+  State<_FinancialSubView> createState() => _FinancialSubViewState();
+}
+
+class _FinancialSubViewState extends State<_FinancialSubView> {
+  bool _loading = true;
+  Map<String, dynamic>? _summary;
+  List<Map<String, dynamic>> _expenses = [];
+  StreamSubscription<RealtimeEvent>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _sub = RealtimeService.instance.events.listen((event) {
+      if (event.type == 'INVOICE_UPDATED' && mounted) {
+        _load(silent: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) setState(() => _loading = true);
+    try {
+      final results = await Future.wait([
+        widget.api.getFinancialSummary(widget.condominiumId),
+        widget.api.listExpenses(widget.condominiumId),
+      ]);
+      if (mounted) {
+        setState(() {
+          _summary = results[0] is Map<String, dynamic> ? results[0] as Map<String, dynamic> : null;
+          _expenses = results[1] is List ? (results[1] as List).whereType<Map<String, dynamic>>().toList() : [];
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted && !silent) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openCreateExpenseDialog() async {
+    final desc = TextEditingController();
+    final amount = TextEditingController();
+    final supplier = TextEditingController();
+    final docNumber = TextEditingController();
+    String category = 'MANUTENCAO';
+    DateTime dueDate = DateTime.now().add(const Duration(days: 15));
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.receipt_long_rounded, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Text('Lançar Despesa Operacional'),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: const InputDecoration(labelText: 'Categoria da Despesa'),
+                    items: const [
+                      DropdownMenuItem(value: 'MANUTENCAO', child: Text('Manutenção Predial')),
+                      DropdownMenuItem(value: 'ENERGIA', child: Text('Energia Elétrica (Áreas Comuns)')),
+                      DropdownMenuItem(value: 'AGUA', child: Text('Água e Esgoto')),
+                      DropdownMenuItem(value: 'PESSOAL', child: Text('Folha de Pagamento / Portaria')),
+                      DropdownMenuItem(value: 'SEGURANCA', child: Text('Segurança / Monitoramento')),
+                      DropdownMenuItem(value: 'SEGURO', child: Text('Seguro Predial Obrigatório')),
+                      DropdownMenuItem(value: 'JURIDICO', child: Text('Assessoria Jurídica / Contábil')),
+                      DropdownMenuItem(value: 'ADMINISTRATIVO', child: Text('Taxas e Despesas Bancárias')),
+                      DropdownMenuItem(value: 'OUTROS', child: Text('Outros')),
+                    ],
+                    onChanged: (v) => setDState(() => category = v ?? 'MANUTENCAO'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(controller: desc, decoration: const InputDecoration(labelText: 'Descrição / Finalidade *')),
+                  const SizedBox(height: 10),
+                  TextField(controller: amount, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Valor Total (R\$) *')),
+                  const SizedBox(height: 10),
+                  TextField(controller: supplier, decoration: const InputDecoration(labelText: 'Fornecedor / Razão Social')),
+                  const SizedBox(height: 10),
+                  TextField(controller: docNumber, decoration: const InputDecoration(labelText: 'Número da Nota Fiscal / Fatura')),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today_outlined),
+                    title: Text('Data de Vencimento: ${DateFormat('dd/MM/yyyy').format(dueDate)}'),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: dueDate,
+                          firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (picked != null) setDState(() => dueDate = picked);
+                      },
+                      child: const Text('Selecionar'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (desc.text.trim().isEmpty || amount.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Lançar Despesa'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      try {
+        await widget.api.createExpense(
+          widget.condominiumId,
+          category: category,
+          description: desc.text.trim(),
+          amount: double.parse(amount.text.replaceAll(',', '.')),
+          dueDate: dueDate,
+          supplier: supplier.text.trim().isNotEmpty ? supplier.text.trim() : null,
+          documentNumber: docNumber.text.trim().isNotEmpty ? docNumber.text.trim() : null,
+        );
+        _load();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
+  }
+
+  Future<void> _payExpense(num expenseId) async {
+    try {
+      await widget.api.payExpense(expenseId);
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Despesa liquidada com sucesso!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao liquidar despesa: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalInvoiced = (_summary?['totalInvoiced'] as num?)?.toDouble() ?? 0.0;
+    final totalCollected = (_summary?['totalCollected'] as num?)?.toDouble() ?? 0.0;
+    final totalExpenses = (_summary?['totalExpenses'] as num?)?.toDouble() ?? 0.0;
+    final netBalance = (_summary?['netBalance'] as num?)?.toDouble() ?? 0.0;
+
+    return Scaffold(
+      floatingActionButton: widget.canManage
+          ? FloatingActionButton.extended(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('Lançar Despesa'),
+              onPressed: _openCreateExpenseDialog,
+            )
+          : null,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                children: [
+                  // KPI Cards Row
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _kpiCard('Total Arrecadado', 'R\$ ${totalCollected.toStringAsFixed(2)}', Icons.arrow_downward_rounded, const Color(0xFF10B981)),
+                      _kpiCard('Despesas Pagas', 'R\$ ${totalExpenses.toStringAsFixed(2)}', Icons.arrow_upward_rounded, const Color(0xFFEF4444)),
+                      _kpiCard('Saldo Operacional', 'R\$ ${netBalance.toStringAsFixed(2)}', Icons.account_balance_rounded, netBalance >= 0 ? const Color(0xFF2563EB) : const Color(0xFFEF4444)),
+                      _kpiCard('Total Previsto', 'R\$ ${totalInvoiced.toStringAsFixed(2)}', Icons.receipt_long_outlined, const Color(0xFF64748B)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Histórico de Despesas do Condomínio', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('${_expenses.length} lançamentos', style: const TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  if (_expenses.isEmpty)
+                    const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text('Nenhuma despesa registrada para este condomínio.', textAlign: TextAlign.center),
+                      ),
+                    )
+                  else
+                    ..._expenses.map((exp) {
+                      final status = exp['status']?.toString() ?? 'PENDING';
+                      final isPaid = status == 'PAID';
+                      final amountVal = (exp['amount'] as num?)?.toDouble() ?? 0.0;
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          leading: CircleAvatar(
+                            backgroundColor: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                            child: Icon(isPaid ? Icons.check_circle_outline : Icons.pending_actions_rounded, color: isPaid ? const Color(0xFF15803D) : const Color(0xFFD97706)),
+                          ),
+                          title: Text(exp['description'] ?? 'Despesa', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5)),
+                          subtitle: Text(
+                            'Venc.: ${exp['dueDate'] ?? ''} • Fornecedor: ${exp['supplier'] ?? 'Geral'}\nCat.: ${exp['category'] ?? ''}',
+                            style: const TextStyle(color: Color(0xFF64748B), fontSize: 12.5),
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'R\$ ${amountVal.toStringAsFixed(2)}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B)),
+                              ),
+                              const SizedBox(height: 4),
+                              if (widget.canManage && !isPaid)
+                                SizedBox(
+                                  height: 26,
+                                  child: FilledButton.tonal(
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    onPressed: () => _payExpense(exp['id']),
+                                    child: const Text('Liquidar', style: TextStyle(fontSize: 11.5)),
+                                  ),
+                                )
+                              else
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    isPaid ? 'Pago' : 'Pendente',
+                                    style: TextStyle(color: isPaid ? const Color(0xFF15803D) : const Color(0xFFD97706), fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _kpiCard(String label, String value, IconData icon, Color color) {
+    return Container(
+      width: 170,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Expanded(child: Text(label, style: const TextStyle(color: Color(0xFF64748B), fontSize: 11.5, fontWeight: FontWeight.w500))),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
+    );
+  }
+}
+

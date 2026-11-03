@@ -1575,3 +1575,964 @@ class _AdminResourceCreateDialogState
     );
   }
 }
+
+// ============================================================================
+// EDIT RESOURCE DIALOG
+// ============================================================================
+
+Future<Map<String, dynamic>?> showEditAdminResourceDialog({
+  required BuildContext context,
+  required HomeService api,
+  required String resource,
+  required Map<String, dynamic> item,
+}) async {
+  final needsUsers = const {
+    'condominiums',
+    'memberships',
+    'residents',
+    'packages',
+    'reservations',
+  }.contains(resource);
+  final needsCondos = const {
+    'memberships',
+    'sectors',
+    'units',
+    'residents',
+    'packages',
+    'announcements',
+    'common-areas',
+    'reservations',
+  }.contains(resource);
+  final needsSectors = const {
+    'units',
+    'residents',
+    'packages',
+  }.contains(resource);
+  final needsUnits = const {'residents', 'packages'}.contains(resource);
+  final needsCommonAreas = resource == 'reservations';
+  final needsPlans = resource == 'condominiums' || resource == 'billing-plans';
+
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
+
+  List<Map<String, dynamic>> users = [];
+  List<Map<String, dynamic>> condos = [];
+  List<Map<String, dynamic>> sectors = [];
+  List<Map<String, dynamic>> units = [];
+  List<Map<String, dynamic>> commonAreas = [];
+  List<Map<String, dynamic>> plans = [];
+
+  try {
+    final futures = <Future<void>>[
+      if (needsUsers) _fetchResourceList(api, 'users').then((v) => users = v),
+      if (needsCondos)
+        _fetchResourceList(api, 'condominiums').then((v) => condos = v),
+      if (needsSectors)
+        _fetchResourceList(api, 'sectors').then((v) => sectors = v),
+      if (needsUnits) _fetchResourceList(api, 'units').then((v) => units = v),
+      if (needsCommonAreas)
+        _fetchResourceList(api, 'common-areas').then((v) => commonAreas = v),
+      if (needsPlans)
+        _fetchResourceList(api, 'billing-plans').then((v) => plans = v),
+    ];
+    await Future.wait(futures);
+  } finally {
+    if (context.mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  if (!context.mounted) return null;
+
+  return showDialog<Map<String, dynamic>>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => _AdminResourceEditDialog(
+      api: api,
+      resource: resource,
+      item: item,
+      users: users,
+      condos: condos,
+      sectors: sectors,
+      units: units,
+      commonAreas: commonAreas,
+      plans: plans,
+    ),
+  );
+}
+
+class _AdminResourceEditDialog extends StatefulWidget {
+  const _AdminResourceEditDialog({
+    required this.api,
+    required this.resource,
+    required this.item,
+    required this.users,
+    required this.condos,
+    required this.sectors,
+    required this.units,
+    required this.commonAreas,
+    required this.plans,
+  });
+
+  final HomeService api;
+  final String resource;
+  final Map<String, dynamic> item;
+  final List<Map<String, dynamic>> users;
+  final List<Map<String, dynamic>> condos;
+  final List<Map<String, dynamic>> sectors;
+  final List<Map<String, dynamic>> units;
+  final List<Map<String, dynamic>> commonAreas;
+  final List<Map<String, dynamic>> plans;
+
+  @override
+  State<_AdminResourceEditDialog> createState() =>
+      _AdminResourceEditDialogState();
+}
+
+class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
+  final _text1 = TextEditingController();
+  final _text2 = TextEditingController();
+  final _text3 = TextEditingController();
+  final _text4 = TextEditingController();
+
+  late Map<int, String> _condoNames;
+  late Map<int, Map<String, dynamic>> _sectorsById;
+
+  int? _selectedCondoId;
+  int? _selectedSectorId;
+  int? _selectedUnitId;
+  int? _selectedUserId;
+  int? _selectedPlanId;
+  String _selectedRole = 'ROLE_RESIDENT';
+  final Set<String> _selectedUserRoles = {};
+  String _selectedStructuralType = 'BLOCK';
+  String _selectedResidentType = 'OWNER';
+  String _selectedFeatureCode = 'PACKAGES';
+  final Set<String> _selectedPlanFeatures = {};
+  DateTime? _startAt;
+  DateTime? _endAt;
+  String? _imageDataUrl;
+  bool _saving = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    final item = widget.item;
+
+    _condoNames = {
+      for (final c in widget.condos)
+        if (_asInt(c['id']) != null)
+          _asInt(c['id'])!: c['name']?.toString() ?? 'Condomínio',
+    };
+    _sectorsById = {
+      for (final s in widget.sectors)
+        if (_asInt(s['id']) != null) _asInt(s['id'])!: s,
+    };
+
+    // Pre-populate according to resource
+    switch (widget.resource) {
+      case 'users':
+        _text1.text = item['firstName']?.toString() ?? '';
+        _text2.text = item['lastName']?.toString() ?? '';
+        _text3.text = item['email']?.toString() ?? '';
+        _text4.text = item['phone']?.toString() ?? '';
+        if (item['roles'] is List) {
+          for (final r in item['roles'] as List) {
+            if (r is Map && r['authority'] != null) {
+              _selectedUserRoles.add(r['authority'].toString());
+            } else if (r is String) {
+              _selectedUserRoles.add(r);
+            }
+          }
+        }
+        if (_selectedUserRoles.isEmpty) {
+          _selectedUserRoles.add('ROLE_RESIDENT');
+        }
+
+      case 'condominiums':
+        _text1.text = item['name']?.toString() ?? '';
+        _text2.text = item['address']?.toString() ?? '';
+        _text3.text = item['code']?.toString() ?? '';
+        _text4.text = item['taxId']?.toString() ?? '';
+        _selectedPlanId = _asInt(item['billingPlanId'] ?? item['planId']);
+        _imageDataUrl = item['imageUrl']?.toString();
+
+      case 'memberships':
+        _selectedUserId = _asInt(item['userId']);
+        _selectedCondoId = _asInt(item['condominiumId']);
+        _selectedRole = item['authority']?.toString() ?? 'ROLE_RESIDENT';
+
+      case 'sectors':
+        _text1.text = item['name']?.toString() ?? '';
+        _selectedStructuralType = item['structuralType']?.toString() ?? 'BLOCK';
+        _selectedCondoId = _asInt(item['condominiumId']);
+
+      case 'units':
+        _text1.text = item['identifier']?.toString() ?? '';
+        _selectedSectorId = _asInt(item['sectorId']);
+
+      case 'residents':
+        _selectedUserId = _asInt(item['userId']);
+        _selectedUnitId = _asInt(item['unitId']);
+        _selectedResidentType = item['type']?.toString() ?? 'OWNER';
+
+      case 'packages':
+        _text1.text = item['description']?.toString() ?? '';
+        _selectedUserId = _asInt(item['recipientId'] ?? item['userId']);
+        _selectedUnitId = _asInt(item['unitId']);
+
+      case 'announcements':
+        _text1.text = item['title']?.toString() ?? '';
+        _text2.text = item['content']?.toString() ?? '';
+
+      case 'common-areas':
+        _text1.text = item['name']?.toString() ?? '';
+        _text2.text = item['description']?.toString() ?? '';
+        _text3.text = item['capacity']?.toString() ?? '10';
+
+      case 'reservations':
+        _text1.text = item['notes']?.toString() ?? '';
+        if (item['startAt'] != null) {
+          try {
+            _startAt = DateTime.parse(item['startAt'].toString()).toLocal();
+          } catch (_) {}
+        }
+        if (item['endAt'] != null) {
+          try {
+            _endAt = DateTime.parse(item['endAt'].toString()).toLocal();
+          } catch (_) {}
+        }
+        _startAt ??= DateTime.now().add(const Duration(days: 1, hours: 2));
+        _endAt ??= DateTime.now().add(const Duration(days: 1, hours: 4));
+
+      case 'billing-plans':
+        _text1.text = item['name']?.toString() ?? '';
+        _text2.text = item['monthlyFee']?.toString() ?? '';
+        if (item['features'] is List) {
+          for (final f in item['features'] as List) {
+            if (f is Map && f['code'] != null) {
+              _selectedPlanFeatures.add(f['code'].toString());
+            } else if (f is String) {
+              _selectedPlanFeatures.add(f);
+            }
+          }
+        }
+
+      case 'features':
+        _text1.text = item['name']?.toString() ?? '';
+        _text2.text = item['description']?.toString() ?? '';
+        _selectedFeatureCode = item['code']?.toString() ?? 'PACKAGES';
+    }
+
+    if (_selectedCondoId == null && widget.condos.isNotEmpty) {
+      _selectedCondoId = _asInt(widget.condos.first['id']);
+    }
+    if (_selectedUserId == null && widget.users.isNotEmpty) {
+      _selectedUserId = _asInt(widget.users.first['id']);
+    }
+  }
+
+  @override
+  void dispose() {
+    _text1.dispose();
+    _text2.dispose();
+    _text3.dispose();
+    _text4.dispose();
+    super.dispose();
+  }
+
+  Future<DateTime?> _pickDateTime(DateTime initial) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (date == null || !mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (time == null || !mounted) return null;
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  String _formatDateTime(DateTime? dt) {
+    if (dt == null) return 'Selecionar data e horário';
+    return DateFormat('dd/MM/yyyy HH:mm').format(dt);
+  }
+
+  Future<void> _pickImage() async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 75,
+      maxWidth: 1400,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (bytes.length > 1000000) {
+      setState(() => _errorMessage = 'A imagem deve ter no máximo 1 MB.');
+      return;
+    }
+    final name = file.name.toLowerCase();
+    final mime = name.endsWith('.png')
+        ? 'image/png'
+        : name.endsWith('.webp')
+        ? 'image/webp'
+        : 'image/jpeg';
+    setState(() {
+      _imageDataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
+    });
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _errorMessage = null;
+      _saving = true;
+    });
+
+    final id = widget.item['id'];
+
+    try {
+      dynamic response;
+      switch (widget.resource) {
+        case 'users':
+          final firstName = _text1.text.trim();
+          final lastName = _text2.text.trim();
+          final email = _text3.text.trim().toLowerCase();
+          final phone = _text4.text.trim();
+          if (firstName.isEmpty || email.isEmpty || !email.contains('@')) {
+            throw Exception('Informe o nome e um e-mail válido.');
+          }
+          if (_selectedUserRoles.isEmpty) {
+            throw Exception('Selecione pelo menos um perfil de acesso.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/users/$id',
+            body: {
+              'firstName': firstName,
+              'lastName': lastName,
+              'email': email,
+              'phone': phone.isEmpty ? null : phone,
+              'roles': _selectedUserRoles
+                  .map((authority) => {'authority': authority})
+                  .toList(),
+            },
+          );
+
+        case 'condominiums':
+          final name = _text1.text.trim();
+          final address = _text2.text.trim();
+          final code = _text3.text.trim();
+          final taxId = _text4.text.trim();
+          if (name.isEmpty || address.isEmpty) {
+            throw Exception('Informe o nome e o endereço do condomínio.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/condominiums/$id',
+            body: {
+              'name': name,
+              'address': address,
+              'code': code.isEmpty ? null : code,
+              'taxId': taxId.isEmpty ? null : taxId,
+              'planId': _selectedPlanId,
+              'imageUrl': _imageDataUrl,
+            },
+          );
+
+        case 'memberships':
+          if (_selectedCondoId == null || _selectedUserId == null) {
+            throw Exception('Selecione o condomínio e o usuário.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/memberships/$id',
+            body: {
+              'userId': _selectedUserId,
+              'condominiumId': _selectedCondoId,
+              'authority': _selectedRole,
+            },
+          );
+
+        case 'sectors':
+          final name = _text1.text.trim();
+          if (_selectedCondoId == null) {
+            throw Exception('Selecione o condomínio do setor.');
+          }
+          if (name.isEmpty) {
+            throw Exception('Informe o nome do setor.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/sectors/$id',
+            body: {
+              'name': name,
+              'structuralType': _selectedStructuralType,
+              'condominiumId': _selectedCondoId,
+            },
+          );
+
+        case 'units':
+          final identifier = _text1.text.trim();
+          if (_selectedSectorId == null) {
+            throw Exception('Selecione o setor da unidade.');
+          }
+          if (identifier.isEmpty) {
+            throw Exception('Informe o identificador da unidade.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/units/$id',
+            body: {'identifier': identifier, 'sectorId': _selectedSectorId},
+          );
+
+        case 'residents':
+          if (_selectedUnitId == null || _selectedUserId == null) {
+            throw Exception('Selecione a unidade e o morador.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/residents/$id',
+            body: {
+              'userId': _selectedUserId,
+              'unitId': _selectedUnitId,
+              'type': _selectedResidentType,
+            },
+          );
+
+        case 'packages':
+          final description = _text1.text.trim();
+          if (_selectedUnitId == null || _selectedUserId == null) {
+            throw Exception('Selecione a unidade e o morador destinatário.');
+          }
+          if (description.isEmpty) {
+            throw Exception('Informe a descrição da encomenda.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/packages/$id',
+            body: {
+              'description': description,
+              'recipientId': _selectedUserId,
+              'unitId': _selectedUnitId,
+            },
+          );
+
+        case 'announcements':
+          final title = _text1.text.trim();
+          final content = _text2.text.trim();
+          if (title.isEmpty || content.isEmpty) {
+            throw Exception('Informe o título e o conteúdo do comunicado.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/announcements/$id',
+            body: {'title': title, 'content': content},
+          );
+
+        case 'common-areas':
+          final name = _text1.text.trim();
+          final description = _text2.text.trim();
+          final capacity = int.tryParse(_text3.text.trim());
+          if (name.isEmpty) {
+            throw Exception('Informe o nome da área comum.');
+          }
+          if (capacity == null || capacity < 1) {
+            throw Exception('A capacidade deve ser de pelo menos 1 pessoa.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/common-areas/$id',
+            body: {
+              'name': name,
+              'description': description.isEmpty ? null : description,
+              'capacity': capacity,
+            },
+          );
+
+        case 'reservations':
+          if (_startAt == null || _endAt == null) {
+            throw Exception('Informe o início e término da reserva.');
+          }
+          if (!_endAt!.isAfter(_startAt!)) {
+            throw Exception('O horário de término deve ser após o início.');
+          }
+          response = await widget.api.send(
+            'PATCH',
+            '/reservations/$id/modify-and-confirm',
+            body: {
+              'startAt': _startAt!.toIso8601String(),
+              'endAt': _endAt!.toIso8601String(),
+              'notes': _text1.text.trim().isEmpty ? null : _text1.text.trim(),
+            },
+          );
+
+        case 'billing-plans':
+          final name = _text1.text.trim();
+          final fee = double.tryParse(_text2.text.trim().replaceAll(',', '.'));
+          if (name.isEmpty) {
+            throw Exception('Informe o nome do plano comercial.');
+          }
+          if (fee == null || fee < 0) {
+            throw Exception('Informe um valor mensal válido.');
+          }
+          response = await widget.api.send(
+            'PUT',
+            '/billing/plans/$id',
+            body: {
+              'name': name,
+              'monthlyFee': fee,
+              'features': _selectedPlanFeatures.toList(),
+            },
+          );
+
+        case 'features':
+          final featureName = _text1.text.trim();
+          final featureDesc = _text2.text.trim();
+          if (featureName.isEmpty) {
+            throw Exception('Informe o nome do recurso.');
+          }
+          response = await widget.api.send(
+            'POST',
+            '/billing/features',
+            body: {
+              'id': id is num ? id.toInt() : null,
+              'code': _selectedFeatureCode,
+              'name': featureName,
+              'description': featureDesc.isEmpty ? null : featureDesc,
+            },
+          );
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop(
+          response is Map<String, dynamic>
+              ? response
+              : <String, dynamic>{'updated': true},
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  String _resourceTitle() {
+    for (final r in kAdminCreatableResources) {
+      if (r.$2 == widget.resource) return r.$1;
+    }
+    return widget.resource;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _resourceTitle();
+    final id = widget.item['id'];
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFDBEAFE),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.edit_note_rounded, color: Color(0xFF1D4ED8)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Editar $title', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                if (id != null)
+                  Text('ID do Registro: #$id', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 540, maxHeight: 600),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              ..._buildFormFields(),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _saving ? null : _submit,
+          icon: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.save_outlined, size: 18),
+          label: Text(_saving ? 'Salvando...' : 'Salvar Alterações'),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildFormFields() {
+    switch (widget.resource) {
+      case 'users':
+        return [
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Nome (firstName)', prefixIcon: Icon(Icons.person_outline)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text2,
+            decoration: const InputDecoration(labelText: 'Sobrenome (lastName)', prefixIcon: Icon(Icons.badge_outlined)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text3,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'E-mail', prefixIcon: Icon(Icons.email_outlined)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text4,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'Telefone (phone)', prefixIcon: Icon(Icons.phone_outlined)),
+          ),
+          const SizedBox(height: 14),
+          const Text('Perfis de Acesso (roles):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: kSystemRoles.map((r) {
+              final selected = _selectedUserRoles.contains(r.$1);
+              return FilterChip(
+                label: Text(r.$2),
+                selected: selected,
+                onSelected: (val) {
+                  setState(() {
+                    if (val) {
+                      _selectedUserRoles.add(r.$1);
+                    } else if (_selectedUserRoles.length > 1) {
+                      _selectedUserRoles.remove(r.$1);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          ),
+        ];
+
+      case 'condominiums':
+        return [
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Nome do Condomínio', prefixIcon: Icon(Icons.apartment_outlined)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text2,
+            decoration: const InputDecoration(labelText: 'Endereço Completo', prefixIcon: Icon(Icons.pin_drop_outlined)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text3,
+            decoration: const InputDecoration(labelText: 'Código / Sigla (code)', prefixIcon: Icon(Icons.tag_outlined)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text4,
+            decoration: const InputDecoration(labelText: 'CNPJ (taxId)', prefixIcon: Icon(Icons.business_outlined)),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: _pickImage,
+            icon: const Icon(Icons.camera_alt_outlined),
+            label: Text(_imageDataUrl != null ? 'Trocar foto da fachada' : 'Adicionar foto da fachada'),
+          ),
+        ];
+
+      case 'memberships':
+        return [
+          _buildUserDropdown(),
+          const SizedBox(height: 12),
+          _buildCondoDropdown(),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _selectedRole,
+            decoration: const InputDecoration(labelText: 'Papel no Condomínio', prefixIcon: Icon(Icons.badge_outlined)),
+            items: kMembershipRoles.map((r) => DropdownMenuItem(value: r.$1, child: Text(r.$2))).toList(),
+            onChanged: (v) => setState(() => _selectedRole = v ?? _selectedRole),
+          ),
+        ];
+
+      case 'sectors':
+        return [
+          _buildCondoDropdown(),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Nome do Setor', prefixIcon: Icon(Icons.domain_outlined)),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _selectedStructuralType,
+            decoration: const InputDecoration(labelText: 'Tipo Estrutural', prefixIcon: Icon(Icons.layers_outlined)),
+            items: kSectorStructuralTypes.map((t) => DropdownMenuItem(value: t.$1, child: Text(t.$2))).toList(),
+            onChanged: (v) => setState(() => _selectedStructuralType = v ?? _selectedStructuralType),
+          ),
+        ];
+
+      case 'units':
+        return [
+          _buildSectorDropdown(),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Identificador da Unidade', prefixIcon: Icon(Icons.tag)),
+          ),
+        ];
+
+      case 'residents':
+        return [
+          _buildUserDropdown(),
+          const SizedBox(height: 12),
+          _buildUnitDropdown(),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _selectedResidentType,
+            decoration: const InputDecoration(labelText: 'Vínculo do Morador', prefixIcon: Icon(Icons.person_pin_outlined)),
+            items: kResidentTypes.map((t) => DropdownMenuItem(value: t.$1, child: Text(t.$2))).toList(),
+            onChanged: (v) => setState(() => _selectedResidentType = v ?? _selectedResidentType),
+          ),
+        ];
+
+      case 'packages':
+        return [
+          _buildUserDropdown(label: 'Destinatário (morador)'),
+          const SizedBox(height: 12),
+          _buildUnitDropdown(label: 'Unidade de Destino'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Descrição da Encomenda', prefixIcon: Icon(Icons.inventory_2_outlined)),
+          ),
+        ];
+
+      case 'announcements':
+        return [
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Título do Comunicado', prefixIcon: Icon(Icons.title_rounded)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text2,
+            maxLines: 4,
+            decoration: const InputDecoration(labelText: 'Conteúdo / Mensagem', prefixIcon: Icon(Icons.notes_rounded)),
+          ),
+        ];
+
+      case 'common-areas':
+        return [
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Nome da Área Comum', prefixIcon: Icon(Icons.deck_outlined)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text2,
+            decoration: const InputDecoration(labelText: 'Descrição (opcional)', prefixIcon: Icon(Icons.description_outlined)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text3,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Capacidade Máxima (pessoas)', prefixIcon: Icon(Icons.people_outline)),
+          ),
+        ];
+
+      case 'reservations':
+        return [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.play_circle_outline, color: Color(0xFF2563EB)),
+            title: const Text('Início da Reserva', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+            subtitle: Text(_formatDateTime(_startAt)),
+            trailing: FilledButton.tonal(
+              onPressed: () async {
+                final picked = await _pickDateTime(_startAt ?? DateTime.now());
+                if (picked != null) setState(() => _startAt = picked);
+              },
+              child: const Text('Alterar'),
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.stop_circle_outlined, color: Color(0xFFDC2626)),
+            title: const Text('Término da Reserva', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+            subtitle: Text(_formatDateTime(_endAt)),
+            trailing: FilledButton.tonal(
+              onPressed: () async {
+                final picked = await _pickDateTime(_endAt ?? DateTime.now());
+                if (picked != null) setState(() => _endAt = picked);
+              },
+              child: const Text('Alterar'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Observações / Instruções da Reserva', prefixIcon: Icon(Icons.notes_rounded)),
+          ),
+        ];
+
+      case 'billing-plans':
+        return [
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Nome do Plano', prefixIcon: Icon(Icons.badge_outlined)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text2,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Valor Mensal (R\$)', prefixIcon: Icon(Icons.attach_money_rounded)),
+          ),
+          const SizedBox(height: 14),
+          const Text('Funcionalidades Inclusas:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: kFeatureCodes.map((f) {
+              final selected = _selectedPlanFeatures.contains(f.$1);
+              return FilterChip(
+                label: Text(f.$2),
+                selected: selected,
+                onSelected: (val) {
+                  setState(() {
+                    if (val) {
+                      _selectedPlanFeatures.add(f.$1);
+                    } else {
+                      _selectedPlanFeatures.remove(f.$1);
+                    }
+                  });
+                },
+              );
+            }).toList(),
+          ),
+        ];
+
+      case 'features':
+        return [
+          DropdownButtonFormField<String>(
+            initialValue: _selectedFeatureCode,
+            decoration: const InputDecoration(labelText: 'Código do Recurso', prefixIcon: Icon(Icons.code_rounded)),
+            items: kFeatureCodes.map((f) => DropdownMenuItem(value: f.$1, child: Text(f.$2))).toList(),
+            onChanged: (v) => setState(() => _selectedFeatureCode = v ?? _selectedFeatureCode),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text1,
+            decoration: const InputDecoration(labelText: 'Nome do Recurso', prefixIcon: Icon(Icons.title_rounded)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text2,
+            decoration: const InputDecoration(labelText: 'Descrição (opcional)', prefixIcon: Icon(Icons.notes_rounded)),
+          ),
+        ];
+
+      default:
+        return [const Text('Edição não suportada para este recurso.')];
+    }
+  }
+
+  Widget _buildCondoDropdown({String label = 'Condomínio'}) {
+    return DropdownButtonFormField<int>(
+      initialValue: _selectedCondoId,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.apartment_outlined)),
+      items: widget.condos.map((c) => DropdownMenuItem(value: _asInt(c['id']), child: Text(_condoLabel(c), overflow: TextOverflow.ellipsis))).toList(),
+      onChanged: (v) => setState(() => _selectedCondoId = v),
+    );
+  }
+
+  Widget _buildUserDropdown({String label = 'Usuário'}) {
+    return DropdownButtonFormField<int>(
+      initialValue: _selectedUserId,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.person_outline)),
+      items: widget.users.map((u) => DropdownMenuItem(value: _asInt(u['id']), child: Text(_userLabel(u), overflow: TextOverflow.ellipsis))).toList(),
+      onChanged: (v) => setState(() => _selectedUserId = v),
+    );
+  }
+
+  Widget _buildSectorDropdown({String label = 'Setor'}) {
+    return DropdownButtonFormField<int>(
+      initialValue: _selectedSectorId,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.domain_outlined)),
+      items: widget.sectors.map((s) => DropdownMenuItem(value: _asInt(s['id']), child: Text(_sectorLabel(s, _condoNames), overflow: TextOverflow.ellipsis))).toList(),
+      onChanged: (v) => setState(() => _selectedSectorId = v),
+    );
+  }
+
+  Widget _buildUnitDropdown({String label = 'Unidade'}) {
+    return DropdownButtonFormField<int>(
+      initialValue: _selectedUnitId,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.home_work_outlined)),
+      items: widget.units.map((u) => DropdownMenuItem(value: _asInt(u['id']), child: Text(_unitLabel(u, _sectorsById, _condoNames), overflow: TextOverflow.ellipsis))).toList(),
+      onChanged: (v) => setState(() => _selectedUnitId = v),
+    );
+  }
+}

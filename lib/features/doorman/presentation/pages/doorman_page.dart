@@ -1,10 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../../../core/utils/formatters.dart';
+import '../../../../core/design_system/saas_design_system.dart';
+import '../../../../core/services/realtime_service.dart';
 import '../../../../core/widgets/enter_search_field.dart';
+import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../../core/widgets/role_switcher_pill.dart';
 import '../../../announcements/presentation/announcement_composer.dart';
+import '../../../auth/presentation/pages/user_profile_page.dart';
 import '../../../community/data/community_api.dart';
 import '../../../community/presentation/views/doorman_chat_view.dart';
 import '../../../community/presentation/views/doorman_community_views.dart';
@@ -43,20 +48,68 @@ class _DoormanPageState extends State<DoormanPage>
   List<Map<String, dynamic>> _condominiums = [];
   Map<String, dynamic>? _selectedCondominium;
   List<Map<String, dynamic>> _packages = [];
+  Map<String, dynamic> _profile = {};
   bool _isLoading = true;
   String? _error;
   String _query = '';
+  StreamSubscription<RealtimeEvent>? _sseSub;
 
   @override
   void initState() {
     super.initState();
+    _tabs.addListener(() {
+      if (mounted) setState(() {});
+    });
     _api = HomeService(token: widget.token);
     _communityApi = CommunityApi(api: _api);
+    if (widget.token != null && widget.token!.isNotEmpty) {
+      RealtimeService.instance.setToken(widget.token);
+      _sseSub = RealtimeService.instance.events.listen((event) {
+        if (event.type == 'PACKAGE_UPDATED') {
+          _loadPackages();
+        }
+      });
+    }
+    _loadProfile();
     _loadCondominiums();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final data = await _api.get('/users/me');
+      if (mounted && data is Map<String, dynamic>) {
+        setState(() => _profile = data);
+      }
+    } catch (_) {}
+  }
+
+  ImageProvider? get _profileAvatarImage =>
+      resolveAvatarImageProvider(_profile['profileImage'] as String?);
+
+  void _openProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserProfilePage(
+          token: widget.token,
+          userName: widget.userName,
+          userEmail: _profile['email'] as String?,
+          provider: 'password',
+          onLogout: widget.onLogout,
+          onClose: () {
+            Navigator.of(context).pop();
+            _loadProfile();
+          },
+          reauthenticateWithGoogle: () async => '',
+          refreshWithCredentials: (_, __) async {},
+          refreshGoogleSession: () async {},
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _sseSub?.cancel();
     _tabs.dispose();
     super.dispose();
   }
@@ -491,27 +544,58 @@ class _DoormanPageState extends State<DoormanPage>
     return const SizedBox.shrink();
   }
 
+  Tab _buildTabItem(String label, IconData icon, bool hasNew) {
+    return Tab(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 7),
+          Text(label),
+          if (hasNew) ...[
+            const SizedBox(width: 5),
+            Container(
+              width: 7,
+              height: 7,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEF4444),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final visiblePackages = _packages
         .where((item) => recordMatchesQuery(item, _query))
         .toList();
 
+    final hasPendingPackages = _packages.any(
+      (p) => p['status'] == 'RECEIVED' || p['status'] == 'WAITING_PICKUP',
+    );
+
     return Scaffold(
+      backgroundColor: SaaSColors.background(isDark),
       appBar: AppBar(
         title: const Text('Central da Portaria'),
+        backgroundColor: SaaSColors.surface(isDark),
         bottom: TabBar(
           controller: _tabs,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
-          tabs: const [
-            Tab(icon: Icon(Icons.inventory_2_outlined), text: 'Encomendas'),
-            Tab(icon: Icon(Icons.badge_outlined), text: 'Visitantes'),
-            Tab(icon: Icon(Icons.directions_car_outlined), text: 'Consulta de Placas'),
-            Tab(icon: Icon(Icons.people_outline_rounded), text: 'Eventos & Convidados'),
-            Tab(icon: Icon(Icons.apartment_rounded), text: 'Unidades & Achados'),
-            Tab(icon: Icon(Icons.event_available_outlined), text: 'Reservas & Áreas'),
-            Tab(icon: Icon(Icons.chat_bubble_outline_rounded), text: 'Chat Moradores'),
+          tabs: [
+            _buildTabItem('Encomendas', Icons.inventory_2_outlined, hasPendingPackages),
+            _buildTabItem('Visitantes', Icons.badge_outlined, false),
+            _buildTabItem('Consulta de Placas', Icons.directions_car_outlined, false),
+            _buildTabItem('Eventos & Convidados', Icons.people_outline_rounded, false),
+            _buildTabItem('Unidades & Achados', Icons.apartment_rounded, false),
+            _buildTabItem('Reservas & Áreas', Icons.event_available_outlined, false),
+            _buildTabItem('Chat Moradores', Icons.chat_bubble_outline_rounded, false),
           ],
         ),
         actions: [
@@ -522,9 +606,38 @@ class _DoormanPageState extends State<DoormanPage>
                 currentRole: widget.currentRole!,
                 availableRoles: widget.availableRoles,
                 onSwitchRole: widget.onSwitchRole!,
-                isLight: true,
+                isLight: !isDark,
               ),
             ),
+          // User Avatar Button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            child: InkWell(
+              onTap: _openProfile,
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    width: 1.5,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 17,
+                  backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                  backgroundImage: _profileAvatarImage,
+                  child: _profileAvatarImage == null
+                      ? Icon(
+                          Icons.person_rounded,
+                          size: 20,
+                          color: isDark ? Colors.white70 : SaaSColors.primary,
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'Baixa rápida com PIN / QR Code',
             onPressed: _selectedCondominium == null ? null : _quickPickupByPin,
@@ -542,8 +655,7 @@ class _DoormanPageState extends State<DoormanPage>
                 MaterialPageRoute<void>(
                   builder: (_) => NotificationsPage(
                     api: _api,
-                    condominiumId: (_selectedCondominium?['id'] as num?)
-                        ?.toInt(),
+                    condominiumId: (_selectedCondominium?['id'] as num?)?.toInt(),
                     onInvitationChanged: _loadCondominiums,
                   ),
                 ),
@@ -564,8 +676,10 @@ class _DoormanPageState extends State<DoormanPage>
           ),
         ],
       ),
-      floatingActionButton: _selectedCondominium != null
+      floatingActionButton: (_selectedCondominium != null && _tabs.index == 0)
           ? FloatingActionButton.extended(
+              backgroundColor: SaaSColors.primary,
+              foregroundColor: Colors.white,
               onPressed: () => _registerReceivedPackage(),
               icon: const Icon(Icons.add_box_outlined),
               label: const Text('Registrar encomenda'),
@@ -573,113 +687,53 @@ class _DoormanPageState extends State<DoormanPage>
           : null,
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1200),
+          constraints: const BoxConstraints(maxWidth: 1300),
           child: Column(
             children: [
               if (_condominiums.isNotEmpty) ...[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
-                  child: Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF0F766E), Color(0xFF2F3FB0)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<Map<String, dynamic>>(
+                          initialValue: _selectedCondominium,
+                          decoration: const InputDecoration(
+                            labelText: 'Condomínio em operação',
+                            prefixIcon: Icon(Icons.apartment_rounded),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          ),
+                          items: _condominiums.map((c) {
+                            return DropdownMenuItem(
+                              value: c,
+                              child: Text(c['name']?.toString() ?? 'Sem nome'),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            setState(() => _selectCondominium(val));
+                            _loadPackages();
+                          },
+                        ),
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x220F766E),
-                          blurRadius: 14,
-                          offset: Offset(0, 6),
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => _registerReceivedPackage(),
+                        icon: const Icon(Icons.add_box_outlined, size: 16),
+                        label: const Text('Nova Encomenda'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Olá, ${firstNameOf(widget.userName, fallback: 'porteiro')}! 👋',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _quickPickupByPin,
+                        icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
+                        label: const Text('Baixa (PIN)'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Registre encomendas por unidade, consulte moradores ou envie um comunicado direto.',
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
-                        const SizedBox(height: 12),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: const Color(0xFF0F766E),
-                                ),
-                                onPressed: () => _registerReceivedPackage(),
-                                icon: const Icon(
-                                  Icons.add_box_outlined,
-                                  size: 18,
-                                ),
-                                label: const Text('Nova encomenda'),
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFFCCFBF1),
-                                  foregroundColor: const Color(0xFF0F766E),
-                                ),
-                                onPressed: _quickPickupByPin,
-                                icon: const Icon(
-                                  Icons.qr_code_scanner_rounded,
-                                  size: 18,
-                                ),
-                                label: const Text('Baixa rápida (PIN / QR)'),
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFFFEF3C7),
-                                  foregroundColor: const Color(0xFFB45309),
-                                ),
-                                onPressed: _sendAnnouncement,
-                                icon: const Icon(
-                                  Icons.campaign_outlined,
-                                  size: 18,
-                                ),
-                                label: const Text('Comunicado à unidade'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
-                  child: DropdownButtonFormField<Map<String, dynamic>>(
-                    initialValue: _selectedCondominium,
-                    decoration: const InputDecoration(
-                      labelText: 'Condomínio em operação',
-                      prefixIcon: Icon(Icons.apartment_rounded),
-                    ),
-                    items: _condominiums.map((c) {
-                      return DropdownMenuItem(
-                        value: c,
-                        child: Text(c['name']?.toString() ?? 'Sem nome'),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setState(() => _selectCondominium(val));
-                      _loadPackages();
-                    },
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -747,6 +801,7 @@ class _DoormanPageState extends State<DoormanPage>
                             condominiumId: _selectedCondominium!['id'],
                           ),
                           DoormanChatView(
+                            key: ValueKey('doorman_chat_${_selectedCondominium!['id']}'),
                             api: _communityApi,
                             condominiumId: _selectedCondominium!['id'],
                             isDoormanMode: true,

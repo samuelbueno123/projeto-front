@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../core/design_system/saas_design_system.dart';
+import '../../../../core/services/realtime_service.dart';
 import '../../../../core/widgets/enter_search_field.dart';
 import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../../data/home_service.dart';
@@ -23,6 +26,7 @@ class NotificationsPage extends StatefulWidget {
 class _NotificationsPageState extends State<NotificationsPage> {
   String _query = '';
   String _originFilter = 'ALL';
+  StreamSubscription<RealtimeEvent>? _sseSub;
   late Future<
     ({
       List<Map<String, dynamic>> notices,
@@ -30,6 +34,36 @@ class _NotificationsPageState extends State<NotificationsPage> {
     })
   >
   _load = _fetch();
+
+  @override
+  void initState() {
+    super.initState();
+    _sseSub = RealtimeService.instance.events.listen((event) {
+      if (event.type == 'NOTIFICATION' || event.type == 'SYSTEM_ANNOUNCEMENT') {
+        _refresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sseSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _markAllAsRead() async {
+    try {
+      await widget.api.send('PATCH', '/notifications/read-all');
+      await _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Todas as notificações foram marcadas como lidas.'),
+          ),
+        );
+      }
+    } catch (_) {}
+  }
 
   Future<
     ({
@@ -121,8 +155,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
     _ => 'Membro',
   };
 
-  /// Origin of an item: SYSTEM (automatic), ADMIN (system-wide announcement
-  /// from the platform administrator) or CONDOMINIUM (condominium announcement).
   String _originOf(Map<String, dynamic> item, {bool announcement = false}) {
     if (announcement) return 'CONDOMINIUM';
     final origin = item['origin']?.toString();
@@ -166,12 +198,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: fg),
+          Icon(icon, size: 12, color: fg),
           const SizedBox(width: 4),
           Flexible(
             child: Text(
@@ -195,396 +227,334 @@ class _NotificationsPageState extends State<NotificationsPage> {
           _originOf(item, announcement: announcement) == _originFilter);
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Central de notificações'),
-      actions: [
-        IconButton(
-          tooltip: 'Atualizar notificações',
-          onPressed: _refresh,
-          icon: const Icon(Icons.refresh_rounded),
-        ),
-      ],
-    ),
-    body:
-        FutureBuilder<
-          ({
-            List<Map<String, dynamic>> notices,
-            List<Map<String, dynamic>> announcements,
-          })
-        >(
-          future: _load,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final data = snapshot.data!;
-            final items = data.notices.where(_matches).toList();
-            final announcements = data.announcements
-                .where((e) => _matches(e, announcement: true))
-                .toList();
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-            Widget buildCard(
-              Map<String, dynamic> item, {
-              bool announcement = false,
-            }) {
-              final image = item['imageUrl'] as String?;
-              final invitationStatus = item['invitationStatus']?.toString();
-              final isMembershipInvitation =
-                  !announcement &&
-                  item['type'] == 'MEMBERSHIP_INVITATION' &&
-                  item['invitationId'] != null;
-              final isPendingInvitation =
-                  isMembershipInvitation &&
-                  (invitationStatus == null || invitationStatus == 'PENDING');
-              final isUnread = !announcement && item['read'] != true;
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  side: BorderSide(
-                    color: isPendingInvitation
-                        ? const Color(0xFF2F3FB0)
-                        : isUnread
-                        ? const Color(0xFF93C5FD)
-                        : const Color(0xFFE2E8F0),
-                    width: isPendingInvitation ? 1.8 : 1,
-                  ),
-                ),
-                child: InkWell(
-                  onTap: isUnread
-                      ? () async {
-                          await widget.api.send(
-                            'PATCH',
-                            '/notifications/${item['id']}/read',
-                          );
-                          _refresh();
-                        }
-                      : null,
-                  borderRadius: BorderRadius.circular(18),
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 20,
-                              backgroundColor: isPendingInvitation
-                                  ? const Color(0xFFE0E7FF)
-                                  : announcement
-                                  ? const Color(0xFFFEF3C7)
-                                  : const Color(0xFFEFF6FF),
-                              child: Icon(
-                                isPendingInvitation
-                                    ? Icons.mark_email_unread_outlined
-                                    : announcement
-                                    ? Icons.campaign_outlined
-                                    : Icons.notifications_active_outlined,
-                                color: isPendingInvitation
-                                    ? const Color(0xFF2F3FB0)
-                                    : announcement
-                                    ? const Color(0xFFD97706)
-                                    : const Color(0xFF1D4ED8),
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _originTag(
-                                    _originOf(item, announcement: announcement),
-                                    detail:
-                                        _originOf(
-                                              item,
-                                              announcement: announcement,
-                                            ) ==
-                                            'CONDOMINIUM'
-                                        ? item['condominiumName']?.toString()
-                                        : null,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '${item['title'] ?? (announcement ? 'Comunicado do condomínio' : 'Notificação')}',
-                                    style: TextStyle(
-                                      fontSize: 15.5,
-                                      fontWeight: isUnread
-                                          ? FontWeight.w700
-                                          : FontWeight.w600,
-                                      color: const Color(0xFF0F172A),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _formatDate(item['createdAt']),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (isUnread)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDBEAFE),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: const Text(
-                                  'Nova',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF1D4ED8),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (isMembershipInvitation &&
-                            item['condominiumName'] != null) ...[
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE0E7FF),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  'Condomínio: ${item['condominiumName']}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF2F3FB0),
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  'Função: ${_roleLabel(item['authority']?.toString())}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF334155),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 12),
-                        Text(
-                          '${item[announcement ? 'content' : 'message'] ?? ''}',
-                          style: const TextStyle(
-                            fontSize: 14.5,
-                            color: Color(0xFF334155),
-                            height: 1.45,
-                          ),
-                        ),
-                        if (image != null && image.trim().isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          ClickableImagePreview(
-                            imageSource: image,
-                            title: item['title']?.toString(),
-                            height: 190,
-                          ),
-                        ],
-                        if (isPendingInvitation) ...[
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: FilledButton.icon(
-                                  onPressed: () =>
-                                      _respondToInvitation(item, accept: true),
-                                  icon: const Icon(Icons.check_circle_outline),
-                                  label: const Text('Aceitar convite'),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              OutlinedButton.icon(
-                                onPressed: () =>
-                                    _respondToInvitation(item, accept: false),
-                                icon: const Icon(Icons.close_rounded),
-                                label: const Text('Recusar'),
-                              ),
-                            ],
-                          ),
-                        ] else if (isMembershipInvitation &&
-                            invitationStatus != null) ...[
-                          const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  invitationStatus == 'ACTIVE' ||
-                                      invitationStatus == 'ACCEPTED'
-                                  ? const Color(0xFFDCFCE7)
-                                  : const Color(0xFFFEE2E2),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  invitationStatus == 'ACTIVE' ||
-                                          invitationStatus == 'ACCEPTED'
-                                      ? Icons.verified_rounded
-                                      : Icons.cancel_outlined,
-                                  size: 16,
-                                  color:
-                                      invitationStatus == 'ACTIVE' ||
-                                          invitationStatus == 'ACCEPTED'
-                                      ? const Color(0xFF15803D)
-                                      : const Color(0xFFB91C1C),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  invitationStatus == 'ACTIVE' ||
-                                          invitationStatus == 'ACCEPTED'
-                                      ? 'Convite aceito'
-                                      : 'Convite recusado',
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color:
-                                        invitationStatus == 'ACTIVE' ||
-                                            invitationStatus == 'ACCEPTED'
-                                        ? const Color(0xFF15803D)
-                                        : const Color(0xFFB91C1C),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
+    return Scaffold(
+      backgroundColor: SaaSColors.background(isDark),
+      appBar: AppBar(
+        title: const Text('Central de Notificações'),
+        backgroundColor: SaaSColors.surface(isDark),
+        actions: [
+          IconButton(
+            tooltip: 'Marcar todas como lidas',
+            onPressed: _markAllAsRead,
+            icon: const Icon(Icons.done_all_rounded),
+          ),
+          IconButton(
+            tooltip: 'Atualizar notificações',
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: FutureBuilder<
+        ({
+          List<Map<String, dynamic>> notices,
+          List<Map<String, dynamic>> announcements,
+        })
+      >(
+        future: _load,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      size: 40,
+                      color: Color(0xFFEF4444),
                     ),
-                  ),
-                ),
-              );
-            }
-
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: ListView(
-                    padding: const EdgeInsets.all(18),
-                    children: [
-                      EnterSearchField(
-                        hintText:
-                            'Pesquisar notificações e comunicados (Enter)',
-                        onSubmitted: (query) => setState(() => _query = query),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Não foi possível carregar as notificações.',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: SaaSColors.textPrimary(isDark),
                       ),
-                      const SizedBox(height: 4),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            for (final entry in _originLabels.entries) ...[
-                              ChoiceChip(
-                                avatar: entry.key == 'ALL'
-                                    ? null
-                                    : Icon(
-                                        _originStyle(entry.key).$1,
-                                        size: 16,
-                                        color: _originStyle(entry.key).$3,
-                                      ),
-                                label: Text(entry.value),
-                                selected: _originFilter == entry.key,
-                                onSelected: (_) =>
-                                    setState(() => _originFilter = entry.key),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (items.isEmpty && announcements.isEmpty)
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                const CircleAvatar(
-                                  radius: 28,
-                                  backgroundColor: Color(0xFFE8ECFF),
-                                  child: Icon(
-                                    Icons.notifications_none_rounded,
-                                    size: 30,
-                                    color: Color(0xFF2F3FB0),
-                                  ),
-                                ),
-                                const SizedBox(height: 14),
-                                Text(
-                                  'Tudo em dia por aqui!',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                const SizedBox(height: 6),
-                                const Text(
-                                  'Você não tem notificações ou comunicados no momento.',
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      if (items.isNotEmpty) ...[
-                        Text(
-                          'Suas notificações',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 10),
-                        ...items.map(buildCard),
-                      ],
-                      if (announcements.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Comunicados do condomínio',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 10),
-                        ...announcements.map(
-                          (e) => buildCard(e, announcement: true),
-                        ),
-                      ],
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 14),
+                    ShadButton.outline(
+                      onPressed: _refresh,
+                      child: const Text('Tentar novamente'),
+                    ),
+                  ],
                 ),
               ),
             );
-          },
-        ),
-  );
+          }
+
+          final data = snapshot.data!;
+          final filteredAnnouncements = data.announcements
+              .where((item) => _matches(item, announcement: true))
+              .toList();
+          final filteredNotices = data.notices
+              .where((item) => _matches(item))
+              .toList();
+
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 860),
+              child: Column(
+                children: [
+                  // Search & Filter header
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                    decoration: BoxDecoration(
+                      color: SaaSColors.surface(isDark),
+                      border: Border(
+                        bottom: BorderSide(color: SaaSColors.border(isDark)),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        EnterSearchField(
+                          hintText: 'Pesquisar avisos e notificações (Enter)',
+                          onSubmitted: (value) => setState(() => _query = value),
+                        ),
+                        const SizedBox(height: 12),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: _originLabels.entries.map((entry) {
+                              final isSelected = _originFilter == entry.key;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  label: Text(entry.value),
+                                  selected: isSelected,
+                                  onSelected: (_) => setState(
+                                    () => _originFilter = entry.key,
+                                  ),
+                                  labelStyle: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : SaaSColors.textSecondary(isDark),
+                                  ),
+                                  selectedColor: SaaSColors.primary,
+                                  backgroundColor: SaaSColors.surfaceSubtle(isDark),
+                                  side: BorderSide(
+                                    color: isSelected
+                                        ? SaaSColors.primary
+                                        : SaaSColors.border(isDark),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Notifications & Announcements Stream
+                  Expanded(
+                    child: (filteredAnnouncements.isEmpty && filteredNotices.isEmpty)
+                        ? const SaaSEmptyState(
+                            icon: Icons.notifications_off_outlined,
+                            title: 'Nenhuma notificação encontrada',
+                            description:
+                                'Você está em dia com todos os avisos e comunicados do seu condomínio.',
+                          )
+                        : ListView(
+                            padding: const EdgeInsets.all(20),
+                            children: [
+                              if (filteredAnnouncements.isNotEmpty) ...[
+                                SaaSSectionHeader(
+                                  title: 'Comunicados do Condomínio',
+                                  badge: SaaSBadge(
+                                    label: '${filteredAnnouncements.length}',
+                                    variant: SaaSBadgeVariant.warning,
+                                  ),
+                                ),
+                                ...filteredAnnouncements.map(
+                                  (item) => _buildAnnouncementCard(item, isDark),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              if (filteredNotices.isNotEmpty) ...[
+                                SaaSSectionHeader(
+                                  title: 'Notificações Pessoais & Sistema',
+                                  badge: SaaSBadge(
+                                    label: '${filteredNotices.length}',
+                                    variant: SaaSBadgeVariant.primary,
+                                  ),
+                                ),
+                                ...filteredNotices.map(
+                                  (item) => _buildNoticeCard(item, isDark),
+                                ),
+                              ],
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAnnouncementCard(Map<String, dynamic> item, bool isDark) {
+    final title = item['title']?.toString() ?? 'Comunicado';
+    final content = item['content']?.toString() ?? '';
+    final createdAt = _formatDate(item['createdAt']);
+    final imageUrl = item['imageUrl']?.toString();
+
+    return SaaSCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _originTag('CONDOMINIUM'),
+              const Spacer(),
+              Text(
+                createdAt,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: SaaSColors.textSecondary(isDark),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: SaaSColors.textPrimary(isDark),
+              letterSpacing: -0.2,
+            ),
+          ),
+          if (content.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              content,
+              style: TextStyle(
+                fontSize: 13,
+                color: SaaSColors.textSecondary(isDark),
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (imageUrl != null && imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ClickableImagePreview(
+              imageSource: imageUrl,
+              title: title,
+              height: 180,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoticeCard(Map<String, dynamic> item, bool isDark) {
+    final origin = _originOf(item);
+    final title = item['title']?.toString() ?? 'Notificação';
+    final body = item['body']?.toString() ?? item['message']?.toString() ?? '';
+    final createdAt = _formatDate(item['createdAt']);
+    final isRead = item['read'] == true;
+    final isInvitation = item['type'] == 'MEMBERSHIP_INVITATION';
+
+    return SaaSCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      borderColor: isRead ? null : SaaSColors.primary.withValues(alpha: 0.4),
+      backgroundColor: isRead
+          ? null
+          : (isDark
+              ? SaaSColors.primary.withValues(alpha: 0.08)
+              : const Color(0xFFF0F7FF)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _originTag(origin),
+              if (!isRead) ...[
+                const SizedBox(width: 8),
+                const SaaSBadge(
+                  label: 'Nova',
+                  variant: SaaSBadgeVariant.primary,
+                ),
+              ],
+              if (isInvitation && item['authority'] != null) ...[
+                const SizedBox(width: 8),
+                SaaSBadge(
+                  label: _roleLabel(item['authority']?.toString()),
+                  variant: SaaSBadgeVariant.neutral,
+                ),
+              ],
+              const Spacer(),
+              Text(
+                createdAt,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: SaaSColors.textSecondary(isDark),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: isRead ? FontWeight.w600 : FontWeight.w800,
+              color: SaaSColors.textPrimary(isDark),
+              letterSpacing: -0.2,
+            ),
+          ),
+          if (body.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              body,
+              style: TextStyle(
+                fontSize: 13,
+                color: SaaSColors.textSecondary(isDark),
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (isInvitation) ...[
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton(
+                  onPressed: () => _respondToInvitation(item, accept: false),
+                  child: const Text('Recusar'),
+                ),
+                const SizedBox(width: 10),
+                FilledButton(
+                  onPressed: () => _respondToInvitation(item, accept: true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SaaSColors.success,
+                  ),
+                  child: const Text('Aceitar Convite'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }

@@ -2,7 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../core/design_system/saas_design_system.dart';
+import '../../../core/responsive/responsive_layout.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/enter_search_field.dart';
 import '../../../core/widgets/full_screen_image_viewer.dart';
@@ -50,6 +54,8 @@ class _AdminPageState extends State<AdminPage> {
   late HomeService _api = HomeService(token: widget.token);
   Map<String, dynamic> _profile = {};
   late Future<Map<String, dynamic>> _summary;
+  String? _selectedResourceKey;
+  String? _selectedResourceTitle;
 
   static const _resources = <(String, String, IconData)>[
     ('Usuários', 'users', Icons.people_alt_outlined),
@@ -216,259 +222,856 @@ class _AdminPageState extends State<AdminPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFFF5F7FB),
-    appBar: AppBar(
-      title: const Text('Painel administrativo'),
-      backgroundColor: const Color(0xFF2F3FB0),
-      foregroundColor: Colors.white,
-      actions: [
-        if (widget.currentRole != null && widget.onSwitchRole != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-            child: RoleSwitcherPill(
-              currentRole: widget.currentRole!,
-              availableRoles: widget.availableRoles,
-              onSwitchRole: widget.onSwitchRole!,
-            ),
-          ),
-        IconButton(
-          tooltip: 'Criar entrada no banco',
-          onPressed: _openCreateAnyEntityMenu,
-          icon: const Icon(Icons.add_circle_outline),
-        ),
-        IconButton(
-          tooltip: 'Novo condomínio',
-          onPressed: _openCreateCondominium,
-          icon: const Icon(Icons.domain_add_outlined),
-        ),
-        IconButton(
-          tooltip: 'Publicar aviso geral',
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SystemAnnouncementPage(api: _api),
-            ),
-          ),
-          icon: const Icon(Icons.campaign_outlined),
-        ),
-        IconButton(
-          tooltip: 'Minha conta',
-          onPressed: _openProfile,
-          icon: CircleAvatar(
-            radius: 16,
-            backgroundColor: Colors.white24,
-            backgroundImage: _profileAvatarImage,
-            child: _profileAvatarImage == null
-                ? const Icon(Icons.person, color: Colors.white, size: 20)
-                : null,
-          ),
-        ),
-        IconButton(
-          tooltip: 'Atualizar',
-          onPressed: _refresh,
-          icon: const Icon(Icons.refresh),
-        ),
-        IconButton(
-          tooltip: 'Sair',
-          onPressed: widget.onLogout,
-          icon: const Icon(Icons.logout),
-        ),
-      ],
-    ),
-    body: FutureBuilder<Map<String, dynamic>>(
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>>(
       future: _summary,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return Scaffold(
+            backgroundColor: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF0F172A)
+                : const Color(0xFFF8FAFC),
+            body: const Center(child: CircularProgressIndicator()),
+          );
         }
         if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.cloud_off_outlined, size: 42),
-                  const SizedBox(height: 12),
-                  Text(snapshot.error.toString(), textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: _refresh,
-                    child: const Text('Tentar novamente'),
-                  ),
-                ],
+          return Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off_outlined, size: 42),
+                    const SizedBox(height: 12),
+                    Text(snapshot.error.toString(), textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: _refresh,
+                      child: const Text('Tentar novamente'),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
         }
         final data = snapshot.data!;
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final cardWidth = constraints.maxWidth < 520
-                ? (constraints.maxWidth - 52) / 2
-                : constraints.maxWidth < 900
-                ? (constraints.maxWidth - 66) / 3
-                : (constraints.maxWidth - 96) / 4;
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF2F3FB0), Color(0xFF4B5DE7)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x1F2F3FB0),
-                          blurRadius: 16,
-                          offset: Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Olá, ${firstNameOf(widget.userName, fallback: 'administrador')}! 👋',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.userEmail ??
-                                    'Visão global do aplicativo',
-                                style: const TextStyle(color: Colors.white70),
-                              ),
-                            ],
-                          ),
-                        ),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: const Color(0xFF2F3FB0),
-                          ),
-                          onPressed: _openCreateCondominium,
-                          icon: const Icon(Icons.add_business_outlined),
-                          label: const Text('Novo condomínio'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Menu do administrador',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
+        if (ResponsiveLayout.isDesktop(context)) {
+          return _buildDesktopAdminLayout(context, data);
+        }
+        return _buildMobileAdminLayout(context, data);
+      },
+    );
+  }
+
+  Widget _buildDesktopAdminLayout(BuildContext context, Map<String, dynamic> data) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+    final sidebarBg = isDark ? const Color(0xFF0B1120) : Colors.white;
+    final borderColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+
+    return Scaffold(
+      backgroundColor: bgColor,
+      body: Row(
+        children: [
+          // 1. Sidebar (width: 270)
+          Container(
+            width: 270,
+            decoration: BoxDecoration(
+              color: sidebarBg,
+              border: Border(right: BorderSide(color: borderColor)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Sidebar Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                  child: Row(
                     children: [
-                      _QuickActionCard(
-                        width: cardWidth,
-                        icon: Icons.add_circle_outline,
-                        color: const Color(0xFF059669),
-                        title: 'Criar registro',
-                        subtitle:
-                            'Cadastrar qualquer entidade e acoplar ao pai',
-                        onTap: _openCreateAnyEntityMenu,
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.admin_panel_settings_rounded, color: Colors.white, size: 22),
                       ),
-                      _QuickActionCard(
-                        width: cardWidth,
-                        icon: Icons.domain_add_outlined,
-                        color: const Color(0xFF2F3FB0),
-                        title: 'Criar condomínio',
-                        subtitle: 'Cadastrar condomínio e definir síndico',
-                        onTap: _openCreateCondominium,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Âncora Admin',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF10B981),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'CONSOLE GLOBAL',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: SaaSColors.muted(context),
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                      _QuickActionCard(
-                        width: cardWidth,
-                        icon: Icons.apartment_outlined,
-                        color: const Color(0xFF0E7490),
-                        title: 'Condomínios',
-                        subtitle: 'Gerenciar condomínios e síndicos',
-                        onTap: () =>
-                            _openResource('Condomínios', 'condominiums'),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+
+                // Navigation List (Expanded with internal scroll)
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    children: [
+                      _buildSidebarItem(
+                        icon: Icons.dashboard_outlined,
+                        label: 'Visão Geral',
+                        isSelected: _selectedResourceKey == null,
+                        onTap: () => setState(() {
+                          _selectedResourceKey = null;
+                          _selectedResourceTitle = null;
+                        }),
                       ),
-                      _QuickActionCard(
-                        width: cardWidth,
-                        icon: Icons.people_alt_outlined,
-                        color: const Color(0xFF4338CA),
-                        title: 'Usuários',
-                        subtitle: 'Consultar contas e perfis de acesso',
-                        onTap: () => _openResource('Usuários', 'users'),
+                      const SizedBox(height: 14),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12, bottom: 6),
+                        child: Text(
+                          'ENTIDADES DO BANCO',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: SaaSColors.muted(context),
+                            letterSpacing: 0.9,
+                          ),
+                        ),
                       ),
-                      _QuickActionCard(
-                        width: cardWidth,
-                        icon: Icons.campaign_outlined,
-                        color: const Color(0xFFB45309),
-                        title: 'Aviso geral',
-                        subtitle: 'Enviar comunicado para todo o sistema',
-                        onTap: () => Navigator.of(context).push(
+                      ..._resources.map((res) {
+                        final count = data[_countKey(res.$2)] ?? 0;
+                        final isSelected = _selectedResourceKey == res.$2;
+                        return _buildSidebarItem(
+                          icon: res.$3,
+                          label: res.$1,
+                          count: count,
+                          isSelected: isSelected,
+                          onTap: () => setState(() {
+                            _selectedResourceKey = res.$2;
+                            _selectedResourceTitle = res.$1;
+                          }),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+
+                const Divider(height: 1),
+                // Admin account footer
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: InkWell(
+                    onTap: _openProfile,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 17,
+                            backgroundColor: SaaSColors.primary.withValues(alpha: 0.15),
+                            backgroundImage: _profileAvatarImage,
+                            child: _profileAvatarImage == null
+                                ? const Icon(Icons.person, size: 20, color: SaaSColors.primary)
+                                : null,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.userName ?? 'Administrador',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                ),
+                                Text(
+                                  widget.userEmail ?? 'admin@ancora.com',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Sair',
+                            icon: const Icon(Icons.logout, size: 18),
+                            onPressed: widget.onLogout,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 2. Main Content Area (Expanded, 100% height, zero outer scroll)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Top Action Header Strip
+                Container(
+                  height: 64,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                    border: Border(bottom: BorderSide(color: borderColor)),
+                  ),
+                  child: Row(
+                    children: [
+                      if (_selectedResourceKey != null) ...[
+                        TextButton.icon(
+                          onPressed: () => setState(() {
+                            _selectedResourceKey = null;
+                            _selectedResourceTitle = null;
+                          }),
+                          icon: const Icon(Icons.arrow_back, size: 16),
+                          label: const Text('Visão Geral'),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('/', style: TextStyle(color: SaaSColors.muted(context))),
+                        const SizedBox(width: 8),
+                        Text(
+                          _selectedResourceTitle!,
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                        ),
+                      ] else ...[
+                        Text(
+                          'Olá, ${firstNameOf(widget.userName, fallback: 'administrador')}! 👋',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const SaaSBadge(
+                          label: 'Administrador do Sistema',
+                          variant: SaaSBadgeVariant.primary,
+                        ),
+                      ],
+
+                      const Spacer(),
+
+                      if (widget.currentRole != null && widget.onSwitchRole != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: RoleSwitcherPill(
+                            currentRole: widget.currentRole!,
+                            availableRoles: widget.availableRoles,
+                            onSwitchRole: widget.onSwitchRole!,
+                          ),
+                        ),
+
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: SaaSColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                        onPressed: _openCreateCondominium,
+                        icon: const Icon(Icons.domain_add_outlined, size: 18),
+                        label: const Text('Novo condomínio'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                        onPressed: _openCreateAnyEntityMenu,
+                        icon: const Icon(Icons.add_circle_outline, size: 18),
+                        label: const Text('Criar registro'),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Publicar aviso geral',
+                        icon: const Icon(Icons.campaign_outlined),
+                        onPressed: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
                             builder: (_) => SystemAnnouncementPage(api: _api),
                           ),
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'Atualizar dados',
+                        icon: const Icon(Icons.refresh),
+                        onPressed: _refresh,
+                      ),
+                      IconButton(
+                        tooltip: 'Minha conta',
+                        icon: const Icon(Icons.person_outline),
+                        onPressed: _openProfile,
+                      ),
+                      IconButton(
+                        tooltip: isDark ? 'Modo claro' : 'Modo escuro',
+                        icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+                        onPressed: () {
+                          AppTheme.themeModeNotifier.value =
+                              isDark ? ThemeMode.light : ThemeMode.dark;
+                        },
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 22),
-                  _AdminSearch(api: _api, onChanged: _refresh),
-                  const SizedBox(height: 22),
-                  Text(
-                    'Resumo geral do banco de dados',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: _resources
-                        .map(
-                          (entry) => SizedBox(
-                            width: cardWidth,
-                            child: _MetricCard(
-                              label: entry.$1,
-                              value: data[_countKey(entry.$2)] ?? 0,
-                              icon: entry.$3,
-                              onTap: () => _openResource(entry.$1, entry.$2),
-                            ),
-                          ),
+                ),
+
+                // Content View (Expanded, zero outer scroll)
+                Expanded(
+                  child: _selectedResourceKey != null
+                      ? _AdminResourceView(
+                          key: ValueKey(_selectedResourceKey),
+                          api: _api,
+                          title: _selectedResourceTitle!,
+                          resource: _selectedResourceKey!,
+                          isEmbedded: true,
+                          onBack: () => setState(() {
+                            _selectedResourceKey = null;
+                            _selectedResourceTitle = null;
+                          }),
                         )
-                        .toList(),
+                      : Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // 4 Top Metric Cards
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: SaaSMetricCard(
+                                      title: 'Condomínios',
+                                      value: '${data['condominiums'] ?? 0}',
+                                      icon: Icons.apartment_outlined,
+                                      subtitle: 'condomínios no sistema',
+                                      onTap: () => setState(() {
+                                        _selectedResourceKey = 'condominiums';
+                                        _selectedResourceTitle = 'Condomínios';
+                                      }),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: SaaSMetricCard(
+                                      title: 'Usuários',
+                                      value: '${data['users'] ?? 0}',
+                                      icon: Icons.people_alt_outlined,
+                                      subtitle: 'contas ativas',
+                                      onTap: () => setState(() {
+                                        _selectedResourceKey = 'users';
+                                        _selectedResourceTitle = 'Usuários';
+                                      }),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: SaaSMetricCard(
+                                      title: 'Moradores',
+                                      value: '${data['residents'] ?? 0}',
+                                      icon: Icons.groups_outlined,
+                                      subtitle: 'moradores vinculados',
+                                      onTap: () => setState(() {
+                                        _selectedResourceKey = 'residents';
+                                        _selectedResourceTitle = 'Moradores';
+                                      }),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: SaaSMetricCard(
+                                      title: 'Reservas',
+                                      value: '${data['reservations'] ?? 0}',
+                                      icon: Icons.event_available_outlined,
+                                      subtitle: 'reservas registradas',
+                                      onTap: () => setState(() {
+                                        _selectedResourceKey = 'reservations';
+                                        _selectedResourceTitle = 'Reservas';
+                                      }),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Work Area 2 Columns (Expanded, no outer scroll!)
+                              Expanded(
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    // Left Pane: Search & Quick Actions (Flex 5)
+                                    Expanded(
+                                      flex: 5,
+                                      child: SaaSCard(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            const SaaSSectionHeader(
+                                              title: 'Pesquisa Global',
+                                              subtitle: 'Localize cadastros por nome ou código',
+                                              action: SaaSBadge(
+                                                label: 'Enter para buscar',
+                                                variant: SaaSBadgeVariant.neutral,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Expanded(
+                                              child: SingleChildScrollView(
+                                                child: _AdminSearch(
+                                                  api: _api,
+                                                  onChanged: _refresh,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+
+                                    // Right Pane: Database Explorer Grid (Flex 7)
+                                    Expanded(
+                                      flex: 7,
+                                      child: SaaSCard(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            const SaaSSectionHeader(
+                                              title: 'Entidades & Tabelas',
+                                              subtitle: 'Selecione uma tabela para gerenciar seus registros',
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Expanded(
+                                              child: GridView.builder(
+                                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                                  crossAxisCount: 3,
+                                                  crossAxisSpacing: 10,
+                                                  mainAxisSpacing: 10,
+                                                  childAspectRatio: 1.6,
+                                                ),
+                                                itemCount: _resources.length,
+                                                itemBuilder: (context, idx) {
+                                                  final res = _resources[idx];
+                                                  final count = data[_countKey(res.$2)] ?? 0;
+                                                  return InkWell(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    onTap: () => setState(() {
+                                                      _selectedResourceKey = res.$2;
+                                                      _selectedResourceTitle = res.$1;
+                                                    }),
+                                                    child: Container(
+                                                      padding: const EdgeInsets.all(12),
+                                                      decoration: BoxDecoration(
+                                                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                                        borderRadius: BorderRadius.circular(10),
+                                                        border: Border.all(
+                                                          color: borderColor,
+                                                        ),
+                                                      ),
+                                                      child: Row(
+                                                        children: [
+                                                          CircleAvatar(
+                                                            radius: 18,
+                                                            backgroundColor: SaaSColors.primary.withValues(alpha: 0.12),
+                                                            child: Icon(res.$3, color: SaaSColors.primary, size: 20),
+                                                          ),
+                                                          const SizedBox(width: 10),
+                                                          Expanded(
+                                                            child: Column(
+                                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                                              mainAxisAlignment: MainAxisAlignment.center,
+                                                              children: [
+                                                                Text(
+                                                                  res.$1,
+                                                                  maxLines: 1,
+                                                                  overflow: TextOverflow.ellipsis,
+                                                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                                                ),
+                                                                Text(
+                                                                  '$count registros',
+                                                                  style: TextStyle(
+                                                                    fontSize: 11,
+                                                                    color: SaaSColors.muted(context),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                          const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSidebarItem({
+    required IconData icon,
+    required String label,
+    dynamic count,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? (isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF))
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isSelected
+                ? Border.all(
+                    color: isDark ? const Color(0xFF3B82F6) : const Color(0xFFBFDBFE),
+                  )
+                : null,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isSelected
+                    ? SaaSColors.primary
+                    : (isDark ? Colors.white70 : const Color(0xFF475569)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected
+                        ? SaaSColors.primary
+                        : (isDark ? Colors.white : const Color(0xFF1E293B)),
                   ),
-                  const SizedBox(height: 24),
-                  Card(
-                    child: ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.admin_panel_settings_outlined),
-                      ),
-                      title: const Text('Conta administrativa'),
-                      subtitle: Text(
-                        '${widget.userName ?? 'Ancora Admin'} · ${widget.userEmail ?? ''}',
-                      ),
+                ),
+              ),
+              if (count != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? SaaSColors.primary.withValues(alpha: 0.15)
+                        : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? SaaSColors.primary
+                          : (isDark ? Colors.white70 : const Color(0xFF64748B)),
                     ),
                   ),
-                ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileAdminLayout(BuildContext context, Map<String, dynamic> data) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: isDark
+          ? const Color(0xFF0F172A)
+          : const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: const Text('Painel administrativo'),
+        backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFF2F3FB0),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: isDark ? 'Modo claro' : 'Modo escuro',
+            icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+            onPressed: () {
+              AppTheme.themeModeNotifier.value =
+                  isDark ? ThemeMode.light : ThemeMode.dark;
+            },
+          ),
+          if (widget.currentRole != null && widget.onSwitchRole != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              child: RoleSwitcherPill(
+                currentRole: widget.currentRole!,
+                availableRoles: widget.availableRoles,
+                onSwitchRole: widget.onSwitchRole!,
               ),
-            );
-          },
-        );
-      },
-    ),
-  );
+            ),
+          IconButton(
+            tooltip: 'Criar entrada no banco',
+            onPressed: _openCreateAnyEntityMenu,
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+          IconButton(
+            tooltip: 'Novo condomínio',
+            onPressed: _openCreateCondominium,
+            icon: const Icon(Icons.domain_add_outlined),
+          ),
+          IconButton(
+            tooltip: 'Publicar aviso geral',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SystemAnnouncementPage(api: _api),
+              ),
+            ),
+            icon: const Icon(Icons.campaign_outlined),
+          ),
+          IconButton(
+            tooltip: 'Minha conta',
+            onPressed: _openProfile,
+            icon: CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.white24,
+              backgroundImage: _profileAvatarImage,
+              child: _profileAvatarImage == null
+                  ? const Icon(Icons.person, color: Colors.white, size: 20)
+                  : null,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Atualizar',
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            tooltip: 'Sair',
+            onPressed: widget.onLogout,
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final cardWidth = constraints.maxWidth < 520
+              ? (constraints.maxWidth - 52) / 2
+              : constraints.maxWidth < 900
+              ? (constraints.maxWidth - 66) / 3
+              : (constraints.maxWidth - 96) / 4;
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2F3FB0), Color(0xFF4B5DE7)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x1F2F3FB0),
+                        blurRadius: 16,
+                        offset: Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Olá, ${firstNameOf(widget.userName, fallback: 'administrador')}! 👋',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              widget.userEmail ??
+                                  'Visão global do aplicativo',
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF2F3FB0),
+                        ),
+                        onPressed: _openCreateCondominium,
+                        icon: const Icon(Icons.add_business_outlined),
+                        label: const Text('Novo condomínio'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Menu do administrador',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    _QuickActionCard(
+                      width: cardWidth,
+                      icon: Icons.add_circle_outline,
+                      color: const Color(0xFF059669),
+                      title: 'Criar registro',
+                      subtitle:
+                          'Cadastrar qualquer entidade e acoplar ao pai',
+                      onTap: _openCreateAnyEntityMenu,
+                    ),
+                    _QuickActionCard(
+                      width: cardWidth,
+                      icon: Icons.domain_add_outlined,
+                      color: const Color(0xFF2F3FB0),
+                      title: 'Criar condomínio',
+                      subtitle: 'Cadastrar condomínio e definir síndico',
+                      onTap: _openCreateCondominium,
+                    ),
+                    _QuickActionCard(
+                      width: cardWidth,
+                      icon: Icons.apartment_outlined,
+                      color: const Color(0xFF0E7490),
+                      title: 'Condomínios',
+                      subtitle: 'Gerenciar condomínios e síndicos',
+                      onTap: () =>
+                          _openResource('Condomínios', 'condominiums'),
+                    ),
+                    _QuickActionCard(
+                      width: cardWidth,
+                      icon: Icons.people_alt_outlined,
+                      color: const Color(0xFF4338CA),
+                      title: 'Usuários',
+                      subtitle: 'Consultar contas e perfis de acesso',
+                      onTap: () => _openResource('Usuários', 'users'),
+                    ),
+                    _QuickActionCard(
+                      width: cardWidth,
+                      icon: Icons.campaign_outlined,
+                      color: const Color(0xFFB45309),
+                      title: 'Aviso geral',
+                      subtitle: 'Enviar comunicado para todo o sistema',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => SystemAnnouncementPage(api: _api),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                _AdminSearch(api: _api, onChanged: _refresh),
+                const SizedBox(height: 22),
+                Text(
+                  'Resumo geral do banco de dados',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: _resources
+                      .map(
+                        (entry) => SizedBox(
+                          width: cardWidth,
+                          child: _MetricCard(
+                            label: entry.$1,
+                            value: data[_countKey(entry.$2)] ?? 0,
+                            icon: entry.$3,
+                            onTap: () => _openResource(entry.$1, entry.$2),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 24),
+                Card(
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.admin_panel_settings_outlined),
+                    ),
+                    title: const Text('Conta administrativa'),
+                    subtitle: Text(
+                      '${widget.userName ?? 'Ancora Admin'} · ${widget.userEmail ?? ''}',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   String _countKey(String resource) => switch (resource) {
     'common-areas' => 'commonAreas',
@@ -477,6 +1080,13 @@ class _AdminPageState extends State<AdminPage> {
   };
 
   Future<void> _openResource(String label, String resource) async {
+    if (ResponsiveLayout.isDesktop(context)) {
+      setState(() {
+        _selectedResourceKey = resource;
+        _selectedResourceTitle = label;
+      });
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
@@ -520,41 +1130,34 @@ class _QuickActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: width,
-    child: Card(
-      clipBehavior: Clip.antiAlias,
-      elevation: 1.5,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: color.withValues(alpha: 0.12),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF13162A),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  color: Color(0xFF5C6179),
-                ),
-              ),
-            ],
+    child: SaaSCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: color.withValues(alpha: 0.12),
+            child: Icon(icon, color: color, size: 22),
           ),
-        ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 12,
+              color: SaaSColors.muted(context),
+            ),
+          ),
+        ],
       ),
     ),
   );
@@ -573,30 +1176,27 @@ class _MetricCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: const Color(0xFF3E4CDF)),
-            const SizedBox(height: 12),
-            Text(
-              '$value',
-              style: const TextStyle(
-                fontSize: 27,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF13162A),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(label, style: const TextStyle(color: Color(0xFF5C6179))),
-          ],
+  Widget build(BuildContext context) => SaaSCard(
+    onTap: onTap,
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: SaaSColors.primary),
+        const SizedBox(height: 12),
+        Text(
+          '$value',
+          style: const TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
+          ),
         ),
-      ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(fontSize: 13, color: SaaSColors.muted(context)),
+        ),
+      ],
     ),
   );
 }
@@ -856,21 +1456,47 @@ Future<Map<String, dynamic>?> showCreateCondominiumDialog({
   return created;
 }
 
-class _AdminResourcePage extends StatefulWidget {
+class _AdminResourcePage extends StatelessWidget {
   const _AdminResourcePage({
     required this.api,
     required this.title,
     required this.resource,
   });
+
   final HomeService api;
   final String title;
   final String resource;
 
   @override
-  State<_AdminResourcePage> createState() => _AdminResourcePageState();
+  Widget build(BuildContext context) => _AdminResourceView(
+    api: api,
+    title: title,
+    resource: resource,
+    isEmbedded: false,
+  );
 }
 
-class _AdminResourcePageState extends State<_AdminResourcePage> {
+class _AdminResourceView extends StatefulWidget {
+  const _AdminResourceView({
+    super.key,
+    required this.api,
+    required this.title,
+    required this.resource,
+    this.isEmbedded = false,
+    this.onBack,
+  });
+
+  final HomeService api;
+  final String title;
+  final String resource;
+  final bool isEmbedded;
+  final VoidCallback? onBack;
+
+  @override
+  State<_AdminResourceView> createState() => _AdminResourceViewState();
+}
+
+class _AdminResourceViewState extends State<_AdminResourceView> {
   int _page = 0;
   String _query = '';
   late Future<dynamic> _data;
@@ -879,6 +1505,16 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AdminResourceView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.resource != widget.resource) {
+      _page = 0;
+      _query = '';
+      _load();
+    }
   }
 
   void _load() {
@@ -905,31 +1541,8 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFFF5F7FB),
-    appBar: AppBar(
-      title: Text(widget.title),
-      backgroundColor: const Color(0xFF2F3FB0),
-      foregroundColor: Colors.white,
-      actions: [
-        IconButton(
-          tooltip: 'Novo registro em ${widget.title}',
-          onPressed: _createRecord,
-          icon: const Icon(Icons.add_circle_outline),
-        ),
-        IconButton(
-          tooltip: 'Atualizar',
-          onPressed: () => setState(_load),
-          icon: const Icon(Icons.refresh),
-        ),
-      ],
-    ),
-    floatingActionButton: FloatingActionButton.extended(
-      onPressed: _createRecord,
-      icon: const Icon(Icons.add),
-      label: Text('Novo em ${widget.title}'),
-    ),
-    body: FutureBuilder<dynamic>(
+  Widget build(BuildContext context) {
+    final bodyContent = FutureBuilder<dynamic>(
       future: _data,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
@@ -956,12 +1569,13 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
         final totalPages = result is Map
             ? (result['totalPages'] as num?)?.toInt() ?? 1
             : 1;
+
         return Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               child: EnterSearchField(
-                hintText: 'Pesquisar registros',
+                hintText: 'Pesquisar registros em ${widget.title}',
                 onSubmitted: (query) => setState(() {
                   _query = query;
                   _page = 0;
@@ -991,38 +1605,121 @@ class _AdminResourcePageState extends State<_AdminResourcePage> {
               ),
             SafeArea(
               top: false,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    tooltip: 'Página anterior',
-                    onPressed: _page > 0
-                        ? () => setState(() {
-                            _page--;
-                            _load();
-                          })
-                        : null,
-                    icon: const Icon(Icons.chevron_left),
-                  ),
-                  Text('Página ${_page + 1} de $totalPages'),
-                  IconButton(
-                    tooltip: 'Próxima página',
-                    onPressed: _page + 1 < totalPages
-                        ? () => setState(() {
-                            _page++;
-                            _load();
-                          })
-                        : null,
-                    icon: const Icon(Icons.chevron_right),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: 'Página anterior',
+                      onPressed: _page > 0
+                          ? () => setState(() {
+                              _page--;
+                              _load();
+                            })
+                          : null,
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    Text(
+                      'Página ${_page + 1} de $totalPages',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    IconButton(
+                      tooltip: 'Próxima página',
+                      onPressed: _page + 1 < totalPages
+                          ? () => setState(() {
+                              _page++;
+                              _load();
+                            })
+                          : null,
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         );
       },
-    ),
-  );
+    );
+
+    if (widget.isEmbedded) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: SaaSCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  if (widget.onBack != null)
+                    IconButton(
+                      tooltip: 'Voltar à visão geral',
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: widget.onBack,
+                    ),
+                  const SizedBox(width: 8),
+                  Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: SaaSColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: _createRecord,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text('Novo em ${widget.title}'),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Atualizar',
+                    icon: const Icon(Icons.refresh),
+                    onPressed: () => setState(_load),
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              Expanded(child: bodyContent),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FB),
+      appBar: AppBar(
+        title: Text(widget.title),
+        backgroundColor: const Color(0xFF2F3FB0),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Novo registro em ${widget.title}',
+            onPressed: _createRecord,
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+          IconButton(
+            tooltip: 'Atualizar',
+            onPressed: () => setState(_load),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _createRecord,
+        icon: const Icon(Icons.add),
+        label: Text('Novo em ${widget.title}'),
+      ),
+      body: bodyContent,
+    );
+  }
 }
 
 class _AdminRecordCard extends StatelessWidget {
@@ -1082,6 +1779,26 @@ class _AdminRecordCard extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.visibility_outlined, size: 18),
                       label: const Text('Ficha completa'),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: () async {
+                        final updated = await showEditAdminResourceDialog(
+                          context: context,
+                          api: api,
+                          resource: resource,
+                          item: item,
+                        );
+                        if (updated != null && context.mounted) {
+                          onChanged();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Registro atualizado com sucesso!'),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Editar registro'),
                     ),
                     if (resource == 'condominiums' && item['id'] is num)
                       FilledButton.tonalIcon(
@@ -1776,12 +2493,11 @@ class _AdminSearchState extends State<_AdminSearch> {
           '/admin/data/$key?page=0&size=25&query=${Uri.encodeQueryComponent(id.toString())}',
         );
         if (pageData is Map && pageData['content'] is List) {
-          final match = (pageData['content'] as List)
-              .whereType<Map<String, dynamic>>()
-              .where((e) => e['id'] == id)
-              .firstOrNull;
-          if (match != null) {
-            fullItem = match;
+          for (final e in (pageData['content'] as List).whereType<Map<String, dynamic>>()) {
+            if (e['id'] == id) {
+              fullItem = e;
+              break;
+            }
           }
         }
       } catch (_) {}
@@ -1808,10 +2524,9 @@ class _AdminSearchState extends State<_AdminSearch> {
       _items('sectors').length;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+  Widget build(BuildContext context) => SaaSCard(
+    padding: const EdgeInsets.all(16),
+    child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
@@ -1865,8 +2580,7 @@ class _AdminSearchState extends State<_AdminSearch> {
           ],
         ],
       ),
-    ),
-  );
+    );
 
   Widget _resultGroup(String title, String key, IconData icon) {
     final values = _items(key);

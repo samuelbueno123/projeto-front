@@ -693,7 +693,8 @@ class DoormanReservationsView extends StatefulWidget {
 class _DoormanReservationsViewState extends State<DoormanReservationsView> {
   List<Map<String, dynamic>> _reservations = [];
   bool _loading = true;
-  String _filter = 'ALL'; // ALL, PENDING, CONFIRMED, COUNTER_PROPOSED
+  String _category = 'SCHEDULED'; // SCHEDULED, PAST, CANCELLED
+  String _subFilter = 'ALL'; // ALL, PENDING, CONFIRMED, COUNTER_PROPOSED
 
   @override
   void initState() {
@@ -711,15 +712,49 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
     }
   }
 
+  bool _isCancelled(Map<String, dynamic> r) {
+    final s = r['status']?.toString().toUpperCase();
+    return s == 'CANCELLED' || s == 'REJECTED';
+  }
+
+  bool _isPast(Map<String, dynamic> r) {
+    if (_isCancelled(r)) return false;
+    final endAt = r['endAt']?.toString();
+    if (endAt == null || endAt.isEmpty) return false;
+    try {
+      final dt = DateTime.parse(endAt).toLocal();
+      return dt.isBefore(DateTime.now());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isScheduled(Map<String, dynamic> r) {
+    return !_isCancelled(r) && !_isPast(r);
+  }
+
+  List<Map<String, dynamic>> get _currentCategoryReservations {
+    return switch (_category) {
+      'PAST' => _reservations.where(_isPast).toList(),
+      'CANCELLED' => _reservations.where(_isCancelled).toList(),
+      _ => _reservations.where(_isScheduled).toList(),
+    };
+  }
+
   List<Map<String, dynamic>> get _filtered {
-    if (_filter == 'ALL') return _reservations;
-    return _reservations.where((r) => r['status'] == _filter).toList();
+    final catList = _currentCategoryReservations;
+    if (_category != 'SCHEDULED' || _subFilter == 'ALL') return catList;
+    return catList.where((r) => r['status'] == _subFilter).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+
+    final scheduled = _reservations.where(_isScheduled).toList();
+    final past = _reservations.where(_isPast).toList();
+    final cancelled = _reservations.where(_isCancelled).toList();
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -741,20 +776,74 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
             ],
           ),
           const SizedBox(height: 8),
+          // 3 Main Segmented Categories
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _filterChip('Todas', 'ALL'),
+                ChoiceChip(
+                  label: Text('Agendadas (${scheduled.length})'),
+                  selected: _category == 'SCHEDULED',
+                  avatar: const Icon(Icons.calendar_month_outlined, size: 16),
+                  onSelected: (val) {
+                    if (val) setState(() => _category = 'SCHEDULED');
+                  },
+                ),
                 const SizedBox(width: 8),
-                _filterChip('Pendentes de Aprovação', 'PENDING'),
+                ChoiceChip(
+                  label: Text('Já passaram (${past.length})'),
+                  selected: _category == 'PAST',
+                  avatar: const Icon(Icons.history_rounded, size: 16),
+                  onSelected: (val) {
+                    if (val) setState(() => _category = 'PAST');
+                  },
+                ),
                 const SizedBox(width: 8),
-                _filterChip('Contraproposta Enviada', 'COUNTER_PROPOSED'),
-                const SizedBox(width: 8),
-                _filterChip('Confirmadas', 'CONFIRMED'),
+                ChoiceChip(
+                  label: Text(
+                    'Canceladas (${cancelled.length})',
+                    style: TextStyle(
+                      color: _category == 'CANCELLED' ? Colors.white : const Color(0xFFDC2626),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  selected: _category == 'CANCELLED',
+                  selectedColor: const Color(0xFFDC2626),
+                  backgroundColor: isDark
+                      ? const Color(0xFF450A0A).withValues(alpha: 0.3)
+                      : const Color(0xFFFEE2E2),
+                  side: BorderSide(
+                    color: _category == 'CANCELLED' ? const Color(0xFFDC2626) : const Color(0xFFFCA5A5),
+                  ),
+                  avatar: Icon(
+                    Icons.cancel_outlined,
+                    size: 16,
+                    color: _category == 'CANCELLED' ? Colors.white : const Color(0xFFDC2626),
+                  ),
+                  onSelected: (val) {
+                    if (val) setState(() => _category = 'CANCELLED');
+                  },
+                ),
               ],
             ),
           ),
+          if (_category == 'SCHEDULED') ...[
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _subFilterChip('Todas agendadas', 'ALL'),
+                  const SizedBox(width: 8),
+                  _subFilterChip('Pendentes de Aprovação', 'PENDING'),
+                  const SizedBox(width: 8),
+                  _subFilterChip('Contraproposta Enviada', 'COUNTER_PROPOSED'),
+                  const SizedBox(width: 8),
+                  _subFilterChip('Confirmadas', 'CONFIRMED'),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Expanded(
             child: _loading
@@ -762,9 +851,11 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                 : _filtered.isEmpty
                 ? Center(
                     child: Text(
-                      _filter == 'PENDING'
-                          ? 'Nenhuma reserva aguardando aprovação.'
-                          : 'Nenhuma reserva encontrada.',
+                      _category == 'CANCELLED'
+                          ? 'Nenhuma reserva cancelada.'
+                          : _category == 'PAST'
+                              ? 'Nenhuma reserva finalizada.'
+                              : 'Nenhuma reserva encontrada.',
                       style: const TextStyle(color: Color(0xFF64748B)),
                     ),
                   )
@@ -778,6 +869,7 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                       final resident = r['reservedByName'] ?? r['residentName'] ?? 'Morador';
                       final phone = r['contactPhone'] ?? '';
                       final status = r['status']?.toString() ?? 'PENDING';
+                      final isItemCancelled = _isCancelled(r);
                       final startAt = r['startAt']?.toString() ?? '';
                       final endAt = r['endAt']?.toString() ?? '';
                       final notes = r['notes']?.toString();
@@ -786,10 +878,18 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
 
                       return Card(
                         elevation: 0,
+                        color: isItemCancelled
+                            ? (isDark
+                                ? const Color(0xFF450A0A).withValues(alpha: 0.35)
+                                : const Color(0xFFFEF2F2))
+                            : null,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                           side: BorderSide(
-                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            color: isItemCancelled
+                                ? const Color(0xFFFCA5A5)
+                                : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            width: isItemCancelled ? 1.5 : 1.0,
                           ),
                         ),
                         child: Padding(
@@ -801,18 +901,24 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   CircleAvatar(
-                                    backgroundColor: status == 'CONFIRMED'
+                                    backgroundColor: isItemCancelled
+                                        ? const Color(0xFFFEE2E2)
+                                        : status == 'CONFIRMED'
                                         ? const Color(0xFFDCFCE7)
                                         : status == 'COUNTER_PROPOSED'
                                         ? const Color(0xFFFEF3C7)
                                         : const Color(0xFFDBEAFE),
                                     child: Icon(
-                                      status == 'CONFIRMED'
+                                      isItemCancelled
+                                          ? Icons.cancel_outlined
+                                          : status == 'CONFIRMED'
                                           ? Icons.check_circle_rounded
                                           : status == 'COUNTER_PROPOSED'
                                           ? Icons.schedule_send_rounded
                                           : Icons.hourglass_top_rounded,
-                                      color: status == 'CONFIRMED'
+                                      color: isItemCancelled
+                                          ? const Color(0xFFDC2626)
+                                          : status == 'CONFIRMED'
                                           ? const Color(0xFF15803D)
                                           : status == 'COUNTER_PROPOSED'
                                           ? const Color(0xFFB45309)
@@ -827,7 +933,11 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                                       children: [
                                         Text(
                                           area.toString(),
-                                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 15,
+                                            color: isItemCancelled ? const Color(0xFFB91C1C) : null,
+                                          ),
                                         ),
                                         Text(
                                           'Morador: $resident ${phone.isNotEmpty ? "• $phone" : ""}',
@@ -841,6 +951,33 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                                           'Horário: ${_formatDt(startAt)} até ${_formatDt(endAt)}',
                                           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                         ),
+                                        if (isItemCancelled) ...[
+                                          const SizedBox(height: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFEE2E2),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: const Color(0xFFF87171)),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.cancel_rounded, size: 13, color: Color(0xFFDC2626)),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  'CANCELADA / RECUSADA',
+                                                  style: TextStyle(
+                                                    color: Color(0xFFDC2626),
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: 10.5,
+                                                    letterSpacing: 0.5,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                         if (notes != null && notes.isNotEmpty) ...[
                                           const SizedBox(height: 4),
                                           Text('Observação: $notes', style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
@@ -924,12 +1061,12 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
     );
   }
 
-  Widget _filterChip(String label, String code) {
+  Widget _subFilterChip(String label, String code) {
     return ChoiceChip(
       label: Text(label),
-      selected: _filter == code,
+      selected: _subFilter == code,
       onSelected: (val) {
-        if (val) setState(() => _filter = code);
+        if (val) setState(() => _subFilter = code);
       },
     );
   }

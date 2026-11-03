@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../core/theme/app_theme.dart';
 import '../features/auth/presentation/controllers/auth_controller.dart';
@@ -69,6 +70,13 @@ class _AppWidgetState extends State<AppWidget> {
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           themeMode: themeMode,
+          builder: (context, child) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            return ShadTheme(
+              data: isDark ? AppTheme.shadcnDark() : AppTheme.shadcnLight(),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: _buildHome(),
         );
       },
