@@ -18,6 +18,7 @@ RUN flutter pub get
 
 COPY lib ./lib
 COPY web ./web
+COPY assets ./assets
 
 ARG API_BASE_URL=http://localhost:8080
 ARG GOOGLE_WEB_CLIENT_ID=1093543407623-ch2dq0uh0bnvrhm6pkf6kd8v75bvr3a0.apps.googleusercontent.com

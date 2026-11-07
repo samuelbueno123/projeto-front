@@ -29,6 +29,8 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
 
   bool _checkingAvailability = false;
   bool? _isAvailable;
+  bool _allowWaitlist = true;
+  int _waitlistCount = 0;
   String? _availabilityMessage;
   bool _submitting = false;
 
@@ -92,8 +94,12 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
       if (!mounted) return;
       setState(() {
         _isAvailable = res['available'] == true;
+        _allowWaitlist = res['allowWaitlist'] != false;
+        _waitlistCount = (res['waitlistCount'] is num) ? (res['waitlistCount'] as num).toInt() : 0;
         _availabilityMessage = res['message']?.toString() ??
-            (_isAvailable == true ? 'Espaço livre e disponível para agendamento!' : 'Horário já reservado.');
+            (_isAvailable == true
+                ? 'Espaço livre e disponível para agendamento!'
+                : 'Horário já reservado.${_allowWaitlist ? ' Lista de espera disponível ($_waitlistCount na fila).' : ''}');
         _checkingAvailability = false;
       });
     } catch (e) {
@@ -150,6 +156,44 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Falha ao reservar: $e')),
+      );
+    }
+  }
+
+  Future<void> _submitWaitlist() async {
+    if (_selectedArea == null) return;
+    final phoneErr = validatePhone(_phoneController.text);
+    if (phoneErr != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(phoneErr)));
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final res = await widget.api.joinWaitlist(
+        areaId: _selectedArea!['id'],
+        startAt: _startDateTime,
+        endAt: _endDateTime,
+        contactPhone: _phoneController.text.replaceAll(RegExp(r'\D'), ''),
+        notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+      );
+
+      if (!mounted) return;
+      final pos = res['waitlistPosition'] ?? 1;
+      Navigator.of(context).pop(true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF2F3FB0),
+          content: Text(
+            'Você entrou na Lista de Espera (posição #$pos)! Caso haja cancelamento, sua reserva será promovida automaticamente.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao entrar na lista de espera: $e')),
       );
     }
   }
@@ -468,6 +512,12 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
           onPressed: _submitting ? null : () => Navigator.of(context).pop(false),
           child: const Text('Cancelar'),
         ),
+        if (_isAvailable == false && _allowWaitlist)
+          FilledButton.tonalIcon(
+            onPressed: _submitting ? null : _submitWaitlist,
+            icon: const Icon(Icons.hourglass_top_rounded, size: 18),
+            label: Text('Entrar na Lista de Espera (${_waitlistCount + 1}º)'),
+          ),
         FilledButton.icon(
           onPressed: (_isAvailable == true && !_submitting) ? _submit : null,
           icon: _submitting

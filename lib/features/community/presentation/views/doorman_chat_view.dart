@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/responsive/responsive_layout.dart';
 import '../../../../core/services/realtime_service.dart';
+import '../../../../core/utils/formatters.dart';
 import '../../data/community_api.dart';
 
 class DoormanChatView extends StatefulWidget {
@@ -43,6 +44,7 @@ class _DoormanChatViewState extends State<DoormanChatView> {
   bool _loadingConversations = false;
   String _searchQuery = '';
   Map<String, dynamic>? _selectedResident;
+  num? _currentUserId;
 
   static const _residentPresets = [
     'Minha encomenda já chegou?',
@@ -61,6 +63,7 @@ class _DoormanChatViewState extends State<DoormanChatView> {
   @override
   void initState() {
     super.initState();
+    _loadCurrentUser();
 
     if (widget.isDoormanMode) {
       if (widget.targetUserId != null) {
@@ -125,19 +128,40 @@ class _DoormanChatViewState extends State<DoormanChatView> {
     return _selectedResident?['unitLabel']?.toString() ?? widget.targetUnitLabel;
   }
 
+  Future<void> _loadCurrentUser() async {
+    try {
+      final res = await widget.api.api.get('/users/me');
+      if (res is Map && mounted) {
+        setState(() {
+          _currentUserId = res['id'] as num?;
+        });
+      }
+    } catch (_) {}
+  }
+
   void _handleIncomingChatMessage(dynamic data) {
     if (!mounted || data == null) return;
     final Map<String, dynamic> msg =
         data is Map<String, dynamic> ? data : <String, dynamic>{};
     if (msg.isEmpty) return;
 
-    final targetId = _activeTargetUserId;
     if (widget.isDoormanMode) {
+      final targetId = _activeTargetUserId;
       if (targetId == null) return;
       final senderId = msg['senderId'];
       final recipientId = msg['recipientId'];
       if (senderId != targetId && recipientId != targetId) {
         return;
+      }
+    } else {
+      // RESIDENT MODE: only accept messages between this resident and portaria
+      final myId = _currentUserId;
+      if (myId != null) {
+        final senderId = msg['senderId'];
+        final recipientId = msg['recipientId'];
+        if (senderId != myId && recipientId != myId) {
+          return;
+        }
       }
     }
 
@@ -682,13 +706,7 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                             final sender = m['senderName']?.toString() ?? (isMe ? 'Eu' : 'Portaria');
                             final text = m['message']?.toString() ?? '';
                             final timeRaw = m['sentAt']?.toString() ?? '';
-                            String time = '';
-                            if (timeRaw.isNotEmpty) {
-                              final dt = DateTime.tryParse(timeRaw);
-                              if (dt != null) {
-                                time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-                              }
-                            }
+                            final time = timeRaw.isNotEmpty ? formatTime(timeRaw) : '';
 
                             return Align(
                               alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,

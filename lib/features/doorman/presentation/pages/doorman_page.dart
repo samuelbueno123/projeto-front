@@ -1,13 +1,14 @@
+import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../core/design_system/saas_design_system.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/formatters.dart';
 import '../../../../core/services/realtime_service.dart';
 import '../../../../core/widgets/enter_search_field.dart';
-import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../../core/widgets/role_switcher_pill.dart';
+import '../../../../core/widgets/user_avatar.dart';
 import '../../../announcements/presentation/announcement_composer.dart';
 import '../../../auth/presentation/pages/user_profile_page.dart';
 import '../../../community/data/community_api.dart';
@@ -41,7 +42,7 @@ class DoormanPage extends StatefulWidget {
 
 class _DoormanPageState extends State<DoormanPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 7, vsync: this);
+  late final TabController _tabs = TabController(length: 8, vsync: this);
   DirectoryApi? _directory;
   late final HomeService _api;
   late final CommunityApi _communityApi;
@@ -82,9 +83,6 @@ class _DoormanPageState extends State<DoormanPage>
       }
     } catch (_) {}
   }
-
-  ImageProvider? get _profileAvatarImage =>
-      resolveAvatarImageProvider(_profile['profileImage'] as String?);
 
   void _openProfile() {
     Navigator.of(context).push(
@@ -472,12 +470,7 @@ class _DoormanPageState extends State<DoormanPage>
 
   String _formatDate(dynamic raw) {
     if (raw == null) return '';
-    try {
-      final dt = DateTime.parse(raw.toString()).toLocal();
-      return DateFormat('dd/MM/yyyy HH:mm').format(dt);
-    } catch (_) {
-      return raw.toString();
-    }
+    return formatDateTime(raw, fallback: raw.toString());
   }
 
   Widget _buildStatusActions(Map<String, dynamic> pkg) {
@@ -568,9 +561,383 @@ class _DoormanPageState extends State<DoormanPage>
     );
   }
 
+  Widget _buildDoormanHeader(bool isDesktop, bool isDark) {
+    final condoName = _selectedCondominium?['name']?.toString() ?? 'Central da Portaria';
+    final condoImg = _selectedCondominium?['imageUrl'] as String?;
+
+    if (isDesktop) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          border: Border(
+            bottom: BorderSide(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+              width: 1,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 40,
+                height: 40,
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                alignment: Alignment.center,
+                child: (condoImg != null && condoImg.isNotEmpty)
+                    ? (condoImg.startsWith('data:')
+                        ? Image.memory(
+                            base64Decode(condoImg.split(',').last),
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.shield_outlined, color: SaaSColors.primary, size: 22),
+                          )
+                        : Image.network(
+                            condoImg,
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.shield_outlined, color: SaaSColors.primary, size: 22),
+                          ))
+                    : const Icon(Icons.shield_outlined, color: SaaSColors.primary, size: 22),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  condoName,
+                  style: TextStyle(
+                    color: SaaSColors.textPrimary(isDark),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                Text(
+                  'Portaria & Acesso • Olá, ${firstNameOf(widget.userName, fallback: 'Portaria')}!',
+                  style: TextStyle(
+                    color: SaaSColors.textSecondary(isDark),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            if (_condominiums.length > 1) ...[
+              const SizedBox(width: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                  ),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<Map<String, dynamic>>(
+                    value: _selectedCondominium,
+                    icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                    dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                    items: _condominiums.map((c) {
+                      return DropdownMenuItem(
+                        value: c,
+                        child: Text(c['name']?.toString() ?? 'Sem nome'),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      setState(() => _selectCondominium(val));
+                      _loadPackages();
+                    },
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(width: 16),
+
+            _doormanHeaderAction(
+              icon: Icons.qr_code_scanner_rounded,
+              label: 'Baixa (PIN)',
+              onTap: _selectedCondominium == null ? null : _quickPickupByPin,
+              isDark: isDark,
+            ),
+            _doormanHeaderAction(
+              icon: Icons.campaign_outlined,
+              label: 'Comunicado',
+              onTap: _selectedCondominium == null ? null : _sendAnnouncement,
+              isDark: isDark,
+            ),
+
+            const Spacer(),
+
+            if (widget.currentRole != null && widget.onSwitchRole != null) ...[
+              RoleSwitcherPill(
+                currentRole: widget.currentRole!,
+                availableRoles: widget.availableRoles,
+                onSwitchRole: widget.onSwitchRole!,
+                isLight: !isDark,
+              ),
+              const SizedBox(width: 8),
+            ],
+
+            IconButton(
+              tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
+              onPressed: () {
+                final nextPref = isDark ? 'LIGHT' : 'DARK';
+                AppTheme.setThemePreference(nextPref);
+                _communityApi.updateThemePreference(nextPref);
+              },
+              icon: Icon(
+                isDark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
+                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                size: 20,
+              ),
+            ),
+
+            IconButton(
+              tooltip: 'Notificações e convites',
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => NotificationsPage(
+                      api: _api,
+                      condominiumId: (_selectedCondominium?['id'] as num?)?.toInt(),
+                      onInvitationChanged: _loadCondominiums,
+                    ),
+                  ),
+                );
+                if (mounted) _loadCondominiums();
+              },
+              icon: Icon(
+                Icons.notifications_none_rounded,
+                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                size: 20,
+              ),
+            ),
+
+            IconButton(
+              tooltip: 'Atualizar encomendas',
+              onPressed: _loadPackages,
+              icon: Icon(
+                Icons.refresh_rounded,
+                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                size: 20,
+              ),
+            ),
+
+            const SizedBox(width: 8),
+
+            UserAvatar(
+              imageSource: _profile['profileImage']?.toString(),
+              name: _profile['firstName']?.toString() ?? widget.userName,
+              radius: 18,
+              onTap: _openProfile,
+              tooltip: 'Meu Perfil',
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Mobile / Tablet Header
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFF1E3A8A),
+        border: Border(
+          bottom: BorderSide(
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFF1D4ED8),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  color: Colors.white24,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.shield_outlined, color: Colors.white, size: 20),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      condoName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                    Text(
+                      'Portaria • ${firstNameOf(widget.userName, fallback: 'Portaria')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.currentRole != null && widget.onSwitchRole != null)
+                RoleSwitcherPill(
+                  currentRole: widget.currentRole!,
+                  availableRoles: widget.availableRoles,
+                  onSwitchRole: widget.onSwitchRole!,
+                  isLight: false,
+                ),
+              const SizedBox(width: 6),
+              UserAvatar(
+                imageSource: _profile['profileImage']?.toString(),
+                name: _profile['firstName']?.toString() ?? widget.userName,
+                radius: 16,
+                onTap: _openProfile,
+                tooltip: 'Meu Perfil',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _doormanMobileActionButton(
+                  icon: Icons.qr_code_scanner_rounded,
+                  label: 'Baixa (PIN)',
+                  onTap: _selectedCondominium == null ? null : _quickPickupByPin,
+                ),
+                const SizedBox(width: 6),
+                _doormanMobileActionButton(
+                  icon: Icons.campaign_outlined,
+                  label: 'Comunicado',
+                  onTap: _selectedCondominium == null ? null : _sendAnnouncement,
+                ),
+                const SizedBox(width: 6),
+                _doormanMobileActionButton(
+                  icon: Icons.refresh_rounded,
+                  label: 'Atualizar',
+                  onTap: _loadPackages,
+                ),
+
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _doormanHeaderAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    required bool isDark,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: isDark ? const Color(0xFF93C5FD) : SaaSColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _doormanMobileActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    bool isDestructive = false,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isDestructive ? const Color(0xFFEF4444).withValues(alpha: 0.25) : Colors.white12,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isDestructive ? const Color(0xFFEF4444) : Colors.white24),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: Colors.white),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDesktop = MediaQuery.of(context).size.width >= 980;
     final visiblePackages = _packages
         .where((item) => recordMatchesQuery(item, _query))
         .toList();
@@ -581,101 +948,6 @@ class _DoormanPageState extends State<DoormanPage>
 
     return Scaffold(
       backgroundColor: SaaSColors.background(isDark),
-      appBar: AppBar(
-        title: const Text('Central da Portaria'),
-        backgroundColor: SaaSColors.surface(isDark),
-        bottom: TabBar(
-          controller: _tabs,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs: [
-            _buildTabItem('Encomendas', Icons.inventory_2_outlined, hasPendingPackages),
-            _buildTabItem('Visitantes', Icons.badge_outlined, false),
-            _buildTabItem('Consulta de Placas', Icons.directions_car_outlined, false),
-            _buildTabItem('Eventos & Convidados', Icons.people_outline_rounded, false),
-            _buildTabItem('Unidades & Achados', Icons.apartment_rounded, false),
-            _buildTabItem('Reservas & Áreas', Icons.event_available_outlined, false),
-            _buildTabItem('Chat Moradores', Icons.chat_bubble_outline_rounded, false),
-          ],
-        ),
-        actions: [
-          if (widget.currentRole != null && widget.onSwitchRole != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-              child: RoleSwitcherPill(
-                currentRole: widget.currentRole!,
-                availableRoles: widget.availableRoles,
-                onSwitchRole: widget.onSwitchRole!,
-                isLight: !isDark,
-              ),
-            ),
-          // User Avatar Button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-            child: InkWell(
-              onTap: _openProfile,
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                    width: 1.5,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 17,
-                  backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                  backgroundImage: _profileAvatarImage,
-                  child: _profileAvatarImage == null
-                      ? Icon(
-                          Icons.person_rounded,
-                          size: 20,
-                          color: isDark ? Colors.white70 : SaaSColors.primary,
-                        )
-                      : null,
-                ),
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Baixa rápida com PIN / QR Code',
-            onPressed: _selectedCondominium == null ? null : _quickPickupByPin,
-            icon: const Icon(Icons.qr_code_scanner_rounded),
-          ),
-          IconButton(
-            tooltip: 'Enviar comunicado a uma unidade',
-            onPressed: _selectedCondominium == null ? null : _sendAnnouncement,
-            icon: const Icon(Icons.campaign_outlined),
-          ),
-          IconButton(
-            tooltip: 'Notificações e convites',
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => NotificationsPage(
-                    api: _api,
-                    condominiumId: (_selectedCondominium?['id'] as num?)?.toInt(),
-                    onInvitationChanged: _loadCondominiums,
-                  ),
-                ),
-              );
-              if (mounted) _loadCondominiums();
-            },
-            icon: const Icon(Icons.notifications_none_rounded),
-          ),
-          IconButton(
-            tooltip: 'Atualizar encomendas',
-            onPressed: _loadPackages,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout_rounded),
-            onPressed: widget.onLogout,
-            tooltip: 'Sair da conta',
-          ),
-        ],
-      ),
       floatingActionButton: (_selectedCondominium != null && _tabs.index == 0)
           ? FloatingActionButton.extended(
               backgroundColor: SaaSColors.primary,
@@ -685,136 +957,187 @@ class _DoormanPageState extends State<DoormanPage>
               label: const Text('Registrar encomenda'),
             )
           : null,
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1300),
-          child: Column(
-            children: [
-              if (_condominiums.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<Map<String, dynamic>>(
-                          initialValue: _selectedCondominium,
-                          decoration: const InputDecoration(
-                            labelText: 'Condomínio em operação',
-                            prefixIcon: Icon(Icons.apartment_rounded),
-                            contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          ),
-                          items: _condominiums.map((c) {
-                            return DropdownMenuItem(
-                              value: c,
-                              child: Text(c['name']?.toString() ?? 'Sem nome'),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            setState(() => _selectCondominium(val));
-                            _loadPackages();
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      OutlinedButton.icon(
-                        onPressed: () => _registerReceivedPackage(),
-                        icon: const Icon(Icons.add_box_outlined, size: 16),
-                        label: const Text('Nova Encomenda'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _quickPickupByPin,
-                        icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
-                        label: const Text('Baixa (PIN)'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        ),
-                      ),
-                    ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildDoormanHeader(isDesktop, isDark),
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                border: Border(
+                  bottom: BorderSide(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                    width: 1,
                   ),
                 ),
-              ],
-              Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _error != null
-                    ? Center(child: Text(_error!))
-                    : _condominiums.isEmpty
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'Nenhum condomínio associado no momento. Verifique suas notificações para aceitar convites.',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      )
-                    : TabBarView(
-                        controller: _tabs,
-                        children: [
-                          _packagesTab(visiblePackages),
-                          DoormanVisitorsView(
-                            api: _communityApi,
-                            condominiumId: _selectedCondominium!['id'],
-                          ),
-                          DoormanPlateCheckView(
-                            api: _communityApi,
-                            condominiumId: _selectedCondominium!['id'],
-                          ),
-                          DoormanGuestListsView(
-                            api: _communityApi,
-                            condominiumId: _selectedCondominium!['id'],
-                          ),
-                          Column(
+              ),
+              child: TabBar(
+                controller: _tabs,
+                isScrollable: true,
+                tabAlignment: TabAlignment.center,
+                labelColor: isDark ? const Color(0xFF60A5FA) : SaaSColors.primary,
+                unselectedLabelColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                indicatorColor: isDark ? const Color(0xFF60A5FA) : SaaSColors.primary,
+                indicatorWeight: 3,
+                indicatorSize: TabBarIndicatorSize.label,
+                labelStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                unselectedLabelStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+                tabs: [
+                  _buildTabItem('Encomendas', Icons.inventory_2_outlined, hasPendingPackages),
+                  _buildTabItem('Visitantes', Icons.badge_outlined, false),
+                  _buildTabItem('Consulta de Placas', Icons.directions_car_outlined, false),
+                  _buildTabItem('Eventos & Convidados', Icons.people_outline_rounded, false),
+                  _buildTabItem('Unidades & Achados', Icons.apartment_rounded, false),
+                  _buildTabItem('Reservas & Áreas', Icons.event_available_outlined, false),
+                  _buildTabItem('Smart Lockers', Icons.lock_clock_outlined, false),
+                  _buildTabItem('Chat Moradores', Icons.chat_bubble_outline_rounded, false),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1300),
+                  child: Column(
+                    children: [
+                      if (_condominiums.isNotEmpty && (!isDesktop || _tabs.index == 0)) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
+                          child: Row(
                             children: [
-                              Expanded(
-                                flex: 3,
-                                child: _directory != null
-                                    ? UnitDirectoryView(
-                                        key: ValueKey(_directory!.condominiumId),
-                                        directory: _directory!,
-                                        onRegisterPackage: (unit, resident) =>
-                                            _registerReceivedPackage(
-                                              unit: unit,
-                                              resident: resident,
-                                            ),
-                                        onAnnounce: (unit) =>
-                                            _sendAnnouncement(unit: unit),
-                                      )
-                                    : const SizedBox.shrink(),
+                              if (!isDesktop && _condominiums.length > 1)
+                                Expanded(
+                                  child: DropdownButtonFormField<Map<String, dynamic>>(
+                                    initialValue: _selectedCondominium,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Condomínio em operação',
+                                      prefixIcon: Icon(Icons.apartment_rounded),
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    ),
+                                    items: _condominiums.map((c) {
+                                      return DropdownMenuItem(
+                                        value: c,
+                                        child: Text(c['name']?.toString() ?? 'Sem nome'),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      setState(() => _selectCondominium(val));
+                                      _loadPackages();
+                                    },
+                                  ),
+                                )
+                              else
+                                const Spacer(),
+                              const SizedBox(width: 12),
+                              OutlinedButton.icon(
+                                onPressed: () => _registerReceivedPackage(),
+                                icon: const Icon(Icons.add_box_outlined, size: 16),
+                                label: const Text('Nova Encomenda'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                ),
                               ),
-                              const Divider(height: 1),
-                              Expanded(
-                                flex: 2,
-                                child: DoormanLostFoundView(
-                                  api: _communityApi,
-                                  condominiumId: _selectedCondominium!['id'],
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                onPressed: _quickPickupByPin,
+                                icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
+                                label: const Text('Baixa (PIN)'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                 ),
                               ),
                             ],
                           ),
-                          DoormanReservationsView(
-                            api: _communityApi,
-                            condominiumId: _selectedCondominium!['id'],
-                          ),
-                          DoormanChatView(
-                            key: ValueKey('doorman_chat_${_selectedCondominium!['id']}'),
-                            api: _communityApi,
-                            condominiumId: _selectedCondominium!['id'],
-                            isDoormanMode: true,
-                          ),
-                        ],
+                        ),
+                      ],
+                      Expanded(
+                        child: _isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _error != null
+                            ? Center(child: Text(_error!))
+                            : _condominiums.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    'Nenhum condomínio associado no momento. Verifique suas notificações para aceitar convites.',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              )
+                            : TabBarView(
+                                controller: _tabs,
+                                children: [
+                                  _packagesTab(visiblePackages),
+                                  DoormanVisitorsView(
+                                    api: _communityApi,
+                                    condominiumId: _selectedCondominium!['id'],
+                                  ),
+                                  DoormanPlateCheckView(
+                                    api: _communityApi,
+                                    condominiumId: _selectedCondominium!['id'],
+                                  ),
+                                  DoormanGuestListsView(
+                                    api: _communityApi,
+                                    condominiumId: _selectedCondominium!['id'],
+                                  ),
+                                  Column(
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: _directory != null
+                                            ? UnitDirectoryView(
+                                                key: ValueKey(_directory!.condominiumId),
+                                                directory: _directory!,
+                                                onRegisterPackage: (unit, resident) =>
+                                                    _registerReceivedPackage(
+                                                      unit: unit,
+                                                      resident: resident,
+                                                    ),
+                                                onAnnounce: (unit) =>
+                                                    _sendAnnouncement(unit: unit),
+                                              )
+                                            : const SizedBox.shrink(),
+                                      ),
+                                      const Divider(height: 1),
+                                      Expanded(
+                                        flex: 2,
+                                        child: DoormanLostFoundView(
+                                          api: _communityApi,
+                                          condominiumId: _selectedCondominium!['id'],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  DoormanReservationsView(
+                                    api: _communityApi,
+                                    condominiumId: _selectedCondominium!['id'],
+                                  ),
+                                  DoormanSmartLockersView(
+                                    api: _communityApi,
+                                    condominiumId: _selectedCondominium!['id'],
+                                  ),
+                                  DoormanChatView(
+                                    key: ValueKey('doorman_chat_${_selectedCondominium!['id']}'),
+                                    api: _communityApi,
+                                    condominiumId: _selectedCondominium!['id'],
+                                    isDoormanMode: true,
+                                  ),
+                                ],
+                              ),
                       ),
+                    ],
+                  ),
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+
 
   Widget _packagesTab(List<Map<String, dynamic>> visiblePackages) => Column(
     children: [

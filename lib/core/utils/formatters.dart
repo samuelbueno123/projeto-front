@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 /// Returns the first name of a full name (or [fallback] when empty).
 String firstNameOf(String? fullName, {String fallback = ''}) {
@@ -63,4 +64,52 @@ class PhoneInputFormatter extends TextInputFormatter {
       selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
+}
+
+/// Parses any date/time string from the backend into a local [DateTime].
+/// If the string is formatted in UTC without offset (e.g. 2026-11-03T01:41:00),
+/// it is properly parsed as UTC and converted to the client's local timezone (.toLocal()).
+DateTime? parseUtcToLocal(dynamic raw) {
+  if (raw == null) return null;
+  if (raw is DateTime) return raw.toLocal();
+  final s = raw.toString().trim();
+  if (s.isEmpty) return null;
+
+  try {
+    // If it's already a full ISO string with timezone offset or Z
+    if (s.endsWith('Z') || s.endsWith('z') || RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(s)) {
+      return DateTime.parse(s).toLocal();
+    }
+    // If standard ISO without timezone (e.g. 2026-11-03T01:41:00 or 2026-11-03 01:41:00),
+    // treat as UTC from backend and convert to local
+    final normalized = s.contains(' ') ? s.replaceAll(' ', 'T') : s;
+    return DateTime.parse('${normalized}Z').toLocal();
+  } catch (_) {
+    try {
+      return DateTime.tryParse(s)?.toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Formats date and time in the user's local timezone (e.g. "03/11/2026 14:30")
+String formatDateTime(dynamic raw, {String fallback = '-'}) {
+  final dt = parseUtcToLocal(raw);
+  if (dt == null) return fallback;
+  return DateFormat('dd/MM/yyyy HH:mm').format(dt);
+}
+
+/// Formats only the date in the user's local timezone (e.g. "03/11/2026")
+String formatDate(dynamic raw, {String fallback = '-'}) {
+  final dt = parseUtcToLocal(raw);
+  if (dt == null) return fallback;
+  return DateFormat('dd/MM/yyyy').format(dt);
+}
+
+/// Formats only the time in the user's local timezone (e.g. "14:30")
+String formatTime(dynamic raw, {String fallback = '-'}) {
+  final dt = parseUtcToLocal(raw);
+  if (dt == null) return fallback;
+  return DateFormat('HH:mm').format(dt);
 }

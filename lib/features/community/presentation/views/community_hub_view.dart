@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/services/realtime_service.dart';
+import '../../../../core/utils/formatters.dart';
 import '../../data/community_api.dart';
 import '../dialogs/plan_selection_dialog.dart';
 
@@ -43,6 +44,8 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
     'Manutenção & O.S.',
     'Assembleias',
     'Financeiro',
+    'Achados e Perdidos',
+    'Relatórios & KPIs',
   ];
 
   @override
@@ -166,7 +169,7 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
           child: TabBar(
             controller: _tabController,
             isScrollable: true,
-            tabAlignment: TabAlignment.start,
+            tabAlignment: TabAlignment.center,
             labelColor: const Color(0xFF2563EB),
             unselectedLabelColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
             indicatorColor: const Color(0xFF2563EB),
@@ -186,6 +189,8 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
               Tab(icon: Icon(Icons.build_circle_outlined, size: 20), text: 'Manutenção & O.S.'),
               Tab(icon: Icon(Icons.groups_outlined, size: 20), text: 'Assembleias'),
               Tab(icon: Icon(Icons.account_balance_wallet_outlined, size: 20), text: 'Financeiro'),
+              Tab(icon: Icon(Icons.find_in_page_outlined, size: 20), text: 'Achados e Perdidos'),
+              Tab(icon: Icon(Icons.analytics_outlined, size: 20), text: 'Relatórios & KPIs'),
             ],
           ),
         ),
@@ -196,17 +201,17 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
             controller: _tabController,
             children: [
               _TicketsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
-              _VisitorsSubView(api: widget.api, condominiumId: widget.condominiumId),
-              _PollsSubView(api: widget.api, condominiumId: widget.condominiumId),
+              _VisitorsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
+              _PollsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               _buildPlanGatedWrapper(
                 requiredFeature: 'MARKETPLACE_INTEGRATION',
                 featureName: 'Classificados e Vagas',
-                child: _ClassifiedsSubView(api: widget.api, condominiumId: widget.condominiumId),
+                child: _ClassifiedsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               ),
-              _VehiclesSubView(api: widget.api, condominiumId: widget.condominiumId),
-              _PetsSubView(api: widget.api, condominiumId: widget.condominiumId),
+              _VehiclesSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
+              _PetsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               _MovingSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
-              _DocumentsSubView(api: widget.api, condominiumId: widget.condominiumId),
+              _DocumentsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               _buildPlanGatedWrapper(
                 requiredFeature: 'NOTIFICATIONS',
                 featureName: 'Notificações & Multas',
@@ -215,16 +220,18 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
               _buildPlanGatedWrapper(
                 requiredFeature: 'PACKAGES',
                 featureName: 'Armários Inteligentes (Lockers)',
-                child: _LockersSubView(api: widget.api, condominiumId: widget.condominiumId),
+                child: _LockersSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               ),
               _buildPlanGatedWrapper(
                 requiredFeature: 'RESERVATIONS',
                 featureName: 'Lista de Convidados',
-                child: _GuestListsSubView(api: widget.api, condominiumId: widget.condominiumId),
+                child: _GuestListsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               ),
               _MaintenanceSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               _AssembliesSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
               _FinancialSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
+              _LostFoundSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
+              _ReportsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
             ],
           ),
         ),
@@ -554,6 +561,40 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
                                     ],
                                   ),
                                   const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 4,
+                                    children: [
+                                      if (t['unitLabel'] != null && t['unitLabel'].toString().isNotEmpty)
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.home_outlined, size: 13, color: Color(0xFF2563EB)),
+                                            const SizedBox(width: 3),
+                                            Text('Unidade: ${t['unitLabel']}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                                          ],
+                                        ),
+                                      if (t['authorName'] != null && t['authorName'].toString().isNotEmpty)
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.person_outline, size: 13, color: Color(0xFF64748B)),
+                                            const SizedBox(width: 3),
+                                            Text('Autor: ${t['authorName']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                          ],
+                                        ),
+                                      if (t['createdAt'] != null)
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.schedule, size: 13, color: Color(0xFF94A3B8)),
+                                            const SizedBox(width: 3),
+                                            Text(formatDateTime(t['createdAt']), style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8))),
+                                          ],
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
                                   Text(t['description'] ?? '', style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
                                   if (t['location'] != null) ...[
                                     const SizedBox(height: 6),
@@ -611,7 +652,8 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
 // 2. VISITANTES & PRE-AUTORIZAÇÃO
 // ----------------------------------------------------
 class _VisitorsSubView extends StatefulWidget {
-  const _VisitorsSubView({required this.api, required this.condominiumId});
+  const _VisitorsSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final bool canManage;
   final CommunityApi api;
   final num condominiumId;
 
@@ -643,7 +685,10 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
     final name = TextEditingController();
     final doc = TextEditingController();
     final plate = TextEditingController();
+    final notes = TextEditingController();
     String type = 'GUEST';
+    DateTime validFrom = DateTime.now();
+    DateTime validUntil = DateTime.now().add(const Duration(hours: 24));
 
     final ok = await showDialog<bool>(
       context: context,
@@ -651,7 +696,7 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
         builder: (c, setDState) => AlertDialog(
           title: const Text('Pré-Autorizar Visitante / Prestador'),
           content: SizedBox(
-            width: 420,
+            width: 440,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -672,28 +717,152 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
                   TextField(controller: doc, decoration: const InputDecoration(labelText: 'RG ou CPF (opcional)')),
                   const SizedBox(height: 10),
                   TextField(controller: plate, decoration: const InputDecoration(labelText: 'Placa do Veículo (se houver)')),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule_rounded),
+                    title: Text('Validade Inicial: ${DateFormat('dd/MM/yyyy HH:mm').format(validFrom)}'),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: c,
+                          initialDate: validFrom,
+                          firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                          lastDate: DateTime.now().add(const Duration(days: 90)),
+                        );
+                        if (d != null && c.mounted) {
+                          final t = await showTimePicker(context: c, initialTime: TimeOfDay.fromDateTime(validFrom));
+                          if (t != null) {
+                            setDState(() => validFrom = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+                          }
+                        }
+                      },
+                      child: const Text('Alterar'),
+                    ),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_busy_rounded),
+                    title: Text('Validade Final: ${DateFormat('dd/MM/yyyy HH:mm').format(validUntil)}'),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: c,
+                          initialDate: validUntil,
+                          firstDate: validFrom,
+                          lastDate: DateTime.now().add(const Duration(days: 180)),
+                        );
+                        if (d != null && c.mounted) {
+                          final t = await showTimePicker(context: c, initialTime: TimeOfDay.fromDateTime(validUntil));
+                          if (t != null) {
+                            setDState(() => validUntil = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+                          }
+                        }
+                      },
+                      child: const Text('Alterar'),
+                    ),
+                  ),
+                  TextField(controller: notes, decoration: const InputDecoration(labelText: 'Observações (opcional)')),
                 ],
               ),
             ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Autorizar')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Gerar Convite & QR Code')),
           ],
         ),
       ),
     );
 
     if (ok == true && name.text.isNotEmpty) {
-      await widget.api.createVisitor(
+      final created = await widget.api.createVisitor(
         condoId: widget.condominiumId,
         visitorName: name.text.trim(),
         documentNumber: doc.text.trim().isEmpty ? null : doc.text.trim(),
         vehiclePlate: plate.text.trim().isEmpty ? null : plate.text.trim(),
         visitorType: type,
+        validFrom: validFrom.toIso8601String(),
+        validUntil: validUntil.toIso8601String(),
+        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
       );
-      _load();
+      await _load();
+      if (mounted && created.isNotEmpty) {
+        _showQrInviteDialog(created);
+      }
     }
+  }
+
+  void _showQrInviteDialog(Map<String, dynamic> v) {
+    final code = v['accessCode']?.toString() ?? '';
+    final qrPayload = v['qrCodePayload']?.toString() ?? 'ANCORA-VISITOR|CODE:$code';
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.qr_code_2_rounded, color: Color(0xFF2F3FB0), size: 28),
+            SizedBox(width: 10),
+            Expanded(child: Text('Convite Digital com QR Code')),
+          ],
+        ),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(Icons.qr_code_scanner_rounded, size: 120, color: Color(0xFF1E293B)),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      code,
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 2, color: Color(0xFF2F3FB0)),
+                    ),
+                    const SizedBox(height: 6),
+                    SelectableText(
+                      qrPayload,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace', color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Visitante: ${v['visitorName'] ?? ''}\n'
+                'Validade: ${v['validFrom'] != null ? formatDateTime(v['validFrom']) : 'Imediata'} até ${v['validUntil'] != null ? formatDateTime(v['validUntil']) : '—'}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12.5, color: Color(0xFF334155)),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: qrPayload));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Payload do QR Code copiado!')),
+              );
+            },
+            child: const Text('Copiar QR Code'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -736,23 +905,47 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
                                 child: Text(code.isNotEmpty ? code.substring(0, code.length.clamp(0, 3)) : 'OK', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2F3FB0))),
                               ),
                               title: Text(v['visitorName'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('Código: $code • Placa: ${v['vehiclePlate'] ?? 'Pedestre'} • ${v['visitorType'] ?? ''}'),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Código: $code • Placa: ${v['vehiclePlate'] ?? 'Pedestre'} • ${v['visitorType'] ?? ''}'),
+                                  const SizedBox(height: 2),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      if (v['unitLabel'] != null && v['unitLabel'].toString().isNotEmpty)
+                                        Text('Unidade: ${v['unitLabel']}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                                      if (v['residentName'] != null && v['residentName'].toString().isNotEmpty)
+                                        Text('Morador: ${v['residentName']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                      if (v['createdAt'] != null)
+                                        Text(formatDateTime(v['createdAt']), style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8))),
+                                    ],
+                                  ),
+                                ],
+                              ),
                               trailing: SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
+                                      tooltip: 'Exibir QR Code do Convite',
+                                      icon: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF2F3FB0), size: 22),
+                                      onPressed: () => _showQrInviteDialog(v),
+                                    ),
+                                    IconButton(
                                       tooltip: 'Compartilhar Convite no WhatsApp',
                                       icon: const Icon(Icons.share_rounded, color: Color(0xFF16A34A), size: 20),
                                       onPressed: () {
+                                        final qrPayload = v['qrCodePayload']?.toString() ?? code;
                                         final invite = '''
 🏢 *CONVITE DE ACESSO — CONDOMÍNIO ÂNCORA*
 Olá, *${v['visitorName']}*!
 Você possui acesso pré-autorizado ao condomínio.
 🔑 *Código de Acesso:* $code
+📲 *QR Code:* $qrPayload
 🚗 *Veículo:* ${v['vehiclePlate'] ?? 'A pé / Pedestre'}
-Por favor, apresente este código ou seu documento na portaria ao chegar.
+Por favor, apresente este código ou QR Code na portaria ao chegar.
 ''';
                                         Clipboard.setData(ClipboardData(text: invite));
                                         ScaffoldMessenger.of(context).showSnackBar(
@@ -786,7 +979,8 @@ Por favor, apresente este código ou seu documento na portaria ao chegar.
 // 3. VOTAÇÕES & ENQUETES
 // ----------------------------------------------------
 class _PollsSubView extends StatefulWidget {
-  const _PollsSubView({required this.api, required this.condominiumId});
+  const _PollsSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final bool canManage;
   final CommunityApi api;
   final num condominiumId;
 
@@ -797,6 +991,144 @@ class _PollsSubView extends StatefulWidget {
 class _PollsSubViewState extends State<_PollsSubView> {
   bool _loading = true;
   List<Map<String, dynamic>> _polls = [];
+
+  Future<void> _openNewPollDialog() async {
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final opt1Ctrl = TextEditingController(text: 'Sim, a favor');
+    final opt2Ctrl = TextEditingController(text: 'Não, contra');
+    final extraOptions = <TextEditingController>[];
+    int durationDays = 7;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setDState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Row(
+            children: [
+              Icon(Icons.how_to_vote_outlined, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Text('Criar Nova Votação / Enquete'),
+            ],
+          ),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Título da Votação / Assembleia *',
+                      hintText: 'Ex: Aprovação de reforma da fachada',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: descCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Descrição detalhada e contexto',
+                      hintText: 'Explique a proposta para os condôminos votarem...',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Opções de Voto:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(controller: opt1Ctrl, decoration: const InputDecoration(labelText: 'Opção 1 *')),
+                  const SizedBox(height: 6),
+                  TextField(controller: opt2Ctrl, decoration: const InputDecoration(labelText: 'Opção 2 *')),
+                  ...extraOptions.asMap().entries.map((entry) => Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: entry.value,
+                            decoration: InputDecoration(labelText: 'Opção ${entry.key + 3}'),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                          onPressed: () => setDState(() => extraOptions.removeAt(entry.key)),
+                        ),
+                      ],
+                    ),
+                  )),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => setDState(() => extraOptions.add(TextEditingController())),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Adicionar outra opção'),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    value: durationDays,
+                    decoration: const InputDecoration(labelText: 'Duração da Votação'),
+                    items: const [
+                      DropdownMenuItem(value: 3, child: Text('3 dias')),
+                      DropdownMenuItem(value: 7, child: Text('7 dias (1 semana)')),
+                      DropdownMenuItem(value: 15, child: Text('15 dias')),
+                      DropdownMenuItem(value: 30, child: Text('30 dias (1 mês)')),
+                    ],
+                    onChanged: (v) => setDState(() => durationDays = v ?? 7),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (titleCtrl.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Publicar Votação'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true && titleCtrl.text.trim().isNotEmpty) {
+      final options = [
+        opt1Ctrl.text.trim(),
+        opt2Ctrl.text.trim(),
+        ...extraOptions.map((e) => e.text.trim()).where((e) => e.isNotEmpty),
+      ].where((e) => e.isNotEmpty).toList();
+
+      if (options.length < 2) {
+        options.addAll(['Sim', 'Não']);
+      }
+
+      final endsAt = DateTime.now().add(Duration(days: durationDays));
+      try {
+        await widget.api.createPoll(
+          condoId: widget.condominiumId,
+          title: titleCtrl.text.trim(),
+          description: descCtrl.text.trim(),
+          options: options,
+          endsAt: endsAt,
+        );
+        _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Votação criada com sucesso!'), backgroundColor: Color(0xFF15803D)),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao criar votação: $e')));
+        }
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -827,39 +1159,65 @@ class _PollsSubViewState extends State<_PollsSubView> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _polls.isEmpty
-              ? const Center(child: Text('Nenhuma votação ou assembleia virtual aberta no momento.'))
-              : ListView.separated(
-                  itemCount: _polls.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, idx) {
-                    final p = _polls[idx];
-                    final options = (p['options'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
-                    final totalVotes = (p['totalVotes'] as num?)?.toInt() ?? 0;
-                    final myOptionId = p['myOptionId'];
-                    final isClosed = p['closed'] == true;
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Votações & Assembleias (${_polls.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              if (widget.canManage)
+                FilledButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Nova Votação'),
+                  onPressed: _openNewPollDialog,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _polls.isEmpty
+                    ? const Center(child: Text('Nenhuma votação ou assembleia virtual aberta no momento.'))
+                    : ListView.separated(
+                        itemCount: _polls.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, idx) {
+                          final p = _polls[idx];
+                          final options = (p['options'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+                          final totalVotes = (p['totalVotes'] as num?)?.toInt() ?? 0;
+                          final myOptionId = p['myOptionId'];
+                          final isClosed = p['closed'] == true;
 
-                    return Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE2E8F0))),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(child: Text(p['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(color: isClosed ? const Color(0xFFF1F5F9) : const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(12)),
-                                  child: Text(isClosed ? 'Encerrada' : 'Em Votação', style: TextStyle(color: isClosed ? const Color(0xFF64748B) : const Color(0xFF15803D), fontWeight: FontWeight.bold, fontSize: 11)),
-                                ),
-                              ],
-                            ),
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(child: Text(p['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(color: isClosed ? const Color(0xFFF1F5F9) : const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(12)),
+                                        child: Text(isClosed ? 'Encerrada' : 'Em Votação', style: TextStyle(color: isClosed ? const Color(0xFF64748B) : const Color(0xFF15803D), fontWeight: FontWeight.bold, fontSize: 11)),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      if (p['createdByName'] != null && p['createdByName'].toString().isNotEmpty)
+                                        Text('Criada por: ${p['createdByName']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                      if (p['createdAt'] != null)
+                                        Text('• ${formatDate(p['createdAt'])}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8))),
+                                    ],
+                                  ),
                             const SizedBox(height: 6),
                             Text(p['description'] ?? '', style: const TextStyle(color: Color(0xFF475569), fontSize: 13)),
                             const SizedBox(height: 14),
@@ -914,6 +1272,9 @@ class _PollsSubViewState extends State<_PollsSubView> {
                     );
                   },
                 ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -922,7 +1283,8 @@ class _PollsSubViewState extends State<_PollsSubView> {
 // 4. CLASSIFICADOS INTERNOS
 // ----------------------------------------------------
 class _ClassifiedsSubView extends StatefulWidget {
-  const _ClassifiedsSubView({required this.api, required this.condominiumId});
+  const _ClassifiedsSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final bool canManage;
   final CommunityApi api;
   final num condominiumId;
 
@@ -1082,7 +1444,19 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
                                   ),
                                   const SizedBox(height: 6),
                                   Text(a['description'] ?? '', style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-                                  const SizedBox(height: 10),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      if (a['unitLabel'] != null && a['unitLabel'].toString().isNotEmpty)
+                                        Text('Unidade: ${a['unitLabel']}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                                      if (a['authorName'] != null && a['authorName'].toString().isNotEmpty)
+                                        Text('• Anunciante: ${a['authorName']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                      if (a['createdAt'] != null)
+                                        Text('• ${formatDate(a['createdAt'])}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8))),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
@@ -1145,7 +1519,8 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
 // 5. VEÍCULOS & VAGAS
 // ----------------------------------------------------
 class _VehiclesSubView extends StatefulWidget {
-  const _VehiclesSubView({required this.api, required this.condominiumId});
+  const _VehiclesSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final bool canManage;
   final CommunityApi api;
   final num condominiumId;
 
@@ -1156,6 +1531,7 @@ class _VehiclesSubView extends StatefulWidget {
 class _VehiclesSubViewState extends State<_VehiclesSubView> {
   bool _loading = true;
   List<Map<String, dynamic>> _vehicles = [];
+  List<Map<String, dynamic>> _parkingSpots = [];
 
   @override
   void initState() {
@@ -1166,11 +1542,147 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final list = await widget.api.listVehicles(widget.condominiumId);
-      if (mounted) setState(() { _vehicles = list; _loading = false; });
+      final results = await Future.wait([
+        widget.api.listVehicles(widget.condominiumId),
+        widget.api.listParkingSpots(widget.condominiumId).catchError((_) => <Map<String, dynamic>>[]),
+      ]);
+      if (mounted) {
+        setState(() {
+          _vehicles = results[0];
+          _parkingSpots = results[1];
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _openParkingSpotsDialog() async {
+    final codeCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    String spotType = 'RESIDENT';
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.local_parking_rounded, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Expanded(child: Text('Gerenciar Vagas de Garagem')),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.canManage) ...[
+                    const Text('Nova Vaga de Garagem', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: codeCtrl,
+                            decoration: const InputDecoration(labelText: 'Código da Vaga *', hintText: 'Ex: G-101'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: spotType,
+                            decoration: const InputDecoration(labelText: 'Tipo'),
+                            items: const [
+                              DropdownMenuItem(value: 'RESIDENT', child: Text('Morador')),
+                              DropdownMenuItem(value: 'VISITOR', child: Text('Visitante')),
+                              DropdownMenuItem(value: 'ACCESSIBLE', child: Text('PCD / Idoso')),
+                              DropdownMenuItem(value: 'MOTORCYCLE', child: Text('Moto')),
+                            ],
+                            onChanged: (v) => setD(() => spotType = v ?? 'RESIDENT'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: descCtrl,
+                            decoration: const InputDecoration(labelText: 'Localização / Observação', hintText: 'Subsolo 1'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Criar Vaga'),
+                          onPressed: () async {
+                            if (codeCtrl.text.trim().isEmpty) return;
+                            try {
+                              await widget.api.createParkingSpot(
+                                condoId: widget.condominiumId,
+                                code: codeCtrl.text.trim(),
+                                spotType: spotType,
+                                description: descCtrl.text.trim(),
+                              );
+                              codeCtrl.clear();
+                              descCtrl.clear();
+                              await _load();
+                              setD(() {});
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                  ],
+                  Text('Vagas Cadastradas (${_parkingSpots.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                  const SizedBox(height: 8),
+                  if (_parkingSpots.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('Nenhuma vaga cadastrada.'),
+                    )
+                  else
+                    ..._parkingSpots.map((sp) => ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.local_parking_rounded,
+                            color: sp['status'] == 'OCCUPIED' ? const Color(0xFFD97706) : const Color(0xFF15803D),
+                          ),
+                          title: Text('${sp['code']} (${sp['spotType'] ?? 'RESIDENT'})', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text('Status: ${sp['status'] ?? 'AVAILABLE'} • ${sp['unitLabel'] ?? sp['description'] ?? 'Livre'}'),
+                          trailing: widget.canManage
+                              ? IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                  onPressed: () async {
+                                    await widget.api.deleteParkingSpot(sp['id']);
+                                    await _load();
+                                    setD(() {});
+                                  },
+                                )
+                              : null,
+                        )),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c), child: const Text('Fechar')),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _openNewVehicleDialog() async {
@@ -1179,6 +1691,7 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
     final color = TextEditingController();
     final spot = TextEditingController();
     String type = 'CAR';
+    num? selectedSpotId;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -1208,7 +1721,24 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
                   const SizedBox(height: 10),
                   TextField(controller: color, decoration: const InputDecoration(labelText: 'Cor *', hintText: 'Ex: Prata')),
                   const SizedBox(height: 10),
-                  TextField(controller: spot, decoration: const InputDecoration(labelText: 'Vaga de Estacionamento', hintText: 'Ex: Vaga 102')),
+                  if (_parkingSpots.isNotEmpty) ...[
+                    DropdownButtonFormField<num?>(
+                      value: selectedSpotId,
+                      decoration: const InputDecoration(labelText: 'Vincular Vaga Cadastrada (opcional)'),
+                      items: [
+                        const DropdownMenuItem<num?>(value: null, child: Text('Informar manualmente / Sem vaga fixa')),
+                        ..._parkingSpots.map(
+                          (s) => DropdownMenuItem<num?>(
+                            value: s['id'] as num?,
+                            child: Text('${s['code']} (${s['status'] ?? 'AVAILABLE'})'),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) => setD(() => selectedSpotId = v),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  TextField(controller: spot, decoration: const InputDecoration(labelText: 'Identificação da Vaga', hintText: 'Ex: Vaga 102')),
                 ],
               ),
             ),
@@ -1229,6 +1759,7 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
         color: color.text.trim().isEmpty ? 'Padrão' : color.text.trim(),
         licensePlate: plate.text.trim().toUpperCase(),
         parkingSpot: spot.text.trim().isEmpty ? null : spot.text.trim(),
+        parkingSpotId: selectedSpotId,
       );
       _load();
     }
@@ -1240,14 +1771,28 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text('Frota de Veículos (${_vehicles.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              FilledButton.icon(
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Adicionar Veículo'),
-                onPressed: _openNewVehicleDialog,
+              Text('Frota de Veículos (${_vehicles.length}) • Vagas (${_parkingSpots.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.local_parking_rounded, size: 18),
+                    label: Text(widget.canManage ? 'Gerenciar Vagas' : 'Ver Vagas'),
+                    onPressed: _openParkingSpotsDialog,
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Adicionar Veículo'),
+                    onPressed: _openNewVehicleDialog,
+                  ),
+                ],
               ),
             ],
           ),
@@ -1269,8 +1814,51 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
                             child: ListTile(
                               leading: const CircleAvatar(backgroundColor: Color(0xFFE0E7FF), child: Icon(Icons.directions_car_rounded, color: Color(0xFF2F3FB0))),
                               title: Text('${v['brandModel']} (${v['color']})', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('Placa: ${v['licensePlate']} • Vaga: ${v['parkingSpot'] ?? '—'}'),
-                              trailing: Chip(label: Text(status, style: const TextStyle(fontSize: 11)), backgroundColor: status == 'APPROVED' ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7)),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Placa: ${v['licensePlate']} • Vaga: ${v['parkingSpotCode'] ?? v['parkingSpot'] ?? 'Livre / Rotativa'}'),
+                                  const SizedBox(height: 2),
+                                  Text('Unidade: ${v['unitLabel'] ?? '-'} • Proprietário: ${v['ownerName'] ?? '-'}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF2563EB), fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (widget.canManage && status == 'PENDING_APPROVAL') ...[
+                                    IconButton(
+                                      tooltip: 'Aprovar Veículo',
+                                      icon: const Icon(Icons.check_circle_outline, color: Color(0xFF15803D)),
+                                      onPressed: () async {
+                                        await widget.api.approveVehicle(v['id']);
+                                        _load();
+                                      },
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Recusar Veículo',
+                                      icon: const Icon(Icons.cancel_outlined, color: Color(0xFFDC2626)),
+                                      onPressed: () async {
+                                        await widget.api.rejectVehicle(v['id']);
+                                        _load();
+                                      },
+                                    ),
+                                  ],
+                                  Chip(
+                                    label: Text(status, style: const TextStyle(fontSize: 11)),
+                                    backgroundColor: status == 'APPROVED'
+                                        ? const Color(0xFFDCFCE7)
+                                        : (status == 'REJECTED' ? const Color(0xFFFEE2E2) : const Color(0xFFFEF3C7)),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Remover Veículo',
+                                    icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFF64748B)),
+                                    onPressed: () async {
+                                      await widget.api.deleteVehicle(v['id']);
+                                      _load();
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         },
@@ -1286,7 +1874,8 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
 // 6. CENSO DE PETS
 // ----------------------------------------------------
 class _PetsSubView extends StatefulWidget {
-  const _PetsSubView({required this.api, required this.condominiumId});
+  const _PetsSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final bool canManage;
   final CommunityApi api;
   final num condominiumId;
 
@@ -1389,6 +1978,90 @@ class _PetsSubViewState extends State<_PetsSubView> {
     }
   }
 
+  Future<void> _openEditPetDialog(Map<String, dynamic> pet) async {
+    final name = TextEditingController(text: pet['name']?.toString() ?? '');
+    final breed = TextEditingController(text: pet['breed']?.toString() ?? '');
+    final notes = TextEditingController(text: pet['notes']?.toString() ?? '');
+    final managerNotes = TextEditingController(text: pet['managerNotes']?.toString() ?? '');
+    String species = pet['species']?.toString() ?? 'DOG';
+    String size = pet['size']?.toString() ?? 'MEDIUM';
+    bool vaccinated = pet['vaccinated'] == true;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          title: const Text('Editar Cadastro do Pet'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: ['DOG', 'CAT', 'BIRD', 'OTHER'].contains(species) ? species : 'DOG',
+                    decoration: const InputDecoration(labelText: 'Espécie'),
+                    items: const [
+                      DropdownMenuItem(value: 'DOG', child: Text('Cão')),
+                      DropdownMenuItem(value: 'CAT', child: Text('Gato')),
+                      DropdownMenuItem(value: 'BIRD', child: Text('Pássaro')),
+                      DropdownMenuItem(value: 'OTHER', child: Text('Outro')),
+                    ],
+                    onChanged: (v) => setD(() => species = v ?? species),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(controller: name, decoration: const InputDecoration(labelText: 'Nome do Pet *')),
+                  const SizedBox(height: 10),
+                  TextField(controller: breed, decoration: const InputDecoration(labelText: 'Raça')),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: ['SMALL', 'MEDIUM', 'LARGE'].contains(size) ? size : 'MEDIUM',
+                    decoration: const InputDecoration(labelText: 'Porte'),
+                    items: const [
+                      DropdownMenuItem(value: 'SMALL', child: Text('Pequeno')),
+                      DropdownMenuItem(value: 'MEDIUM', child: Text('Médio')),
+                      DropdownMenuItem(value: 'LARGE', child: Text('Grande')),
+                    ],
+                    onChanged: (v) => setD(() => size = v ?? size),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    title: const Text('Vacinação em dia'),
+                    value: vaccinated,
+                    onChanged: (v) => setD(() => vaccinated = v),
+                  ),
+                  TextField(controller: notes, decoration: const InputDecoration(labelText: 'Observações do Tutor')),
+                  if (widget.canManage) ...[
+                    const SizedBox(height: 10),
+                    TextField(controller: managerNotes, decoration: const InputDecoration(labelText: 'Observações da Administração / Síndico')),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Salvar Alterações')),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true && name.text.trim().isNotEmpty) {
+      await widget.api.updatePet(
+        pet['id'],
+        name: name.text.trim(),
+        species: species,
+        breed: breed.text.trim(),
+        size: size,
+        vaccinated: vaccinated,
+        notes: notes.text.trim(),
+        managerNotes: widget.canManage ? managerNotes.text.trim() : null,
+      );
+      _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -1424,10 +2097,37 @@ class _PetsSubViewState extends State<_PetsSubView> {
                             child: ListTile(
                               leading: const CircleAvatar(backgroundColor: Color(0xFFFEF3C7), child: Icon(Icons.pets, color: Color(0xFFB45309))),
                               title: Text(p['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('${p['species'] ?? ''} • ${p['breed'] ?? 'SRD'} • Porte: ${p['size'] ?? 'Médio'}'),
-                              trailing: Chip(
-                                label: Text(vac ? 'Vacinado' : 'Vacina Pendente', style: const TextStyle(fontSize: 11)),
-                                backgroundColor: vac ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${p['species'] ?? ''} • ${p['breed'] ?? 'SRD'} • Porte: ${p['size'] ?? 'Médio'}'),
+                                  const SizedBox(height: 2),
+                                  Text('Unidade: ${p['unitLabel'] ?? '-'} • Tutor: ${p['ownerName'] ?? '-'}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF2563EB), fontWeight: FontWeight.w600)),
+                                  if (p['managerNotes'] != null && p['managerNotes'].toString().isNotEmpty)
+                                    Text('Nota do Síndico: ${p['managerNotes']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFFB45309))),
+                                ],
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Chip(
+                                    label: Text(vac ? 'Vacinado' : 'Vacina Pendente', style: const TextStyle(fontSize: 11)),
+                                    backgroundColor: vac ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Editar Pet',
+                                    icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF2563EB)),
+                                    onPressed: () => _openEditPetDialog(p),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Remover Pet',
+                                    icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFF64748B)),
+                                    onPressed: () async {
+                                      await widget.api.deletePet(p['id']);
+                                      _load();
+                                    },
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -1714,6 +2414,8 @@ class _MovingSubViewState extends State<_MovingSubView> {
                                             Text('${r['type'] ?? 'MUDANÇA'} • ${r['movingDate'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                                             const SizedBox(height: 2),
                                             Text('Turno: ${r['period'] ?? ''} • Transportadora: ${r['companyName'] ?? 'Própria'}', style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
+                                              const SizedBox(height: 2),
+                                              Text('Unidade: ${r['unitLabel'] ?? '-'} • Solicitante: ${r['requestedByName'] ?? '-'} • Solicitado em: ${formatDate(r['createdAt'])}', style: const TextStyle(fontSize: 12, color: Color(0xFF2563EB), fontWeight: FontWeight.w600)),
                                             if (r['notes'] != null && r['notes'].toString().isNotEmpty)
                                               Text('Obs: ${r['notes']}', style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                                             if (r['rejectionReason'] != null)
@@ -1794,7 +2496,8 @@ class _MovingSubViewState extends State<_MovingSubView> {
 // 8. DOCUMENTOS, ATAS & REGIMENTO
 // ----------------------------------------------------
 class _DocumentsSubView extends StatefulWidget {
-  const _DocumentsSubView({required this.api, required this.condominiumId});
+  const _DocumentsSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final bool canManage;
   final CommunityApi api;
   final num condominiumId;
 
@@ -1812,6 +2515,94 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
     _load();
   }
 
+  Future<void> _openNewDocumentDialog() async {
+    final title = TextEditingController();
+    final summary = TextEditingController();
+    final content = TextEditingController();
+    final phone = TextEditingController();
+    String category = 'INTERNAL_RULES';
+    bool pinned = false;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Row(
+            children: [
+              Icon(Icons.upload_file_rounded, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Text('Publicar Novo Documento'),
+            ],
+          ),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: const InputDecoration(labelText: 'Categoria'),
+                    items: const [
+                      DropdownMenuItem(value: 'INTERNAL_RULES', child: Text('Regimento Interno & Convenção')),
+                      DropdownMenuItem(value: 'MINUTES', child: Text('Ata de Assembleia')),
+                      DropdownMenuItem(value: 'FINANCIAL', child: Text('Prestação de Contas / Balancete')),
+                      DropdownMenuItem(value: 'NOTICE', child: Text('Comunicado Oficial / Edital')),
+                      DropdownMenuItem(value: 'OTHER', child: Text('Outros')),
+                    ],
+                    onChanged: (v) => setD(() => category = v ?? category),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(controller: title, decoration: const InputDecoration(labelText: 'Título do Documento *')),
+                  const SizedBox(height: 10),
+                  TextField(controller: summary, decoration: const InputDecoration(labelText: 'Resumo / Ementa')),
+                  const SizedBox(height: 10),
+                  TextField(controller: content, maxLines: 3, decoration: const InputDecoration(labelText: 'Conteúdo / Link de Download *', hintText: 'Cole o texto do documento ou link (Drive, PDF, etc.)')),
+                  const SizedBox(height: 10),
+                  TextField(controller: phone, decoration: const InputDecoration(labelText: 'Telefone para Contato / Dúvidas')),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    title: const Text('Fixar no topo do mural'),
+                    value: pinned,
+                    onChanged: (v) => setD(() => pinned = v),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (title.text.trim().isEmpty || content.text.trim().isEmpty) return;
+                Navigator.pop(c, true);
+              },
+              child: const Text('Publicar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true && title.text.trim().isNotEmpty && content.text.trim().isNotEmpty) {
+      try {
+        await widget.api.createDocument(
+          condoId: widget.condominiumId,
+          category: category,
+          title: title.text.trim(),
+          summary: summary.text.trim().isEmpty ? null : summary.text.trim(),
+          contentOrUrl: content.text.trim(),
+          pinned: pinned,
+        );
+        _load();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Documento publicado com sucesso!'), backgroundColor: Color(0xFF15803D)));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -1826,22 +2617,38 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _docs.isEmpty
-              ? const Center(child: Text('Nenhum documento ou regimento publicado pela administração ainda.'))
-              : ListView.separated(
-                  itemCount: _docs.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, idx) {
-                    final d = _docs[idx];
-                    return Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
-                      child: ExpansionTile(
-                        leading: const CircleAvatar(backgroundColor: Color(0xFFE0E7FF), child: Icon(Icons.description_outlined, color: Color(0xFF2F3FB0))),
-                        title: Text(d['title'] ?? 'Documento', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(d['category'] ?? 'GERAL'),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Documentos & Regimento (${_docs.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              if (widget.canManage)
+                FilledButton.icon(
+                  icon: const Icon(Icons.upload_file_rounded, size: 18),
+                  label: const Text('Publicar Documento'),
+                  onPressed: _openNewDocumentDialog,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _docs.isEmpty
+                    ? const Center(child: Text('Nenhum documento ou regimento publicado pela administração ainda.'))
+                    : ListView.separated(
+                        itemCount: _docs.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final d = _docs[idx];
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                            child: ExpansionTile(
+                              leading: const CircleAvatar(backgroundColor: Color(0xFFE0E7FF), child: Icon(Icons.description_outlined, color: Color(0xFF2F3FB0))),
+                              title: Text(d['title'] ?? 'Documento', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text('${d['category'] ?? 'GERAL'} • Publicado por: ${d['createdByName'] ?? 'Administração'} • ${formatDate(d['createdAt'])}'),
                         children: [
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -1859,6 +2666,9 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
                     );
                   },
                 ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2092,10 +2902,22 @@ class _InfractionsSubViewState extends State<_InfractionsSubView> {
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text('${inf['type'] == 'FINE' ? 'Multa' : 'Advertência'}: ${inf['title']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                      Chip(label: Text(status, style: const TextStyle(fontSize: 11)), backgroundColor: const Color(0xFFFEF3C7)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
+                                        Chip(label: Text(status, style: const TextStyle(fontSize: 11)), backgroundColor: const Color(0xFFFEF3C7)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        if (inf['unitLabel'] != null && inf['unitLabel'].toString().isNotEmpty)
+                                          Text('Unidade: ${inf['unitLabel']}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                                        if (inf['issuedByName'] != null && inf['issuedByName'].toString().isNotEmpty)
+                                          Text('• Emitida por: ${inf['issuedByName']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                        if (inf['createdAt'] != null)
+                                          Text('• ${formatDate(inf['createdAt'])}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8))),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
                                   Text(inf['description'] ?? '', style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
                                   if (hasDefense) ...[
                                     const SizedBox(height: 8),
@@ -2176,7 +2998,8 @@ class _InfractionsSubViewState extends State<_InfractionsSubView> {
 // 10. SMART LOCKERS & ARMÁRIOS INTELIGENTES
 // ----------------------------------------------------
 class _LockersSubView extends StatefulWidget {
-  const _LockersSubView({required this.api, required this.condominiumId});
+  const _LockersSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final bool canManage;
   final CommunityApi api;
   final num condominiumId;
 
@@ -2192,6 +3015,71 @@ class _LockersSubViewState extends State<_LockersSubView> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _openDepositDialog() async {
+    final comp = TextEditingController();
+    final unit = TextEditingController();
+    final courier = TextEditingController();
+    final tracking = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Row(
+          children: [
+            Icon(Icons.add_box_outlined, color: Color(0xFF2563EB)),
+            SizedBox(width: 10),
+            Text('Depositar no Armário Inteligente'),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: comp, decoration: const InputDecoration(labelText: 'Compartimento / Vão *', hintText: 'Ex: A01, B04')),
+                const SizedBox(height: 10),
+                TextField(controller: unit, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'ID da Unidade / Apartamento *', hintText: 'Ex: 101')),
+                const SizedBox(height: 10),
+                TextField(controller: courier, decoration: const InputDecoration(labelText: 'Entregador / Transportadora', hintText: 'Ex: Mercado Livre, Correios')),
+                const SizedBox(height: 10),
+                TextField(controller: tracking, decoration: const InputDecoration(labelText: 'Código de Rastreio / Nota')),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () {
+              if (comp.text.trim().isEmpty || unit.text.trim().isEmpty) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Depositar'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true && comp.text.trim().isNotEmpty && unit.text.trim().isNotEmpty) {
+      final unitId = num.tryParse(unit.text.trim()) ?? 1;
+      try {
+        await widget.api.depositLocker(
+          condoId: widget.condominiumId,
+          compartmentNumber: comp.text.trim(),
+          unitId: unitId,
+          courierName: courier.text.trim().isEmpty ? null : courier.text.trim(),
+          trackingCode: tracking.text.trim().isEmpty ? null : tracking.text.trim(),
+        );
+        _load();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Armário abastecido e PIN enviado ao morador!'), backgroundColor: Color(0xFF15803D)));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -2233,53 +3121,89 @@ class _LockersSubViewState extends State<_LockersSubView> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _lockers.isEmpty
-              ? const Center(child: Text('Nenhuma encomenda aguardando em armários inteligentes.'))
-              : ListView.separated(
-                  itemCount: _lockers.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, idx) {
-                    final l = _lockers[idx];
-                    final isOccupied = l['status'] == 'OCCUPIED';
-                    final pin = l['pinCode'];
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Armários Inteligentes (${_lockers.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              if (widget.canManage)
+                FilledButton.icon(
+                  icon: const Icon(Icons.add_box_outlined, size: 18),
+                  label: const Text('Depositar no Locker'),
+                  onPressed: _openDepositDialog,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _lockers.isEmpty
+                    ? const Center(child: Text('Nenhuma encomenda aguardando em armários inteligentes.'))
+                    : ListView.separated(
+                        itemCount: _lockers.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final l = _lockers[idx];
+                          final isOccupied = l['status'] == 'OCCUPIED';
+                          final pin = l['pinCode'];
 
-                    return Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Row(
-                          children: [
-                            const CircleAvatar(
-                              backgroundColor: Color(0xFFDCFCE7),
-                              child: Icon(Icons.lock_open_rounded, color: Color(0xFF15803D)),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
                                 children: [
-                                  Text('Compartimento ${l['compartmentNumber']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                  Text('Código: ${l['trackingCode'] ?? 'Sem rastreio'} • Entregador: ${l['courierName'] ?? 'Portaria'}'),
-                                  if (pin != null)
-                                    Text('Seu PIN: $pin', style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.bold)),
+                                  const CircleAvatar(
+                                    backgroundColor: Color(0xFFDCFCE7),
+                                    child: Icon(Icons.lock_open_rounded, color: Color(0xFF15803D)),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Compartimento ${l['compartmentNumber']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                        Text('Código: ${l['trackingCode'] ?? 'Sem rastreio'} • Entregador: ${l['courierName'] ?? 'Portaria'}'),
+                                        const SizedBox(height: 2),
+                                        Wrap(
+                                          spacing: 8,
+                                          children: [
+                                            if (l['unitLabel'] != null && l['unitLabel'].toString().isNotEmpty)
+                                              Text('Unidade: ${l['unitLabel']}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF2563EB))),
+                                            if (l['recipientName'] != null && l['recipientName'].toString().isNotEmpty)
+                                              Text('Destinatário: ${l['recipientName']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                            if (l['depositedByName'] != null && l['depositedByName'].toString().isNotEmpty)
+                                              Text('• Depositado por: ${l['depositedByName']}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                                            if (l['depositedAt'] != null)
+                                              Text('• ${formatDateTime(l['depositedAt'])}', style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8))),
+                                          ],
+                                        ),
+                                        if (pin != null)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Text('Seu PIN: $pin', style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.bold)),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isOccupied)
+                                    FilledButton.icon(
+                                      icon: const Icon(Icons.vpn_key_rounded, size: 16),
+                                      label: const Text('Retirar'),
+                                      onPressed: () => _retrieve(l['id']),
+                                    ),
                                 ],
                               ),
                             ),
-                            if (isOccupied)
-                              FilledButton.icon(
-                                icon: const Icon(Icons.vpn_key_rounded, size: 16),
-                                label: const Text('Retirar'),
-                                onPressed: () => _retrieve(l['id']),
-                              ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2288,7 +3212,8 @@ class _LockersSubViewState extends State<_LockersSubView> {
 // 11. LISTAS DE CONVIDADOS DE EVENTOS
 // ----------------------------------------------------
 class _GuestListsSubView extends StatefulWidget {
-  const _GuestListsSubView({required this.api, required this.condominiumId});
+  const _GuestListsSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final bool canManage;
   final CommunityApi api;
   final num condominiumId;
 
@@ -2304,6 +3229,87 @@ class _GuestListsSubViewState extends State<_GuestListsSubView> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _openCreateGuestListDialog() async {
+    final title = TextEditingController();
+    final notes = TextEditingController();
+    DateTime eventDate = DateTime.now().add(const Duration(days: 3));
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Row(
+            children: [
+              Icon(Icons.celebration_rounded, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Text('Nova Lista de Convidados'),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: title, decoration: const InputDecoration(labelText: 'Título do Evento *', hintText: 'Ex: Aniversário no Salão de Festas')),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_outlined),
+                    title: Text('Data do Evento: ${DateFormat('dd/MM/yyyy HH:mm').format(eventDate)}'),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: c,
+                          initialDate: eventDate,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (d != null && c.mounted) {
+                          final t = await showTimePicker(context: c, initialTime: TimeOfDay.fromDateTime(eventDate));
+                          if (t != null) {
+                            setD(() => eventDate = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+                          }
+                        }
+                      },
+                      child: const Text('Alterar'),
+                    ),
+                  ),
+                  TextField(controller: notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Observações para a portaria')),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (title.text.trim().isEmpty) return;
+                Navigator.pop(c, true);
+              },
+              child: const Text('Criar Lista'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true && title.text.trim().isNotEmpty) {
+      try {
+        await widget.api.createGuestList(
+          condoId: widget.condominiumId,
+          eventTitle: title.text.trim(),
+          eventDate: eventDate.toIso8601String(),
+        );
+        _load();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lista de convidados criada com sucesso!'), backgroundColor: Color(0xFF15803D)));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -2348,41 +3354,59 @@ class _GuestListsSubViewState extends State<_GuestListsSubView> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _lists.isEmpty
-              ? const Center(child: Text('Nenhuma lista de convidados criada para eventos.'))
-              : ListView.separated(
-                  itemCount: _lists.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, idx) {
-                    final gl = _lists[idx];
-                    final guests = (gl['guests'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Listas de Convidados (${_lists.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              FilledButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Nova Lista'),
+                onPressed: _openCreateGuestListDialog,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _lists.isEmpty
+                    ? const Center(child: Text('Nenhuma lista de convidados criada para eventos.'))
+                    : ListView.separated(
+                        itemCount: _lists.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final gl = _lists[idx];
+                          final guests = (gl['guests'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
 
-                    return Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
-                      child: ExpansionTile(
-                        leading: const CircleAvatar(backgroundColor: Color(0xFFE0E7FF), child: Icon(Icons.celebration_rounded, color: Color(0xFF2F3FB0))),
-                        title: Text(gl['eventTitle'] ?? 'Festa', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Data: ${gl['eventDate'] ?? ''} • ${guests.length} convidados'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.person_add_alt),
-                          tooltip: 'Adicionar Convidado',
-                          onPressed: () => _addGuestDialog(gl['id']),
-                        ),
-                        children: [
-                          ...guests.map((g) => ListTile(
-                                dense: true,
-                                leading: Icon(g['checkedIn'] == true ? Icons.check_circle : Icons.person_outline, color: g['checkedIn'] == true ? Colors.green : Colors.grey),
-                                title: Text(g['guestName'] ?? ''),
-                                subtitle: Text(g['documentNumber'] ?? 'Sem documento'),
-                              )),
-                        ],
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                            child: ExpansionTile(
+                              leading: const CircleAvatar(backgroundColor: Color(0xFFE0E7FF), child: Icon(Icons.celebration_rounded, color: Color(0xFF2F3FB0))),
+                              title: Text(gl['eventTitle'] ?? 'Festa', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text('Anfitrião: ${gl['hostName'] ?? 'Morador'} • Data: ${gl['eventDate'] != null ? formatDateTime(gl['eventDate']) : ''} • ${guests.length} convidados'),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.person_add_alt),
+                                tooltip: 'Adicionar Convidado',
+                                onPressed: () => _addGuestDialog(gl['id']),
+                              ),
+                              children: [
+                                ...guests.map((g) => ListTile(
+                                      dense: true,
+                                      leading: Icon(g['checkedIn'] == true ? Icons.check_circle : Icons.person_outline, color: g['checkedIn'] == true ? Colors.green : Colors.grey),
+                                      title: Text(g['guestName'] ?? ''),
+                                      subtitle: Text(g['documentNumber'] ?? 'Sem documento'),
+                                    )),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2402,7 +3426,10 @@ class _MaintenanceSubView extends StatefulWidget {
 
 class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
   bool _loading = true;
+  int _subTab = 0; // 0 = Ordens de Serviço, 1 = Manutenção Preventiva, 2 = Fornecedores
   List<Map<String, dynamic>> _orders = [];
+  List<Map<String, dynamic>> _equipment = [];
+  List<Map<String, dynamic>> _suppliers = [];
   String? _statusFilter;
   StreamSubscription<RealtimeEvent>? _sub;
 
@@ -2426,10 +3453,216 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
   Future<void> _load({bool silent = false}) async {
     if (!silent) setState(() => _loading = true);
     try {
-      final list = await widget.api.listMaintenanceOrders(widget.condominiumId, _statusFilter);
-      if (mounted) setState(() { _orders = list; _loading = false; });
+      final results = await Future.wait([
+        widget.api.listMaintenanceOrders(widget.condominiumId, _statusFilter),
+        widget.api.listMaintenanceEquipment(widget.condominiumId).catchError((_) => <Map<String, dynamic>>[]),
+        widget.api.listSuppliers(widget.condominiumId).catchError((_) => <Map<String, dynamic>>[]),
+      ]);
+      if (mounted) {
+        setState(() {
+          _orders = results[0];
+          _equipment = results[1];
+          _suppliers = results[2];
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted && !silent) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openNewEquipmentDialog() async {
+    final nameCtrl = TextEditingController();
+    final locationCtrl = TextEditingController();
+    final recurrenceCtrl = TextEditingController(text: '30');
+    final respCtrl = TextEditingController();
+    String category = 'ELEVADORES';
+    DateTime nextDate = DateTime.now().add(const Duration(days: 30));
+    num? preferredSupplierId;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.precision_manufacturing_outlined, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Expanded(child: Text('Cadastrar Equipamento / Estrutura')),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nome do Equipamento / Estrutura *', hintText: 'Ex: Elevador Social 01, Bomba de Recalque')),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: const InputDecoration(labelText: 'Categoria'),
+                    items: const [
+                      DropdownMenuItem(value: 'ELEVADORES', child: Text('Elevadores')),
+                      DropdownMenuItem(value: 'HIDRAULICA', child: Text('Hidráulica / Bombas')),
+                      DropdownMenuItem(value: 'ELETRICA', child: Text('Elétrica / Gerador')),
+                      DropdownMenuItem(value: 'AVCB_INCENDIO', child: Text('Combate a Incêndio / Extintores')),
+                      DropdownMenuItem(value: 'ESTRUTURAL', child: Text('Estrutura / Fachada')),
+                      DropdownMenuItem(value: 'SEGURANCA', child: Text('CFTV / Portões')),
+                    ],
+                    onChanged: (v) => setD(() => category = v ?? 'ELEVADORES'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(controller: locationCtrl, decoration: const InputDecoration(labelText: 'Localização', hintText: 'Casa de Máquinas / Bloco A')),
+                  const SizedBox(height: 10),
+                  TextField(controller: recurrenceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Periodicidade Preventiva (dias) *', hintText: '30')),
+                  const SizedBox(height: 10),
+                  TextField(controller: respCtrl, decoration: const InputDecoration(labelText: 'Responsável Interno')),
+                  const SizedBox(height: 10),
+                  if (_suppliers.isNotEmpty) ...[
+                    DropdownButtonFormField<num?>(
+                      value: preferredSupplierId,
+                      decoration: const InputDecoration(labelText: 'Fornecedor Preferencial'),
+                      items: [
+                        const DropdownMenuItem<num?>(value: null, child: Text('Nenhum vinculado')),
+                        ..._suppliers.map((s) => DropdownMenuItem<num?>(
+                              value: s['id'] as num?,
+                              child: Text(s['companyName']?.toString() ?? 'Fornecedor'),
+                            )),
+                      ],
+                      onChanged: (v) => setD(() => preferredSupplierId = v),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_repeat_rounded),
+                    title: Text('Próxima Manutenção: ${DateFormat('dd/MM/yyyy').format(nextDate)}'),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: c,
+                          initialDate: nextDate,
+                          firstDate: DateTime.now().subtract(const Duration(days: 60)),
+                          lastDate: DateTime.now().add(const Duration(days: 730)),
+                        );
+                        if (picked != null) setD(() => nextDate = picked);
+                      },
+                      child: const Text('Alterar'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                Navigator.pop(c, true);
+              },
+              child: const Text('Salvar Equipamento'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      final dateStr = '${nextDate.year.toString().padLeft(4, '0')}-${nextDate.month.toString().padLeft(2, '0')}-${nextDate.day.toString().padLeft(2, '0')}';
+      await widget.api.createMaintenanceEquipment(
+        widget.condominiumId,
+        name: nameCtrl.text.trim(),
+        category: category,
+        location: locationCtrl.text.trim(),
+        recurrenceDays: int.tryParse(recurrenceCtrl.text.trim()) ?? 30,
+        nextMaintenanceDate: dateStr,
+        responsibleName: respCtrl.text.trim(),
+        preferredSupplierId: preferredSupplierId,
+      );
+      _load();
+    }
+  }
+
+  Future<void> _openNewSupplierDialog() async {
+    final companyCtrl = TextEditingController();
+    final contactCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final docCtrl = TextEditingController();
+    String category = 'ELEVADORES';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.engineering_outlined, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Expanded(child: Text('Cadastrar Fornecedor / Prestador')),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: companyCtrl, decoration: const InputDecoration(labelText: 'Empresa / Profissional *', hintText: 'Ex: Atlas Elevadores Ltda')),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: const InputDecoration(labelText: 'Especialidade / Serviço'),
+                    items: const [
+                      DropdownMenuItem(value: 'ELEVADORES', child: Text('Elevadores')),
+                      DropdownMenuItem(value: 'HIDRAULICA', child: Text('Hidráulica')),
+                      DropdownMenuItem(value: 'ELETRICA', child: Text('Elétrica')),
+                      DropdownMenuItem(value: 'AVCB_INCENDIO', child: Text('Incêndio / AVCB')),
+                      DropdownMenuItem(value: 'SEGURANCA', child: Text('Segurança Eletrônica')),
+                      DropdownMenuItem(value: 'LIMPEZA', child: Text('Limpeza e Jardinagem')),
+                      DropdownMenuItem(value: 'GERAL', child: Text('Manutenção Geral')),
+                    ],
+                    onChanged: (v) => setD(() => category = v ?? 'GERAL'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(controller: contactCtrl, decoration: const InputDecoration(labelText: 'Nome do Responsável')),
+                  const SizedBox(height: 10),
+                  TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Telefone / WhatsApp')),
+                  const SizedBox(height: 10),
+                  TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'E-mail')),
+                  const SizedBox(height: 10),
+                  TextField(controller: docCtrl, decoration: const InputDecoration(labelText: 'CNPJ / CPF')),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (companyCtrl.text.trim().isEmpty) return;
+                Navigator.pop(c, true);
+              },
+              child: const Text('Salvar Fornecedor'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      await widget.api.createSupplier(
+        widget.condominiumId,
+        companyName: companyCtrl.text.trim(),
+        serviceCategory: category,
+        contactName: contactCtrl.text.trim(),
+        phone: phoneCtrl.text.trim(),
+        email: emailCtrl.text.trim(),
+        documentNumber: docCtrl.text.trim(),
+      );
+      _load();
     }
   }
 
@@ -2444,6 +3677,8 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
     String type = 'CORRECTIVE';
     String priority = 'MEDIUM';
     DateTime? scheduledDate;
+    num? selectedEquipmentId;
+    num? selectedSupplierId;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -2512,6 +3747,36 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
                       ),
                     ],
                   ),
+                  if (_equipment.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<num?>(
+                      value: selectedEquipmentId,
+                      decoration: const InputDecoration(labelText: 'Equipamento / Estrutura Vinculado'),
+                      items: [
+                        const DropdownMenuItem<num?>(value: null, child: Text('Nenhum equipamento específico')),
+                        ..._equipment.map((eq) => DropdownMenuItem<num?>(
+                              value: eq['id'] as num?,
+                              child: Text('${eq['name']} (${eq['location'] ?? eq['category']})'),
+                            )),
+                      ],
+                      onChanged: (v) => setDState(() => selectedEquipmentId = v),
+                    ),
+                  ],
+                  if (_suppliers.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<num?>(
+                      value: selectedSupplierId,
+                      decoration: const InputDecoration(labelText: 'Fornecedor Cadastrado'),
+                      items: [
+                        const DropdownMenuItem<num?>(value: null, child: Text('Informar manualmente abaixo')),
+                        ..._suppliers.map((s) => DropdownMenuItem<num?>(
+                              value: s['id'] as num?,
+                              child: Text('${s['companyName']} (★ ${s['ratingAverage'] ?? '—'})'),
+                            )),
+                      ],
+                      onChanged: (v) => setDState(() => selectedSupplierId = v),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   TextField(controller: contractor, decoration: const InputDecoration(labelText: 'Empresa / Prestador Contratado')),
                   const SizedBox(height: 10),
@@ -2564,6 +3829,8 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
           category: category,
           type: type,
           priority: priority,
+          equipmentId: selectedEquipmentId,
+          supplierId: selectedSupplierId,
           contractorName: contractor.text.trim().isNotEmpty ? contractor.text.trim() : null,
           contractorContact: contact.text.trim().isNotEmpty ? contact.text.trim() : null,
           scheduledDate: scheduledDate,
@@ -2581,33 +3848,54 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
     final statusCtrl = TextEditingController(text: order['status'] ?? 'OPEN');
     final actualCost = TextEditingController(text: order['actualCost']?.toString() ?? '');
     final notes = TextEditingController();
+    final feedbackCtrl = TextEditingController();
+    int rating = 5;
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDState) => AlertDialog(
           title: Text('Atualizar O.S. #${order['id']}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: statusCtrl.text,
-                decoration: const InputDecoration(labelText: 'Novo Status'),
-                items: const [
-                  DropdownMenuItem(value: 'OPEN', child: Text('Aberta')),
-                  DropdownMenuItem(value: 'IN_PROGRESS', child: Text('Em Andamento')),
-                  DropdownMenuItem(value: 'COMPLETED', child: Text('Concluída')),
-                  DropdownMenuItem(value: 'CANCELLED', child: Text('Cancelada')),
-                ],
-                onChanged: (v) => setDState(() => statusCtrl.text = v ?? 'OPEN'),
-              ),
-              const SizedBox(height: 10),
-              if (statusCtrl.text == 'COMPLETED') ...[
-                TextField(controller: actualCost, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Custo Real Finalizado (R\$)')),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: statusCtrl.text,
+                  decoration: const InputDecoration(labelText: 'Novo Status'),
+                  items: const [
+                    DropdownMenuItem(value: 'OPEN', child: Text('Aberta')),
+                    DropdownMenuItem(value: 'IN_PROGRESS', child: Text('Em Andamento')),
+                    DropdownMenuItem(value: 'COMPLETED', child: Text('Concluída')),
+                    DropdownMenuItem(value: 'CANCELLED', child: Text('Cancelada')),
+                  ],
+                  onChanged: (v) => setDState(() => statusCtrl.text = v ?? 'OPEN'),
+                ),
                 const SizedBox(height: 10),
+                if (statusCtrl.text == 'COMPLETED') ...[
+                  TextField(controller: actualCost, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Custo Real Finalizado (R\$)')),
+                  const SizedBox(height: 10),
+                  if (order['supplierId'] != null) ...[
+                    DropdownButtonFormField<int>(
+                      value: rating,
+                      decoration: const InputDecoration(labelText: 'Avaliação do Fornecedor (1 a 5 estrelas)'),
+                      items: const [
+                        DropdownMenuItem(value: 5, child: Text('★★★★★ (5 - Excelente)')),
+                        DropdownMenuItem(value: 4, child: Text('★★★★☆ (4 - Bom)')),
+                        DropdownMenuItem(value: 3, child: Text('★★★☆☆ (3 - Regular)')),
+                        DropdownMenuItem(value: 2, child: Text('★★☆☆☆ (2 - Ruim)')),
+                        DropdownMenuItem(value: 1, child: Text('★☆☆☆☆ (1 - Péssimo)')),
+                      ],
+                      onChanged: (v) => setDState(() => rating = v ?? 5),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(controller: feedbackCtrl, decoration: const InputDecoration(labelText: 'Parecer sobre o Fornecedor')),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+                TextField(controller: notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Notas da Conclusão / Andamento')),
               ],
-              TextField(controller: notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Notas da Conclusão / Andamento')),
-            ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
@@ -2624,6 +3912,8 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
           status: statusCtrl.text,
           actualCost: double.tryParse(actualCost.text.replaceAll(',', '.')),
           notes: notes.text.trim().isNotEmpty ? notes.text.trim() : null,
+          supplierRating: (statusCtrl.text == 'COMPLETED' && order['supplierId'] != null) ? rating : null,
+          supplierFeedback: feedbackCtrl.text.trim().isNotEmpty ? feedbackCtrl.text.trim() : null,
         );
         _load();
       } catch (e) {
@@ -2659,143 +3949,270 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
         backgroundColor: const Color(0xFF2563EB),
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
-        label: const Text('Nova Ordem de Serviço'),
-        onPressed: _openNewOrderDialog,
+        label: Text(
+          _subTab == 0
+              ? 'Nova Ordem de Serviço'
+              : (_subTab == 1 ? 'Novo Equipamento' : 'Novo Fornecedor'),
+        ),
+        onPressed: _subTab == 0
+            ? _openNewOrderDialog
+            : (_subTab == 1 ? _openNewEquipmentDialog : _openNewSupplierDialog),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      FilterChip(
-                        label: const Text('Todas'),
-                        selected: _statusFilter == null,
-                        onSelected: (_) { setState(() => _statusFilter = null); _load(); },
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: SegmentedButton<int>(
+                    segments: [
+                      ButtonSegment(
+                        value: 0,
+                        icon: const Icon(Icons.assignment_outlined, size: 18),
+                        label: Text('Ordens (${_orders.length})'),
                       ),
-                      const SizedBox(width: 8),
-                      FilterChip(
-                        label: const Text('Abertas'),
-                        selected: _statusFilter == 'OPEN',
-                        onSelected: (_) { setState(() => _statusFilter = 'OPEN'); _load(); },
+                      ButtonSegment(
+                        value: 1,
+                        icon: const Icon(Icons.event_repeat_rounded, size: 18),
+                        label: Text('Preventiva (${_equipment.length})'),
                       ),
-                      const SizedBox(width: 8),
-                      FilterChip(
-                        label: const Text('Em Andamento'),
-                        selected: _statusFilter == 'IN_PROGRESS',
-                        onSelected: (_) { setState(() => _statusFilter = 'IN_PROGRESS'); _load(); },
-                      ),
-                      const SizedBox(width: 8),
-                      FilterChip(
-                        label: const Text('Concluídas'),
-                        selected: _statusFilter == 'COMPLETED',
-                        onSelected: (_) { setState(() => _statusFilter = 'COMPLETED'); _load(); },
+                      ButtonSegment(
+                        value: 2,
+                        icon: const Icon(Icons.engineering_outlined, size: 18),
+                        label: Text('Fornecedores (${_suppliers.length})'),
                       ),
                     ],
+                    selected: {_subTab},
+                    onSelectionChanged: (s) => setState(() => _subTab = s.first),
                   ),
                 ),
-                Expanded(
-                  child: _orders.isEmpty
-                      ? const Center(child: Text('Nenhuma ordem de serviço encontrada.'))
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                          itemCount: _orders.length,
-                          itemBuilder: (context, index) {
-                            final o = _orders[index];
-                            final status = o['status']?.toString() ?? 'OPEN';
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFE2E8F0))),
-                              elevation: 0,
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: _statusColor(status).withValues(alpha: 0.15),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            _statusLabel(status),
-                                            style: TextStyle(color: _statusColor(status), fontWeight: FontWeight.bold, fontSize: 12),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
-                                          child: Text(o['category'] ?? 'Geral', style: const TextStyle(color: Color(0xFF475569), fontSize: 12)),
-                                        ),
-                                        const Spacer(),
-                                        if (widget.canManage)
-                                          IconButton(
-                                            icon: const Icon(Icons.edit_note_rounded, color: Color(0xFF2563EB)),
-                                            tooltip: 'Atualizar Status',
-                                            onPressed: () => _updateStatusDialog(o),
-                                          ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(o['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                    const SizedBox(height: 4),
-                                    Text(o['description'] ?? '', style: const TextStyle(color: Color(0xFF64748B), fontSize: 13.5)),
-                                    const Divider(height: 20),
-                                    Wrap(
-                                      spacing: 16,
-                                      runSpacing: 8,
-                                      children: [
-                                        if (o['contractorName'] != null)
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.engineering_outlined, size: 16, color: Color(0xFF64748B)),
-                                              const SizedBox(width: 4),
-                                              Text('Prestador: ${o['contractorName']}', style: const TextStyle(fontSize: 12.5)),
-                                            ],
-                                          ),
-                                        if (o['scheduledDate'] != null)
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.calendar_today_outlined, size: 15, color: Color(0xFF64748B)),
-                                              const SizedBox(width: 4),
-                                              Text('Data: ${o['scheduledDate']}', style: const TextStyle(fontSize: 12.5)),
-                                            ],
-                                          ),
-                                        if (o['estimatedCost'] != null)
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.attach_money_rounded, size: 16, color: Color(0xFF64748B)),
-                                              Text('Est.: R\$ ${(o['estimatedCost'] as num).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12.5)),
-                                            ],
-                                          ),
-                                        if (o['actualCost'] != null)
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF10B981)),
-                                              const SizedBox(width: 4),
-                                              Text('Final: R\$ ${(o['actualCost'] as num).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
-                                            ],
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
+                if (_subTab == 0) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        FilterChip(
+                          label: const Text('Todas'),
+                          selected: _statusFilter == null,
+                          onSelected: (_) { setState(() => _statusFilter = null); _load(); },
                         ),
-                ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: const Text('Abertas'),
+                          selected: _statusFilter == 'OPEN',
+                          onSelected: (_) { setState(() => _statusFilter = 'OPEN'); _load(); },
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: const Text('Em Andamento'),
+                          selected: _statusFilter == 'IN_PROGRESS',
+                          onSelected: (_) { setState(() => _statusFilter = 'IN_PROGRESS'); _load(); },
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: const Text('Concluídas'),
+                          selected: _statusFilter == 'COMPLETED',
+                          onSelected: (_) { setState(() => _statusFilter = 'COMPLETED'); _load(); },
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: _orders.isEmpty
+                        ? const Center(child: Text('Nenhuma ordem de serviço encontrada.'))
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                            itemCount: _orders.length,
+                            itemBuilder: (context, index) {
+                              final o = _orders[index];
+                              final status = o['status']?.toString() ?? 'OPEN';
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                                elevation: 0,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: _statusColor(status).withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              _statusLabel(status),
+                                              style: TextStyle(color: _statusColor(status), fontWeight: FontWeight.bold, fontSize: 12),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                                            child: Text(o['category'] ?? 'Geral', style: const TextStyle(color: Color(0xFF475569), fontSize: 12)),
+                                          ),
+                                          if (o['equipmentName'] != null) ...[
+                                            const SizedBox(width: 8),
+                                            Chip(
+                                              visualDensity: VisualDensity.compact,
+                                              label: Text('Equip.: ${o['equipmentName']}', style: const TextStyle(fontSize: 11)),
+                                            ),
+                                          ],
+                                          const Spacer(),
+                                          if (widget.canManage)
+                                            IconButton(
+                                              icon: const Icon(Icons.edit_note_rounded, color: Color(0xFF2563EB)),
+                                              tooltip: 'Atualizar Status',
+                                              onPressed: () => _updateStatusDialog(o),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(o['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                      const SizedBox(height: 4),
+                                      Text(o['description'] ?? '', style: const TextStyle(color: Color(0xFF64748B), fontSize: 13.5)),
+                                      const SizedBox(height: 4),
+                                      Text('Criado por: ${o['createdByName'] ?? 'Administração'} • ${formatDate(o['createdAt'])}', style: const TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.w600)),
+                                      const Divider(height: 20),
+                                      Wrap(
+                                        spacing: 16,
+                                        runSpacing: 8,
+                                        children: [
+                                          if (o['supplierName'] != null || o['contractorName'] != null)
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.engineering_outlined, size: 16, color: Color(0xFF64748B)),
+                                                const SizedBox(width: 4),
+                                                Text('Fornecedor: ${o['supplierName'] ?? o['contractorName']}', style: const TextStyle(fontSize: 12.5)),
+                                              ],
+                                            ),
+                                          if (o['supplierRating'] != null)
+                                            Text('Avaliação: ★ ${o['supplierRating']}/5', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                                          if (o['scheduledDate'] != null)
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.calendar_today_outlined, size: 15, color: Color(0xFF64748B)),
+                                                const SizedBox(width: 4),
+                                                Text('Data: ${o['scheduledDate']}', style: const TextStyle(fontSize: 12.5)),
+                                              ],
+                                            ),
+                                          if (o['estimatedCost'] != null)
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.attach_money_rounded, size: 16, color: Color(0xFF64748B)),
+                                                Text('Est.: R\$ ${(o['estimatedCost'] as num).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12.5)),
+                                              ],
+                                            ),
+                                          if (o['actualCost'] != null)
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF10B981)),
+                                                const SizedBox(width: 4),
+                                                Text('Final: R\$ ${(o['actualCost'] as num).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                                              ],
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ] else if (_subTab == 1) ...[
+                  Expanded(
+                    child: _equipment.isEmpty
+                        ? const Center(child: Text('Nenhum equipamento cadastrado no plano de manutenção preventiva.'))
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+                            itemCount: _equipment.length,
+                            itemBuilder: (context, idx) {
+                              final eq = _equipment[idx];
+                              final overdue = eq['overdue'] == true || eq['alertStatus'] == 'OVERDUE';
+                              final dueSoon = eq['dueSoon'] == true || eq['alertStatus'] == 'DUE_SOON';
+                              final badgeColor = overdue
+                                  ? const Color(0xFFDC2626)
+                                  : (dueSoon ? const Color(0xFFD97706) : const Color(0xFF15803D));
+                              final badgeBg = overdue
+                                  ? const Color(0xFFFEE2E2)
+                                  : (dueSoon ? const Color(0xFFFEF3C7) : const Color(0xFFDCFCE7));
+                              final badgeLabel = overdue
+                                  ? 'ATRASADA'
+                                  : (dueSoon ? 'PRÓXIMA' : 'EM DIA');
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: badgeBg,
+                                    child: Icon(Icons.precision_manufacturing_outlined, color: badgeColor),
+                                  ),
+                                  title: Text(eq['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  subtitle: Text(
+                                    'Cat.: ${eq['category'] ?? ''} • Local: ${eq['location'] ?? 'Geral'}\n'
+                                    'Ciclo: a cada ${eq['recurrenceDays'] ?? 30} dias • Próx.: ${eq['nextMaintenanceDate'] ?? '—'}'
+                                    '${eq['preferredSupplierName'] != null ? ' • Fornecedor: ${eq['preferredSupplierName']}' : ''}',
+                                  ),
+                                  isThreeLine: true,
+                                  trailing: Chip(
+                                    label: Text(badgeLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeColor)),
+                                    backgroundColor: badgeBg,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ] else ...[
+                  Expanded(
+                    child: _suppliers.isEmpty
+                        ? const Center(child: Text('Nenhum fornecedor ou prestador homologado cadastrado.'))
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+                            itemCount: _suppliers.length,
+                            itemBuilder: (context, idx) {
+                              final s = _suppliers[idx];
+                              final avg = s['ratingAverage'] ?? 0;
+                              final count = s['ratingCount'] ?? 0;
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                                child: ListTile(
+                                  leading: const CircleAvatar(
+                                    backgroundColor: Color(0xFFE0E7FF),
+                                    child: Icon(Icons.engineering_rounded, color: Color(0xFF2F3FB0)),
+                                  ),
+                                  title: Text(s['companyName'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  subtitle: Text(
+                                    'Especialidade: ${s['serviceCategory'] ?? ''} • Contato: ${s['contactName'] ?? '—'}\n'
+                                    'Tel.: ${s['phone'] ?? '—'} • Email: ${s['email'] ?? '—'}',
+                                  ),
+                                  isThreeLine: true,
+                                  trailing: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text('★ $avg', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFFD97706))),
+                                      Text('($count aval.)', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ],
             ),
     );
@@ -2851,7 +4268,9 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
     final title = TextEditingController();
     final desc = TextEditingController();
     final location = TextEditingController();
+    final quorumCtrl = TextEditingController(text: '50');
     String type = 'ORDINARY';
+    bool blockDelinquentUnits = false;
     DateTime meetingDate = DateTime.now().add(const Duration(days: 7));
 
     final ok = await showDialog<bool>(
@@ -2867,7 +4286,7 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
             ],
           ),
           content: SizedBox(
-            width: 440,
+            width: 460,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -2888,6 +4307,18 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                   const SizedBox(height: 10),
                   TextField(controller: location, decoration: const InputDecoration(labelText: 'Local ou Link da Videochamada (Meet/Zoom)')),
                   const SizedBox(height: 10),
+                  TextField(
+                    controller: quorumCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Quórum Mínimo (%)', hintText: '50'),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Bloquear voto de unidades inadimplentes'),
+                    subtitle: const Text('Conforme Art. 1.335 III do Código Civil'),
+                    value: blockDelinquentUnits,
+                    onChanged: (v) => setDState(() => blockDelinquentUnits = v),
+                  ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.event_outlined),
@@ -2937,11 +4368,27 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
           type: type,
           meetingDate: meetingDate,
           locationOrLink: location.text.trim().isNotEmpty ? location.text.trim() : null,
+          blockDelinquentUnits: blockDelinquentUnits,
+          quorumMinimumPercent: int.tryParse(quorumCtrl.text.trim()) ?? 50,
         );
         _load();
       } catch (e) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
       }
+    }
+  }
+
+  Future<void> _checkInAssembly(num assemblyId) async {
+    try {
+      await widget.api.checkInAssembly(assemblyId);
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Presença registrada na ata da assembleia!'), backgroundColor: Color(0xFF15803D)),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
     }
   }
 
@@ -3046,16 +4493,32 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                         ),
                         title: Text(a['title'] ?? 'Assembleia', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         subtitle: Text(
-                          '${a['type'] == 'ORDINARY' ? 'AGO' : 'AGE'} • $dateStr',
+                          '${a['type'] == 'ORDINARY' ? 'AGO' : 'AGE'} • $dateStr • Presenças: ${a['participantCount'] ?? 0} (Quórum mín.: ${a['quorumMinimumPercent'] ?? 50}%)',
                           style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
                         ),
-                        trailing: widget.canManage
-                            ? IconButton(
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (a['checkedInByCurrentUser'] == true)
+                              const Chip(
+                                visualDensity: VisualDensity.compact,
+                                label: Text('Presente', style: TextStyle(fontSize: 11, color: Color(0xFF15803D))),
+                                backgroundColor: Color(0xFFDCFCE7),
+                              )
+                            else
+                              FilledButton.tonalIcon(
+                                icon: const Icon(Icons.how_to_reg_rounded, size: 16),
+                                label: const Text('Check-in', style: TextStyle(fontSize: 12)),
+                                onPressed: () => _checkInAssembly(a['id']),
+                              ),
+                            if (widget.canManage)
+                              IconButton(
                                 icon: const Icon(Icons.post_add_rounded, color: Color(0xFF2563EB)),
                                 tooltip: 'Adicionar Pauta',
                                 onPressed: () => _openAddTopicDialog(a['id']),
-                              )
-                            : null,
+                              ),
+                          ],
+                        ),
                         children: [
                           if (a['description'] != null && a['description'].toString().isNotEmpty)
                             Padding(
@@ -3514,6 +4977,494 @@ class _FinancialSubViewState extends State<_FinancialSubView> {
           ),
           const SizedBox(height: 8),
           Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+// ----------------------------------------------------
+// 15. ACHADOS E PERDIDOS (Comunicação e Categorização)
+// ----------------------------------------------------
+class _LostFoundSubView extends StatefulWidget {
+  const _LostFoundSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final CommunityApi api;
+  final num condominiumId;
+  final bool canManage;
+
+  @override
+  State<_LostFoundSubView> createState() => _LostFoundSubViewState();
+}
+
+class _LostFoundSubViewState extends State<_LostFoundSubView> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _items = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final list = await widget.api.listLostFound(widget.condominiumId);
+      if (mounted) setState(() { _items = list; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openCreateDialog() async {
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final locCtrl = TextEditingController();
+    String type = 'FOUND';
+    String category = 'KEYS';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.find_in_page_outlined, color: Color(0xFF2563EB)),
+              SizedBox(width: 10),
+              Expanded(child: Text('Registrar Achado ou Perdido')),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: type,
+                    decoration: const InputDecoration(labelText: 'Tipo de Registro'),
+                    items: const [
+                      DropdownMenuItem(value: 'FOUND', child: Text('Objeto Encontrado (Achado)')),
+                      DropdownMenuItem(value: 'LOST', child: Text('Objeto Perdido (Procura-se)')),
+                    ],
+                    onChanged: (v) => setD(() => type = v ?? 'FOUND'),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: category,
+                    decoration: const InputDecoration(labelText: 'Categoria do Objeto'),
+                    items: const [
+                      DropdownMenuItem(value: 'KEYS', child: Text('Chaves / Controles / Tags')),
+                      DropdownMenuItem(value: 'DOCUMENTS', child: Text('Documentos / Cartões')),
+                      DropdownMenuItem(value: 'ELECTRONICS', child: Text('Celular / Eletrônicos')),
+                      DropdownMenuItem(value: 'CLOTHING', child: Text('Roupas / Acessórios')),
+                      DropdownMenuItem(value: 'PET', child: Text('Animal de Estimação')),
+                      DropdownMenuItem(value: 'OTHER', child: Text('Outros')),
+                    ],
+                    onChanged: (v) => setD(() => category = v ?? 'OTHER'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Título / Objeto *', hintText: 'Ex: Chaveiro com tag azul')),
+                  const SizedBox(height: 10),
+                  TextField(controller: locCtrl, decoration: const InputDecoration(labelText: 'Local onde foi encontrado/perdido', hintText: 'Ex: Hall do Bloco A / Academia')),
+                  const SizedBox(height: 10),
+                  TextField(controller: descCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Descrição e características *')),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () {
+                if (titleCtrl.text.trim().isEmpty || descCtrl.text.trim().isEmpty) return;
+                Navigator.pop(c, true);
+              },
+              child: const Text('Publicar Registro'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      await widget.api.createLostFound(
+        condoId: widget.condominiumId,
+        type: type,
+        category: category,
+        title: titleCtrl.text.trim(),
+        description: descCtrl.text.trim(),
+        location: locCtrl.text.trim(),
+      );
+      _load();
+    }
+  }
+
+  Future<void> _openMessagesDialog(Map<String, dynamic> item) async {
+    final msgCtrl = TextEditingController();
+    List<Map<String, dynamic>> messages = [];
+    try {
+      messages = await widget.api.listLostFoundMessages(item['id']);
+    } catch (_) {}
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setD) => AlertDialog(
+          title: Text('Mensagens: ${item['title'] ?? 'Achados e Perdidos'}'),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (messages.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Nenhuma mensagem enviada ainda. Combine a devolução por aqui!'),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: messages.length,
+                      separatorBuilder: (_, __) => const Divider(height: 10),
+                      itemBuilder: (_, i) {
+                        final m = messages[i];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('${m['senderName'] ?? 'Morador'} (${m['unitLabel'] ?? ''})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                          subtitle: Text(m['message'] ?? ''),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: msgCtrl,
+                        decoration: const InputDecoration(labelText: 'Enviar mensagem aos envolvidos...'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      icon: const Icon(Icons.send_rounded, size: 18),
+                      onPressed: () async {
+                        if (msgCtrl.text.trim().isEmpty) return;
+                        await widget.api.addLostFoundMessage(item['id'], message: msgCtrl.text.trim());
+                        msgCtrl.clear();
+                        messages = await widget.api.listLostFoundMessages(item['id']);
+                        setD(() {});
+                        _load();
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c), child: const Text('Fechar')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Achados e Perdidos (${_items.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              FilledButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Novo Registro'),
+                onPressed: _openCreateDialog,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _items.isEmpty
+                    ? const Center(child: Text('Nenhum objeto registrado em Achados e Perdidos.'))
+                    : ListView.separated(
+                        itemCount: _items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final it = _items[idx];
+                          final isFound = it['type'] == 'FOUND';
+                          final status = it['status']?.toString() ?? 'OPEN';
+                          final isOpen = status == 'OPEN' || status == 'CLAIMED';
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Chip(
+                                        visualDensity: VisualDensity.compact,
+                                        label: Text(isFound ? 'ACHADO' : 'PERDIDO', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isFound ? const Color(0xFF15803D) : const Color(0xFFB45309))),
+                                        backgroundColor: isFound ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      if (it['category'] != null)
+                                        Chip(
+                                          visualDensity: VisualDensity.compact,
+                                          label: Text(it['category'].toString(), style: const TextStyle(fontSize: 11)),
+                                        ),
+                                      const Spacer(),
+                                      Text(status, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(it['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                  const SizedBox(height: 4),
+                                  Text(it['description'] ?? '', style: const TextStyle(color: Color(0xFF475569), fontSize: 13)),
+                                  const SizedBox(height: 4),
+                                  Text('Local: ${it['location'] ?? 'Portaria'} • Publicado por: ${it['reportedByName'] ?? 'Morador'}', style: const TextStyle(fontSize: 12, color: Color(0xFF2563EB))),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      OutlinedButton.icon(
+                                        icon: const Icon(Icons.forum_outlined, size: 16),
+                                        label: Text('Mensagens (${it['messageCount'] ?? 0})'),
+                                        onPressed: () => _openMessagesDialog(it),
+                                      ),
+                                      if (isOpen) ...[
+                                        FilledButton.tonalIcon(
+                                          icon: const Icon(Icons.pan_tool_alt_outlined, size: 16),
+                                          label: const Text('Reivindicar'),
+                                          onPressed: () async {
+                                            await widget.api.claimLostFound(it['id']);
+                                            _load();
+                                          },
+                                        ),
+                                        TextButton.icon(
+                                          icon: const Icon(Icons.check_circle_outline, size: 16),
+                                          label: const Text('Encerrar Publicação'),
+                                          onPressed: () async {
+                                            await widget.api.closeLostFound(it['id'], resolutionNotes: 'Encerrado pelo responsável');
+                                            _load();
+                                          },
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ----------------------------------------------------
+// 16. RELATÓRIOS E INDICADORES GERENCIAIS (KPIs, PDF e CSV)
+// ----------------------------------------------------
+class _ReportsSubView extends StatefulWidget {
+  const _ReportsSubView({required this.api, required this.condominiumId, this.canManage = false});
+  final CommunityApi api;
+  final num condominiumId;
+  final bool canManage;
+
+  @override
+  State<_ReportsSubView> createState() => _ReportsSubViewState();
+}
+
+class _ReportsSubViewState extends State<_ReportsSubView> {
+  bool _loading = true;
+  Map<String, dynamic>? _report;
+  DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
+  DateTime _endDate = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _load() async {
+    if (!widget.canManage) {
+      setState(() => _loading = false);
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final res = await widget.api.getDashboardReport(
+        widget.condominiumId,
+        startDate: _fmtDate(_startDate),
+        endDate: _fmtDate(_endDate),
+      );
+      if (mounted) {
+        setState(() {
+          _report = res;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.canManage) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Os relatórios gerenciais consolidados são exclusivos para o Síndico e Administração.'),
+        ),
+      );
+    }
+
+    final pkgs = (_report?['packages'] as Map<String, dynamic>?) ?? {};
+    final visitors = (_report?['visitors'] as Map<String, dynamic>?) ?? {};
+    final tickets = (_report?['tickets'] as Map<String, dynamic>?) ?? {};
+    final maint = (_report?['maintenance'] as Map<String, dynamic>?) ?? {};
+    final fin = (_report?['financial'] as Map<String, dynamic>?) ?? {};
+    final comm = (_report?['community'] as Map<String, dynamic>?) ?? {};
+    final areas = (_report?['commonAreaUtilization'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
+
+    return _loading
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text('Indicadores Operacionais & Gerenciais', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.date_range_rounded, size: 16),
+                        label: Text('Período: ${_fmtDate(_startDate)} a ${_fmtDate(_endDate)}'),
+                        onPressed: () async {
+                          final picked = await showDateRangePicker(
+                            context: context,
+                            firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                            lastDate: DateTime.now().add(const Duration(days: 30)),
+                            initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _startDate = picked.start;
+                              _endDate = picked.end;
+                            });
+                            _load();
+                          }
+                        },
+                      ),
+                      FilledButton.tonalIcon(
+                        icon: const Icon(Icons.table_view_rounded, size: 16),
+                        label: const Text('Exportar Excel (CSV)'),
+                        onPressed: () {
+                          final url = '${widget.api.api.baseUrl}/condominiums/${widget.condominiumId}/reports/export/csv?startDate=${_fmtDate(_startDate)}&endDate=${_fmtDate(_endDate)}';
+                          Clipboard.setData(ClipboardData(text: url));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Relatório CSV gerado! Link de exportação copiado.')),
+                          );
+                        },
+                      ),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.picture_as_pdf_rounded, size: 16),
+                        label: const Text('Exportar PDF'),
+                        onPressed: () {
+                          final url = '${widget.api.api.baseUrl}/condominiums/${widget.condominiumId}/reports/export/pdf?startDate=${_fmtDate(_startDate)}&endDate=${_fmtDate(_endDate)}';
+                          Clipboard.setData(ClipboardData(text: url));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Relatório PDF gerado! Link de exportação copiado.')),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _statBox('Encomendas no Período', '${pkgs['totalReceived'] ?? 0} recebidas (${pkgs['pendingCount'] ?? 0} pend.)', Icons.inventory_2_outlined, const Color(0xFF2563EB)),
+                  _statBox('Visitantes & Acessos', '${visitors['total'] ?? 0} (${visitors['checkedIn'] ?? 0} check-in)', Icons.badge_outlined, const Color(0xFF15803D)),
+                  _statBox('Chamados & Ocorrências', '${tickets['total'] ?? 0} (${tickets['resolved'] ?? 0} resolv.)', Icons.report_problem_outlined, const Color(0xFFD97706)),
+                  _statBox('Manutenções & O.S.', '${maint['totalOrders'] ?? 0} (${maint['overdueEquipment'] ?? 0} equip. atrasados)', Icons.build_circle_outlined, const Color(0xFF7C3AED)),
+                  _statBox('Frota & Garagem', '${comm['totalVehicles'] ?? 0} veículos • ${comm['occupiedParkingSpots'] ?? 0}/${comm['totalParkingSpots'] ?? 0} vagas', Icons.directions_car_outlined, const Color(0xFF0F766E)),
+                  _statBox('Inadimplência Unidades', '${fin['overdueUnits'] ?? 0} unid. em atraso', Icons.account_balance_wallet_outlined, const Color(0xFFDC2626)),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const Text('Utilização das Áreas Comuns', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const SizedBox(height: 8),
+              if (areas.isEmpty)
+                const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('Nenhuma reserva registrada para as áreas comuns neste período.')))
+              else
+                ...areas.map((a) => Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
+                      child: ListTile(
+                        leading: const Icon(Icons.deck_outlined, color: Color(0xFF2563EB)),
+                        title: Text(a['commonAreaName']?.toString() ?? 'Área Comum', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(
+                          'Confirmadas: ${a['confirmedBookings'] ?? 0} • Pendentes: ${a['pendingBookings'] ?? 0} • Lista de Espera: ${a['waitlistedBookings'] ?? 0} • Canceladas: ${a['cancelledBookings'] ?? 0}',
+                        ),
+                      ),
+                    )),
+            ],
+          );
+  }
+
+  Widget _statBox(String title, String value, IconData icon, Color color) {
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Expanded(child: Text(title, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600))),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(value, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );

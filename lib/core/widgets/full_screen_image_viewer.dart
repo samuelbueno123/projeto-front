@@ -7,18 +7,29 @@ import '../config/api_config.dart';
 
 Uint8List? decodeDataUrlImage(String rawValue) {
   final value = rawValue.trim();
-  if (!value.startsWith('data:image')) {
-    return null;
+  if (value.startsWith('data:')) {
+    final parts = value.split(',');
+    if (parts.length >= 2) {
+      try {
+        final cleanBase64 = parts.last.replaceAll(RegExp(r'\s+'), '');
+        return base64Decode(cleanBase64);
+      } catch (_) {
+        return null;
+      }
+    }
   }
-  final parts = value.split(',');
-  if (parts.length < 2) {
-    return null;
+  // Suporte a base64 cru (JPEG / PNG / WebP)
+  if (value.startsWith('/9j/') ||
+      value.startsWith('iVBOR') ||
+      value.startsWith('UklGR')) {
+    try {
+      final cleanBase64 = value.replaceAll(RegExp(r'\s+'), '');
+      return base64Decode(cleanBase64);
+    } catch (_) {
+      return null;
+    }
   }
-  try {
-    return base64Decode(parts.last);
-  } catch (_) {
-    return null;
-  }
+  return null;
 }
 
 ImageProvider? resolveAvatarImageProvider(String? rawValue) {

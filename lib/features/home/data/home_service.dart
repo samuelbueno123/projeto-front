@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 
+import '../../../core/config/api_config.dart';
 import '../../../core/http/http_client_wrapper.dart';
 import '../../../core/http/api_exception.dart';
 
@@ -9,6 +10,8 @@ class HomeService {
 
   final String? token;
   final HttpClientWrapper _wrapper;
+
+  String get baseUrl => ApiConfig.baseUrl;
 
   Future<dynamic> get(String path) async {
     try {

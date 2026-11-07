@@ -49,9 +49,12 @@ class _AnnouncementComposerDialogState
     extends State<_AnnouncementComposerDialog> {
   final _title = TextEditingController();
   final _content = TextEditingController();
-  late bool _wholeCondominium =
-      widget.allowCondominiumWide && widget.initialUnit == null;
+  late String _targetType =
+      (widget.allowCondominiumWide && widget.initialUnit == null) ? 'ALL' : 'UNIT';
   Map<String, dynamic>? _unit;
+  List<Map<String, dynamic>> _sectors = [];
+  num? _selectedSectorId;
+  String _selectedRole = 'ROLE_RESIDENT';
   bool _sending = false;
   String? _error;
 
@@ -59,6 +62,28 @@ class _AnnouncementComposerDialogState
   void initState() {
     super.initState();
     _unit = widget.initialUnit;
+    if (widget.allowCondominiumWide) {
+      _loadSectors();
+    }
+  }
+
+  Future<void> _loadSectors() async {
+    try {
+      final res = await widget.api.get('/manager/condominiums/${widget.directory.condominiumId}/sectors');
+      final list = res is List
+          ? res.whereType<Map<String, dynamic>>().toList()
+          : (res is Map && res['content'] is List
+              ? (res['content'] as List).whereType<Map<String, dynamic>>().toList()
+              : <Map<String, dynamic>>[]);
+      if (mounted) {
+        setState(() {
+          _sectors = list;
+          if (_sectors.isNotEmpty) {
+            _selectedSectorId = _sectors.first['id'] as num?;
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -72,7 +97,10 @@ class _AnnouncementComposerDialogState
       !_sending &&
       _title.text.trim().isNotEmpty &&
       _content.text.trim().isNotEmpty &&
-      (_wholeCondominium || _unit != null);
+      (_targetType == 'ALL' ||
+          (_targetType == 'UNIT' && _unit != null) ||
+          (_targetType == 'SECTOR' && _selectedSectorId != null) ||
+          _targetType == 'ROLE');
 
   Future<void> _pickUnit() async {
     final selection = await showUnitResidentPicker(
@@ -96,7 +124,9 @@ class _AnnouncementComposerDialogState
         body: {
           'title': _title.text.trim(),
           'content': _content.text.trim(),
-          if (!_wholeCondominium) 'unitId': _unit!['id'],
+          if (_targetType == 'UNIT' && _unit != null) 'unitId': _unit!['id'],
+          if (_targetType == 'SECTOR' && _selectedSectorId != null) 'sectorId': _selectedSectorId,
+          if (_targetType == 'ROLE') 'targetRole': _selectedRole,
         },
       );
       if (mounted) Navigator.pop(context, true);
@@ -123,33 +153,85 @@ class _AnnouncementComposerDialogState
       ],
     ),
     content: SizedBox(
-      width: 440,
+      width: 480,
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.allowCondominiumWide) ...[
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(
-                    value: true,
-                    icon: Icon(Icons.apartment_rounded),
-                    label: Text('Todo o condomínio'),
+              DropdownButtonFormField<String>(
+                value: _targetType,
+                decoration: const InputDecoration(
+                  labelText: 'Segmentação / Destinatários',
+                  prefixIcon: Icon(Icons.groups_outlined),
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: 'ALL',
+                    child: Text('Todo o condomínio'),
                   ),
-                  ButtonSegment(
-                    value: false,
-                    icon: Icon(Icons.home_outlined),
-                    label: Text('Unidade específica'),
+                  if (_sectors.isNotEmpty)
+                    const DropdownMenuItem(
+                      value: 'SECTOR',
+                      child: Text('Bloco / Setor específico'),
+                    ),
+                  const DropdownMenuItem(
+                    value: 'ROLE',
+                    child: Text('Perfil específico (Moradores / Portaria)'),
+                  ),
+                  const DropdownMenuItem(
+                    value: 'UNIT',
+                    child: Text('Unidade específica'),
                   ),
                 ],
-                selected: {_wholeCondominium},
-                onSelectionChanged: (value) =>
-                    setState(() => _wholeCondominium = value.first),
+                onChanged: (value) =>
+                    setState(() => _targetType = value ?? 'ALL'),
               ),
               const SizedBox(height: 12),
             ],
-            if (!_wholeCondominium) ...[
+            if (_targetType == 'SECTOR' && _sectors.isNotEmpty) ...[
+              DropdownButtonFormField<num>(
+                value: _selectedSectorId,
+                decoration: const InputDecoration(
+                  labelText: 'Bloco / Setor destinatário',
+                  prefixIcon: Icon(Icons.domain_outlined),
+                ),
+                items: _sectors
+                    .map(
+                      (s) => DropdownMenuItem<num>(
+                        value: s['id'] as num?,
+                        child: Text(s['name']?.toString() ?? 'Bloco'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (val) => setState(() => _selectedSectorId = val),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (_targetType == 'ROLE') ...[
+              DropdownButtonFormField<String>(
+                value: _selectedRole,
+                decoration: const InputDecoration(
+                  labelText: 'Perfil destinatário',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'ROLE_RESIDENT',
+                    child: Text('Somente Moradores'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'ROLE_DOORMAN',
+                    child: Text('Somente Portaria / Funcionários'),
+                  ),
+                ],
+                onChanged: (val) =>
+                    setState(() => _selectedRole = val ?? 'ROLE_RESIDENT'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (_targetType == 'UNIT') ...[
               OutlinedButton.icon(
                 onPressed: _sending ? null : _pickUnit,
                 icon: const Icon(Icons.home_work_outlined),

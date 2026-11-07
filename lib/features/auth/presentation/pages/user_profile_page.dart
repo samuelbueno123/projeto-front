@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/widgets/full_screen_image_viewer.dart';
+import '../../../../core/widgets/user_avatar.dart';
 import '../../../home/data/home_service.dart';
 import '../widgets/google_login_button.dart';
 
@@ -346,8 +347,6 @@ class _UserProfilePageState extends State<UserProfilePage> {
     }
   }
 
-  ImageProvider? get _avatarImage => resolveAvatarImageProvider(_profileImage);
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -442,7 +441,10 @@ class _UserProfilePageState extends State<UserProfilePage> {
           Stack(
             alignment: Alignment.bottomRight,
             children: [
-              GestureDetector(
+              UserAvatar(
+                imageSource: _profileImage,
+                name: _name.text,
+                radius: 52,
                 onTap: (_profileImage != null && _profileImage!.trim().isNotEmpty)
                     ? () => showFullScreenImage(
                           context,
@@ -450,22 +452,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
                           title: _name.text,
                         )
                     : null,
-                child: CircleAvatar(
-                  radius: 52,
-                  backgroundColor: isDark
-                      ? const Color(0xFF1E293B)
-                      : const Color(0xFFEFF6FF),
-                  backgroundImage: _avatarImage,
-                  child: _avatarImage == null
-                      ? Icon(
-                          Icons.person_rounded,
-                          size: 50,
-                          color: isDark
-                              ? const Color(0xFF93C5FD)
-                              : SaaSColors.primary,
-                        )
-                      : null,
-                ),
+                tooltip: (_profileImage != null && _profileImage!.trim().isNotEmpty)
+                    ? 'Ver foto em tela cheia'
+                    : null,
               ),
               IconButton.filled(
                 onPressed: _pickImage,

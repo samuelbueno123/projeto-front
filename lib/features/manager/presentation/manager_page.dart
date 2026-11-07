@@ -6,10 +6,12 @@ import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../core/design_system/saas_design_system.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/enter_search_field.dart';
 import '../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../core/widgets/role_switcher_pill.dart';
+import '../../../core/widgets/user_avatar.dart';
 import '../../auth/presentation/pages/user_profile_page.dart';
 import '../../community/data/community_api.dart';
 import '../../community/presentation/dialogs/counter_proposal_dialog.dart';
@@ -73,9 +75,6 @@ class _ManagerPageState extends State<ManagerPage> {
     } catch (_) {}
   }
 
-  ImageProvider? get _profileAvatarImage =>
-      resolveAvatarImageProvider(_profile['profileImage'] as String?);
-
   void _openProfile() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -93,6 +92,26 @@ class _ManagerPageState extends State<ManagerPage> {
           refreshWithCredentials: (_, __) async {},
           refreshGoogleSession: () async {},
         ),
+      ),
+    );
+  }
+
+    Future<void> _openMainPhotosManagerDialog() async {
+    if (_selected == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => _MainPhotosManagerDialog(
+        api: _api,
+        condominiumId: _selected!,
+        condominiumName: _selectedCondoName(),
+        currentCondoImage: _condoDetails?['imageUrl'] as String?,
+        onCondoImageUpdated: (newUri) {
+          setState(() {
+            if (_condoDetails != null) {
+              _condoDetails!['imageUrl'] = newUri;
+            }
+          });
+        },
       ),
     );
   }
@@ -276,6 +295,109 @@ class _ManagerPageState extends State<ManagerPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Comunicado publicado com sucesso!')),
       );
+    }
+  }
+
+  Future<void> _openAnnouncementsReceiptsDialog() async {
+    final condoId = _selected;
+    if (condoId == null) return;
+    try {
+      final res = await _api.get('/condominiums/$condoId/announcements');
+      final list = res is List
+          ? res.whereType<Map<String, dynamic>>().toList()
+          : <Map<String, dynamic>>[];
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Comunicados & Confirmações de Leitura'),
+              FilledButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Novo Comunicado'),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await _sendAnnouncement();
+                },
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 580,
+            height: 440,
+            child: list.isEmpty
+                ? const Center(child: Text('Nenhum comunicado publicado neste condomínio.'))
+                : ListView.separated(
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => const Divider(),
+                    itemBuilder: (_, idx) {
+                      final a = list[idx];
+                      final readCount = a['readCount'] ?? 0;
+                      final targetDesc = a['targetDescription']?.toString() ?? 'Todo o condomínio';
+                      return ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFFFEF3C7),
+                          child: Icon(Icons.campaign_outlined, color: Color(0xFFD97706)),
+                        ),
+                        title: Text(a['title']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('Público: $targetDesc\nLeituras confirmadas: $readCount'),
+                        isThreeLine: true,
+                        trailing: OutlinedButton.icon(
+                          icon: const Icon(Icons.done_all_rounded, size: 16),
+                          label: Text('Ver leitores ($readCount)'),
+                          onPressed: () async {
+                            try {
+                              final readers = await _communityApi.getAnnouncementReaders(a['id'] as num);
+                              if (!ctx.mounted) return;
+                              await showDialog<void>(
+                                context: ctx,
+                                builder: (rCtx) => AlertDialog(
+                                  title: Text('Leituras: ${a['title'] ?? ''}'),
+                                  content: SizedBox(
+                                    width: 440,
+                                    height: 320,
+                                    child: readers.isEmpty
+                                        ? const Center(child: Text('Nenhum usuário confirmou a leitura ainda.'))
+                                        : ListView.builder(
+                                            itemCount: readers.length,
+                                            itemBuilder: (_, rIdx) {
+                                              final r = readers[rIdx];
+                                              return ListTile(
+                                                dense: true,
+                                                leading: const Icon(Icons.verified_user_outlined, color: Color(0xFF15803D)),
+                                                title: Text(r['userName']?.toString() ?? 'Morador'),
+                                                subtitle: Text('${r['userEmail'] ?? ''} • ${r['readAt'] ?? ''}'),
+                                              );
+                                            },
+                                          ),
+                                  ),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(rCtx), child: const Text('Fechar')),
+                                  ],
+                                ),
+                              );
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+                              }
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
     }
   }
 
@@ -762,85 +884,16 @@ Emitido via Âncora Gestão
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDesktop = MediaQuery.of(context).size.width >= 980;
 
     return Scaffold(
       backgroundColor: SaaSColors.background(isDark),
-      appBar: AppBar(
-        title: const Text('Painel do Síndico'),
-        backgroundColor: SaaSColors.surface(isDark),
-        actions: [
-          if (widget.currentRole != null && widget.onSwitchRole != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-              child: RoleSwitcherPill(
-                currentRole: widget.currentRole!,
-                availableRoles: widget.availableRoles,
-                onSwitchRole: widget.onSwitchRole!,
-                isLight: !isDark,
-              ),
-            ),
-          // User Profile Avatar
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-            child: InkWell(
-              onTap: _openProfile,
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                    width: 1.5,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 17,
-                  backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                  backgroundImage: _profileAvatarImage,
-                  child: _profileAvatarImage == null
-                      ? Icon(
-                          Icons.person_rounded,
-                          size: 20,
-                          color: isDark ? Colors.white70 : SaaSColors.primary,
-                        )
-                      : null,
-                ),
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Relatórios de gestão',
-            onPressed: _selected == null ? null : _openReportsMenu,
-            icon: const Icon(Icons.assessment_outlined),
-          ),
-          IconButton(
-            tooltip: 'Publicar comunicado',
-            onPressed: _selected == null ? null : _sendAnnouncement,
-            icon: const Icon(Icons.campaign_outlined),
-          ),
-          IconButton(
-            tooltip: 'Central de notificações',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    NotificationsPage(api: _api, condominiumId: _selected),
-              ),
-            ),
-            icon: const Icon(Icons.notifications_none_rounded),
-          ),
-          IconButton(
-            tooltip: 'Atualizar painel',
-            onPressed: _load,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-          IconButton(
-            tooltip: 'Sair da conta',
-            onPressed: widget.onLogout,
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
-      ),
-      body: _loading
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildManagerHeader(isDesktop, isDark),
+            Expanded(
+              child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(
@@ -879,6 +932,10 @@ Emitido via Âncora Gestão
                         return _buildMobileManagerLayout(isDark);
                       },
                     ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1095,6 +1152,12 @@ Emitido via Âncora Gestão
                         onPressed: _sendAnnouncement,
                         icon: const Icon(Icons.campaign_outlined, size: 16),
                         label: const Text('Comunicado'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _openAnnouncementsReceiptsDialog,
+                        icon: const Icon(Icons.done_all_rounded, size: 16),
+                        label: const Text('Mural & Leituras'),
                       ),
                       const SizedBox(width: 8),
                       OutlinedButton.icon(
@@ -1452,6 +1515,16 @@ Emitido via Âncora Gestão
                           const SizedBox(width: 8),
                           FilledButton.icon(
                             style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFEF9C3),
+                              foregroundColor: const Color(0xFF854D0E),
+                            ),
+                            onPressed: _openAnnouncementsReceiptsDialog,
+                            icon: const Icon(Icons.done_all_rounded, size: 16),
+                            label: const Text('Leituras'),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
                               backgroundColor: const Color(0xFFDCFCE7),
                               foregroundColor: const Color(0xFF15803D),
                             ),
@@ -1689,22 +1762,12 @@ Emitido via Âncora Gestão
 
   String _formatDate(dynamic dateString) {
     if (dateString == null) return '';
-    try {
-      final dt = DateTime.parse(dateString.toString());
-      return DateFormat('dd/MM/yyyy').format(dt);
-    } catch (_) {
-      return dateString.toString();
-    }
+    return formatDate(dateString, fallback: dateString.toString());
   }
 
   String _formatDateTime(dynamic dateTimeString) {
     if (dateTimeString == null) return '';
-    try {
-      final dt = DateTime.parse(dateTimeString.toString()).toLocal();
-      return DateFormat('dd/MM/yyyy HH:mm').format(dt);
-    } catch (_) {
-      return dateTimeString.toString();
-    }
+    return formatDateTime(dateTimeString, fallback: dateTimeString.toString());
   }
 
   String _translateStatus(dynamic status) {
@@ -1784,6 +1847,359 @@ Emitido via Âncora Gestão
       ),
     ),
   );
+
+  Widget _buildManagerHeader(bool isDesktop, bool isDark) {
+    final condoName = _selectedCondoName();
+    final condoImg = _condoDetails?['imageUrl'] as String?;
+
+    if (isDesktop) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          border: Border(
+            bottom: BorderSide(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+              width: 1,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 40,
+                height: 40,
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                alignment: Alignment.center,
+                child: (condoImg != null && condoImg.isNotEmpty)
+                    ? (condoImg.startsWith('data:')
+                        ? Image.memory(
+                            base64Decode(condoImg.split(',').last),
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.apartment_rounded, color: SaaSColors.primary, size: 22),
+                          )
+                        : Image.network(
+                            condoImg,
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.apartment_rounded, color: SaaSColors.primary, size: 22),
+                          ))
+                    : const Icon(Icons.apartment_rounded, color: SaaSColors.primary, size: 22),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  condoName,
+                  style: TextStyle(
+                    color: SaaSColors.textPrimary(isDark),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                Text(
+                  'Painel do Síndico • Olá, ${firstNameOf(widget.userName, fallback: 'Síndico')}!',
+                  style: TextStyle(
+                    color: SaaSColors.textSecondary(isDark),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 24),
+
+            _managerHeaderTab(
+              icon: Icons.photo_library_outlined,
+              label: 'Fotos Principais',
+              onTap: _openMainPhotosManagerDialog,
+              isDark: isDark,
+            ),
+            _managerHeaderTab(
+              icon: Icons.campaign_outlined,
+              label: 'Comunicado',
+              onTap: _selected == null ? null : _sendAnnouncement,
+              isDark: isDark,
+            ),
+            _managerHeaderTab(
+              icon: Icons.assessment_outlined,
+              label: 'Relatórios',
+              onTap: _selected == null ? null : _openReportsMenu,
+              isDark: isDark,
+            ),
+
+            const Spacer(),
+
+            if (widget.currentRole != null && widget.onSwitchRole != null) ...[
+              RoleSwitcherPill(
+                currentRole: widget.currentRole!,
+                availableRoles: widget.availableRoles,
+                onSwitchRole: widget.onSwitchRole!,
+                isLight: !isDark,
+              ),
+              const SizedBox(width: 8),
+            ],
+
+            IconButton(
+              tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
+              onPressed: () {
+                final nextPref = isDark ? 'LIGHT' : 'DARK';
+                AppTheme.setThemePreference(nextPref);
+                _communityApi.updateThemePreference(nextPref);
+              },
+              icon: Icon(
+                isDark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
+                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                size: 20,
+              ),
+            ),
+
+            IconButton(
+              tooltip: 'Central de Notificações',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => NotificationsPage(api: _api, condominiumId: _selected),
+                ),
+              ),
+              icon: Icon(
+                Icons.notifications_outlined,
+                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                size: 20,
+              ),
+            ),
+
+            IconButton(
+              tooltip: 'Atualizar Painel',
+              onPressed: _load,
+              icon: Icon(
+                Icons.refresh_rounded,
+                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                size: 20,
+              ),
+            ),
+
+            const SizedBox(width: 8),
+
+            UserAvatar(
+              imageSource: _profile['profileImage']?.toString(),
+              name: _profile['firstName']?.toString() ?? widget.userName,
+              radius: 18,
+              onTap: _openProfile,
+              tooltip: 'Meu Perfil',
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Mobile / Tablet Header
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFF1E3A8A),
+        border: Border(
+          bottom: BorderSide(
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFF1D4ED8),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  color: Colors.white24,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.apartment_rounded, color: Colors.white, size: 20),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      condoName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'Painel do Síndico • Olá, ${firstNameOf(widget.userName, fallback: 'Síndico')}!',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.currentRole != null && widget.onSwitchRole != null)
+                RoleSwitcherPill(
+                  currentRole: widget.currentRole!,
+                  availableRoles: widget.availableRoles,
+                  onSwitchRole: widget.onSwitchRole!,
+                ),
+              const SizedBox(width: 4),
+              UserAvatar(
+                imageSource: _profile['profileImage']?.toString(),
+                name: _profile['firstName']?.toString() ?? widget.userName,
+                radius: 16,
+                backgroundColor: Colors.white24,
+                foregroundColor: Colors.white,
+                borderColor: Colors.white38,
+                onTap: _openProfile,
+                tooltip: 'Meu Perfil',
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _managerMobileActionButton(
+                  icon: Icons.photo_library_outlined,
+                  label: 'Fotos Principais',
+                  onTap: _openMainPhotosManagerDialog,
+                ),
+                const SizedBox(width: 8),
+                _managerMobileActionButton(
+                  icon: Icons.campaign_outlined,
+                  label: 'Comunicado',
+                  onTap: _selected == null ? null : _sendAnnouncement,
+                ),
+                const SizedBox(width: 8),
+                _managerMobileActionButton(
+                  icon: Icons.assessment_outlined,
+                  label: 'Relatórios',
+                  onTap: _selected == null ? null : _openReportsMenu,
+                ),
+                const SizedBox(width: 8),
+                _managerMobileActionButton(
+                  icon: Icons.notifications_outlined,
+                  label: 'Notificações',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => NotificationsPage(api: _api, condominiumId: _selected),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _managerMobileActionButton(
+                  icon: Icons.refresh_rounded,
+                  label: 'Atualizar',
+                  onTap: _load,
+                ),
+
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _managerHeaderTab({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    required bool isDark,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: isDark ? const Color(0xFF93C5FD) : SaaSColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _managerMobileActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    bool isDestructive = false,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isDestructive ? const Color(0xFFEF4444).withValues(alpha: 0.25) : Colors.white12,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isDestructive ? const Color(0xFFEF4444) : Colors.white24),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: Colors.white),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ManagerUnitsMenuPage extends StatefulWidget {
@@ -1923,12 +2339,7 @@ class _ManagerReservationsMenuPageState
 
   String _formatDateTime(dynamic dateTimeString) {
     if (dateTimeString == null) return '';
-    try {
-      final dt = DateTime.parse(dateTimeString.toString()).toLocal();
-      return DateFormat('dd/MM/yyyy HH:mm').format(dt);
-    } catch (_) {
-      return dateTimeString.toString();
-    }
+    return formatDateTime(dateTimeString, fallback: dateTimeString.toString());
   }
 
   bool _isCancelled(Map<String, dynamic> r) {
@@ -1941,7 +2352,8 @@ class _ManagerReservationsMenuPageState
     final endAt = r['endAt'];
     if (endAt == null) return false;
     try {
-      final dt = DateTime.parse(endAt.toString()).toLocal();
+      final dt = parseUtcToLocal(endAt);
+      if (dt == null) return false;
       return dt.isBefore(DateTime.now());
     } catch (_) {
       return false;
@@ -2080,17 +2492,60 @@ class _ManagerReservationsMenuPageState
                     ),
                     margin: const EdgeInsets.only(bottom: 10),
                     child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: isItemCancelled
-                            ? const Color(0xFFFEE2E2)
-                            : const Color(0xFFE0E7FF),
-                        child: Icon(
-                          isItemCancelled
-                              ? Icons.cancel_outlined
-                              : Icons.event_available_outlined,
-                          color: isItemCancelled
-                              ? const Color(0xFFDC2626)
-                              : const Color(0xFF2F3FB0),
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: (reservation['imageUrl'] != null && reservation['imageUrl'].toString().isNotEmpty)
+                              ? (reservation['imageUrl'].toString().startsWith('data:')
+                                  ? Image.memory(
+                                      base64Decode(reservation['imageUrl'].toString().split(',').last),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => CircleAvatar(
+                                        backgroundColor: isItemCancelled
+                                            ? const Color(0xFFFEE2E2)
+                                            : const Color(0xFFE0E7FF),
+                                        child: Icon(
+                                          isItemCancelled
+                                              ? Icons.cancel_outlined
+                                              : Icons.event_available_outlined,
+                                          color: isItemCancelled
+                                              ? const Color(0xFFDC2626)
+                                              : const Color(0xFF2F3FB0),
+                                        ),
+                                      ),
+                                    )
+                                  : Image.network(
+                                      reservation['imageUrl'].toString(),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => CircleAvatar(
+                                        backgroundColor: isItemCancelled
+                                            ? const Color(0xFFFEE2E2)
+                                            : const Color(0xFFE0E7FF),
+                                        child: Icon(
+                                          isItemCancelled
+                                              ? Icons.cancel_outlined
+                                              : Icons.event_available_outlined,
+                                          color: isItemCancelled
+                                              ? const Color(0xFFDC2626)
+                                              : const Color(0xFF2F3FB0),
+                                        ),
+                                      ),
+                                    ))
+                              : CircleAvatar(
+                                  backgroundColor: isItemCancelled
+                                      ? const Color(0xFFFEE2E2)
+                                      : const Color(0xFFE0E7FF),
+                                  child: Icon(
+                                    isItemCancelled
+                                        ? Icons.cancel_outlined
+                                        : Icons.event_available_outlined,
+                                    color: isItemCancelled
+                                        ? const Color(0xFFDC2626)
+                                        : const Color(0xFF2F3FB0),
+                                  ),
+                                ),
                         ),
                       ),
                       title: Text(
@@ -2258,6 +2713,437 @@ class _ManagerReservationsMenuPageState
                     ),
                   );
                 }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+  class _MainPhotosManagerDialog extends StatefulWidget {
+  const _MainPhotosManagerDialog({
+    required this.api,
+    required this.condominiumId,
+    required this.condominiumName,
+    this.currentCondoImage,
+    required this.onCondoImageUpdated,
+  });
+
+  final HomeService api;
+  final int condominiumId;
+  final String condominiumName;
+  final String? currentCondoImage;
+  final ValueChanged<String> onCondoImageUpdated;
+
+  @override
+  State<_MainPhotosManagerDialog> createState() => _MainPhotosManagerDialogState();
+}
+
+class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
+  String? _condoImg;
+  List<Map<String, dynamic>> _commonAreas = [];
+  List<Map<String, dynamic>> _sectors = [];
+  bool _loadingAreas = true;
+  bool _loadingSectors = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _condoImg = widget.currentCondoImage;
+    _fetchAreas();
+    _fetchSectors();
+  }
+
+  Future<void> _fetchAreas() async {
+    try {
+      final res = await widget.api.get('/condominiums/${widget.condominiumId}/common-areas/all');
+      if (mounted) {
+        setState(() {
+          _commonAreas = res is List ? res.whereType<Map<String, dynamic>>().toList() : [];
+          _loadingAreas = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingAreas = false);
+    }
+  }
+
+  Future<void> _fetchSectors() async {
+    try {
+      final res = await widget.api.get('/sectors?condominiumId=${widget.condominiumId}');
+      if (mounted) {
+        setState(() {
+          _sectors = res is List ? res.whereType<Map<String, dynamic>>().toList() : [];
+          _loadingSectors = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingSectors = false);
+    }
+  }
+
+  Future<String?> _pickBase64Image() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      maxHeight: 1200,
+      imageQuality: 85,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final ext = picked.name.split('.').last.toLowerCase();
+    final mime = switch (ext) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
+    return 'data:$mime;base64,${base64Encode(bytes)}';
+  }
+
+  Future<void> _changeCondoImage() async {
+    final dataUri = await _pickBase64Image();
+    if (dataUri == null) return;
+    try {
+      await widget.api.send('PATCH', '/condominiums/${widget.condominiumId}/image', body: {
+        'imageUrl': dataUri,
+      });
+      if (mounted) {
+        setState(() => _condoImg = dataUri);
+        widget.onCondoImageUpdated(dataUri);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto da fachada do condomínio atualizada!'), backgroundColor: Color(0xFF15803D)),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+    }
+  }
+
+  Future<void> _changeAreaImage(Map<String, dynamic> area) async {
+    final dataUri = await _pickBase64Image();
+    if (dataUri == null) return;
+    try {
+      await widget.api.send('PATCH', '/common-areas/${area['id']}/image', body: {
+        'imageUrl': dataUri,
+      });
+      if (mounted) {
+        setState(() {
+          area['imageUrl'] = dataUri;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Foto de "${area['name']}" atualizada com sucesso!'), backgroundColor: const Color(0xFF15803D)),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+    }
+  }
+
+  Future<void> _changeSectorImage(Map<String, dynamic> sector) async {
+    final dataUri = await _pickBase64Image();
+    if (dataUri == null) return;
+    try {
+      await widget.api.send('PATCH', '/sectors/${sector['id']}/image', body: {
+        'imageUrl': dataUri,
+      });
+      if (mounted) {
+        setState(() {
+          sector['imageUrl'] = dataUri;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Foto de "${sector['name']}" atualizada com sucesso!'), backgroundColor: const Color(0xFF15803D)),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+    }
+  }
+
+  Widget _buildPhotoThumbnail(String? url, IconData fallbackIcon) {
+    if (url != null && url.isNotEmpty) {
+      if (url.startsWith('data:')) {
+        try {
+          return Image.memory(
+            base64Decode(url.split(',').last),
+            width: 52,
+            height: 52,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Icon(fallbackIcon, color: SaaSColors.primary, size: 26),
+          );
+        } catch (_) {}
+      } else {
+        return Image.network(
+          url,
+          width: 52,
+          height: 52,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Icon(fallbackIcon, color: SaaSColors.primary, size: 26),
+        );
+      }
+    }
+    return Icon(fallbackIcon, color: SaaSColors.primary, size: 26);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 600),
+        child: DefaultTabController(
+          length: 3,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.photo_library_outlined, color: SaaSColors.primary, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Fotos Principais do Condomínio',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                          ),
+                          Text(
+                            'Personalize as imagens reais de fachada, áreas de lazer e blocos',
+                            style: TextStyle(fontSize: 12, color: SaaSColors.textSecondary(isDark)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              TabBar(
+                labelColor: SaaSColors.primary,
+                unselectedLabelColor: SaaSColors.textSecondary(isDark),
+                indicatorColor: SaaSColors.primary,
+                tabs: const [
+                  Tab(icon: Icon(Icons.apartment_rounded, size: 18), text: 'Condomínio'),
+                  Tab(icon: Icon(Icons.deck_rounded, size: 18), text: 'Áreas Comuns'),
+                  Tab(icon: Icon(Icons.business_outlined, size: 18), text: 'Setores / Blocos'),
+                ],
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    // Tab 1: Fachada
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'Foto de Fachada do Condomínio',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Esta foto aparece no topo do menu de todos os moradores e na apresentação do condomínio.',
+                            style: TextStyle(fontSize: 12.5, color: SaaSColors.textSecondary(isDark)),
+                          ),
+                          const SizedBox(height: 16),
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                width: double.infinity,
+                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                alignment: Alignment.center,
+                                child: _condoImg != null && _condoImg!.isNotEmpty
+                                    ? (_condoImg!.startsWith('data:')
+                                        ? Image.memory(
+                                            base64Decode(_condoImg!.split(',').last),
+                                            width: double.infinity,
+                                            height: double.infinity,
+                                            fit: BoxFit.cover,
+                                          )
+                                        : Image.network(
+                                            _condoImg!,
+                                            width: double.infinity,
+                                            height: double.infinity,
+                                            fit: BoxFit.cover,
+                                          ))
+                                    : Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.add_photo_alternate_outlined, size: 48, color: SaaSColors.textSecondary(isDark)),
+                                          const SizedBox(height: 8),
+                                          Text('Nenhuma foto de fachada definida', style: TextStyle(color: SaaSColors.textSecondary(isDark), fontSize: 13)),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Center(
+                            child: FilledButton.icon(
+                              onPressed: _changeCondoImage,
+                              icon: const Icon(Icons.photo_camera_outlined),
+                              label: Text(_condoImg == null ? 'Definir Foto da Fachada' : 'Alterar Foto da Fachada'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Tab 2: Áreas Comuns
+                    _loadingAreas
+                        ? const Center(child: CircularProgressIndicator())
+                        : _commonAreas.isEmpty
+                            ? const Center(child: Text('Nenhuma área comum cadastrada no condomínio.'))
+                            : ListView.separated(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: _commonAreas.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                itemBuilder: (context, idx) {
+                                  final area = _commonAreas[idx];
+                                  final img = area['imageUrl']?.toString();
+                                  return Card(
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Row(
+                                        children: [
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: Container(
+                                              width: 52,
+                                              height: 52,
+                                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                                              alignment: Alignment.center,
+                                              child: _buildPhotoThumbnail(img, Icons.deck_rounded),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  area['name'] ?? 'Área Comum',
+                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  'Capacidade: ${area['capacity'] ?? 'Livre'} pessoas • ${img != null && img.isNotEmpty ? 'Foto definida' : 'Sem foto cadastrada'}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: img != null && img.isNotEmpty ? const Color(0xFF15803D) : SaaSColors.textSecondary(isDark),
+                                                    fontWeight: img != null && img.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          FilledButton.tonalIcon(
+                                            style: FilledButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            ),
+                                            onPressed: () => _changeAreaImage(area),
+                                            icon: const Icon(Icons.add_a_photo_outlined, size: 16),
+                                            label: Text(img == null ? 'Definir Foto' : 'Alterar'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+
+                    // Tab 3: Setores / Blocos
+                    _loadingSectors
+                        ? const Center(child: CircularProgressIndicator())
+                        : _sectors.isEmpty
+                            ? const Center(child: Text('Nenhum setor ou bloco cadastrado.'))
+                            : ListView.separated(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: _sectors.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                itemBuilder: (context, idx) {
+                                  final sector = _sectors[idx];
+                                  final img = sector['imageUrl']?.toString();
+                                  return Card(
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Row(
+                                        children: [
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: Container(
+                                              width: 52,
+                                              height: 52,
+                                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                                              alignment: Alignment.center,
+                                              child: _buildPhotoThumbnail(img, Icons.apartment_rounded),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  sector['name'] ?? 'Setor',
+                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  'Tipo: ${sector['structuralType'] ?? 'BLOCO'} • ${img != null && img.isNotEmpty ? 'Foto definida' : 'Sem foto cadastrada'}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: img != null && img.isNotEmpty ? const Color(0xFF15803D) : SaaSColors.textSecondary(isDark),
+                                                    fontWeight: img != null && img.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          FilledButton.tonalIcon(
+                                            style: FilledButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            ),
+                                            onPressed: () => _changeSectorImage(sector),
+                                            icon: const Icon(Icons.add_a_photo_outlined, size: 16),
+                                            label: Text(img == null ? 'Definir Foto' : 'Alterar'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

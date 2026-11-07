@@ -11,6 +11,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/enter_search_field.dart';
 import '../../../../core/widgets/role_switcher_pill.dart';
+import '../../../../core/widgets/user_avatar.dart';
 import '../../../auth/presentation/pages/user_profile_page.dart';
 import '../../../community/data/community_api.dart';
 import '../../../community/presentation/dialogs/boleto_payment_dialog.dart';
@@ -90,25 +91,51 @@ class _HomePageState extends State<HomePage> {
 
   String get _unitDisplay {
     if (_memberships.isNotEmpty) {
-      final unitName = _memberships.first['unitIdentifier'] ?? _memberships.first['unitName'];
-      if (unitName != null && unitName.toString().isNotEmpty) {
+      final mem = _memberships.first;
+      final unitName = mem['unitIdentifier'] ?? mem['unitName'];
+      if (unitName != null && unitName.toString().trim().isNotEmpty) {
         return 'Apartamento $unitName';
       }
+      final label = mem['unitLabel']?.toString();
+      if (label != null && label.trim().isNotEmpty) {
+        final match = RegExp(r'Unid\.?\s*([^\s•]+)').firstMatch(label);
+        if (match != null) {
+          return 'Apartamento ${match.group(1)}';
+        }
+        return label;
+      }
     }
-    return 'Apartamento 204';
+    final profileUnit = _profile['unitIdentifier'] ?? _profile['unitName'];
+    if (profileUnit != null && profileUnit.toString().trim().isNotEmpty) {
+      return 'Apartamento $profileUnit';
+    }
+    return 'Sem unidade vinculada';
   }
 
   String get _sectorDisplay {
     if (_memberships.isNotEmpty) {
-      final sec = _memberships.first['sectorName'] ?? _memberships.first['sector'];
-      if (sec != null && sec.toString().isNotEmpty) {
+      final mem = _memberships.first;
+      final sec = mem['sectorName'] ?? mem['sector'];
+      if (sec != null && sec.toString().trim().isNotEmpty) {
         return 'Bloco $sec';
       }
+      final label = mem['unitLabel']?.toString();
+      if (label != null && label.contains('•')) {
+        return label.split('•').first.trim();
+      }
     }
-    return 'Bloco B';
+    final profileSec = _profile['sectorName'] ?? _profile['sector'];
+    if (profileSec != null && profileSec.toString().trim().isNotEmpty) {
+      return 'Bloco $profileSec';
+    }
+    return 'Bloco não definido';
   }
 
   bool get _canManage {
+    if (widget.currentRole != null &&
+        widget.currentRole!.toUpperCase().contains('RESIDENT')) {
+      return false;
+    }
     final token = widget.token;
     if (token == null) return false;
     try {
@@ -351,25 +378,7 @@ class _HomePageState extends State<HomePage> {
 
   String _formatDate(dynamic raw) {
     if (raw == null || raw.toString().trim().isEmpty) return '—';
-    try {
-      final dt = DateTime.parse(raw.toString()).toLocal();
-      return DateFormat('dd/MM/yyyy HH:mm').format(dt);
-    } catch (_) {
-      return raw.toString();
-    }
-  }
-
-  ImageProvider? get _profileAvatarImage {
-    final image = _profile['profileImage'];
-    if (image is! String || image.isEmpty) return null;
-    try {
-      if (image.startsWith('data:')) {
-        return MemoryImage(base64Decode(image.split(',').last));
-      }
-      return NetworkImage(image);
-    } catch (_) {
-      return null;
-    }
+    return formatDateTime(raw);
   }
 
   @override
@@ -486,6 +495,7 @@ class _HomePageState extends State<HomePage> {
             _desktopNavTab('Chat Portaria', 3),
             _desktopNavTab('Galeria de Fotos', 5),
             _desktopNavTab('Comunidade', 6),
+            _desktopNavTab('Comunicados', 7),
 
             const Spacer(),
 
@@ -536,30 +546,12 @@ class _HomePageState extends State<HomePage> {
 
             const SizedBox(width: 8),
 
-            InkWell(
+            UserAvatar(
+              imageSource: _profile['profileImage']?.toString(),
+              name: _profile['firstName']?.toString() ?? widget.userName,
+              radius: 18,
               onTap: () => setState(() => _tab = 4),
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
-                    width: 1.5,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 18,
-                  backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                  backgroundImage: _profileAvatarImage,
-                  child: _profileAvatarImage == null
-                      ? Icon(
-                          Icons.person_rounded,
-                          color: isDark ? const Color(0xFF93C5FD) : SaaSColors.primary,
-                          size: 20,
-                        )
-                      : null,
-                ),
-              ),
+              tooltip: 'Meu Perfil',
             ),
           ],
         ),
@@ -625,17 +617,15 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(width: 4),
-              InkWell(
+              UserAvatar(
+                imageSource: _profile['profileImage']?.toString(),
+                name: _profile['firstName']?.toString() ?? widget.userName,
+                radius: 17,
+                backgroundColor: Colors.white24,
+                foregroundColor: Colors.white,
+                borderColor: Colors.white38,
                 onTap: () => setState(() => _tab = 4),
-                borderRadius: BorderRadius.circular(999),
-                child: CircleAvatar(
-                  radius: 17,
-                  backgroundColor: Colors.white24,
-                  backgroundImage: _profileAvatarImage,
-                  child: _profileAvatarImage == null
-                      ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
-                      : null,
-                ),
+                tooltip: 'Meu Perfil',
               ),
             ],
           ),
@@ -722,9 +712,13 @@ class _HomePageState extends State<HomePage> {
             decoration: const BoxDecoration(color: Color(0xFF1E3A8A)),
             accountName: Text('$_residentFirstName (${widget.userName ?? ''})'),
             accountEmail: Text(widget.userEmail ?? ''),
-            currentAccountPicture: CircleAvatar(
-              backgroundImage: _profileAvatarImage,
-              child: _profileAvatarImage == null ? const Icon(Icons.person, size: 36) : null,
+            currentAccountPicture: UserAvatar(
+              imageSource: _profile['profileImage']?.toString(),
+              name: _profile['firstName']?.toString() ?? widget.userName,
+              radius: 36,
+              backgroundColor: Colors.white24,
+              foregroundColor: Colors.white,
+              borderColor: Colors.white38,
             ),
           ),
           ListTile(
@@ -779,6 +773,15 @@ class _HomePageState extends State<HomePage> {
             onTap: () {
               Navigator.pop(context);
               setState(() => _tab = 6);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.campaign_outlined),
+            title: const Text('Mural de Comunicados'),
+            selected: _tab == 7,
+            onTap: () {
+              Navigator.pop(context);
+              setState(() => _tab = 7);
             },
           ),
           const Divider(),
@@ -905,6 +908,8 @@ class _HomePageState extends State<HomePage> {
                 enabledFeatures: (_condominium!['features'] as List?)?.map((e) => e.toString()).toList(),
               )
             : _wrapPage(_announcementsPage());
+      case 7:
+        return _wrapPage(_announcementsPage());
       default:
         return isDesktop ? _desktopDashboard() : _mobileDashboard();
     }
@@ -1054,7 +1059,7 @@ class _HomePageState extends State<HomePage> {
                     icon: Icons.campaign_outlined,
                     iconColor: const Color(0xFF8B5CF6),
                     subtitle: 'Mural do condomínio',
-                    onTap: () => setState(() => _tab = 6),
+                    onTap: () => setState(() => _tab = 7),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -1150,6 +1155,24 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Minha unidade',
+                              style: TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w800,
+                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => setState(() => _tab = 4),
+                              child: const Text('Ver perfil'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
                         _buildUnitCard(),
                         const SizedBox(height: 14),
                         _buildQuickActionShortcuts(),
@@ -1192,35 +1215,61 @@ class _HomePageState extends State<HomePage> {
   // ----------------------------------------------------
   Widget _buildUnitCard() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final condoImg = _condominium?['imageUrl'] as String?;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      height: 84,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
         boxShadow: const [
-          BoxShadow(color: Color(0x08000000), blurRadius: 10, offset: Offset(0, 3)),
+          BoxShadow(color: Color(0x06000000), blurRadius: 8, offset: Offset(0, 3)),
         ],
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFEEF2FF),
-              borderRadius: BorderRadius.circular(14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFEEF2FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.center,
+              child: (condoImg != null && condoImg.isNotEmpty)
+                  ? (condoImg.startsWith('data:')
+                      ? Image.memory(
+                          base64Decode(condoImg.split(',').last),
+                          width: 52,
+                          height: 52,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.apartment_rounded, color: Color(0xFF3B82F6), size: 28),
+                        )
+                      : Image.network(
+                          condoImg,
+                          width: 52,
+                          height: 52,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.apartment_rounded, color: Color(0xFF3B82F6), size: 28),
+                        ))
+                  : const Icon(Icons.apartment_rounded, color: Color(0xFF3B82F6), size: 28),
             ),
-            child: const Icon(Icons.apartment_rounded, color: Color(0xFF3B82F6), size: 28),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   _unitDisplay,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 16.5,
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                     color: isDark ? Colors.white : const Color(0xFF0F172A),
                   ),
@@ -1228,8 +1277,10 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 2),
                 Text(
                   _sectorDisplay,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12.5,
                     color: isDark ? Colors.white60 : const Color(0xFF64748B),
                     fontWeight: FontWeight.w500,
                   ),
@@ -1239,7 +1290,7 @@ class _HomePageState extends State<HomePage> {
           ),
           OutlinedButton(
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               side: BorderSide(color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
@@ -1249,10 +1300,10 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Text(
                   'Meus dados',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
-                SizedBox(width: 4),
-                Icon(Icons.chevron_right_rounded, size: 16),
+                SizedBox(width: 2),
+                Icon(Icons.chevron_right_rounded, size: 15),
               ],
             ),
           ),
@@ -1267,20 +1318,24 @@ class _HomePageState extends State<HomePage> {
   Widget _buildQuickActionShortcuts() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          'Ações Rápidas do Condomínio',
-          style: TextStyle(
-            fontSize: 15.5,
-            fontWeight: FontWeight.w800,
-            color: isDark ? Colors.white : const Color(0xFF0F172A),
+        Center(
+          child: Text(
+            'Ações Rápidas do Condomínio',
+            style: TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+            ),
           ),
         ),
         const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
+        Center(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _quickActionItem(
                 title: 'Boletos / PIX',
@@ -1332,8 +1387,9 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
-      ],
-    );
+      ),
+    ],
+  );
   }
 
   void _showEmergencyContactsDialog() {
@@ -1655,12 +1711,7 @@ class _HomePageState extends State<HomePage> {
 
   String _formatDueDate(dynamic raw) {
     if (raw == null) return '10/08/2026';
-    try {
-      final dt = DateTime.parse(raw.toString());
-      return DateFormat('dd/MM/yyyy').format(dt);
-    } catch (_) {
-      return raw.toString();
-    }
+    return formatDate(raw);
   }
 
   Future<void> _paySingleBoleto(Map<String, dynamic> invoice) async {
@@ -1710,7 +1761,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             TextButton(
-              onPressed: () => setState(() => _tab = 6),
+              onPressed: () => setState(() => _tab = 7),
               child: const Text('Ver todos'),
             ),
           ],
@@ -1718,29 +1769,37 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 6),
         if (_announcements.isEmpty)
           InkWell(
-            onTap: () => setState(() => _tab = 6),
+            onTap: () => setState(() => _tab = 7),
             borderRadius: BorderRadius.circular(16),
             child: Container(
-              padding: const EdgeInsets.all(16),
+              height: 84,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF1E293B) : Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x06000000), blurRadius: 8, offset: Offset(0, 3)),
+                ],
               ),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    width: 52,
+                    height: 52,
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.campaign_outlined, color: Color(0xFF2563EB), size: 22),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.campaign_outlined, color: Color(0xFF2563EB), size: 24),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Text(
                       'Nenhum comunicado recente publicado para o condomínio.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 13,
                         color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
@@ -1764,57 +1823,65 @@ class _HomePageState extends State<HomePage> {
             final iconData = isSustainability ? Icons.eco_rounded : Icons.campaign_rounded;
 
             return InkWell(
-              onTap: () => setState(() => _tab = 6),
+              onTap: () => setState(() => _tab = 7),
               borderRadius: BorderRadius.circular(16),
               child: Container(
+                height: 84,
                 margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: isDark ? const Color(0xFF1E293B) : Colors.white,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x06000000), blurRadius: 8, offset: Offset(0, 3)),
+                  ],
                 ),
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(10),
+                      width: 52,
+                      height: 52,
                       decoration: BoxDecoration(
                         color: iconBg,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(iconData, color: iconColor, size: 22),
+                      alignment: Alignment.center,
+                      child: Icon(iconData, color: iconColor, size: 24),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800,
                               color: isDark ? Colors.white : const Color(0xFF0F172A),
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             dateStr,
+                            maxLines: 1,
                             style: TextStyle(
                               fontSize: 12,
                               color: isDark ? Colors.white60 : const Color(0xFF64748B),
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 2),
                           Text(
                             content,
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: 12,
                               color: isDark ? Colors.white70 : const Color(0xFF334155),
-                              height: 1.35,
                             ),
                           ),
                         ],
@@ -1822,7 +1889,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      margin: const EdgeInsets.only(top: 4),
                       width: 8,
                       height: 8,
                       decoration: const BoxDecoration(
@@ -1885,29 +1951,38 @@ class _HomePageState extends State<HomePage> {
             onTap: _createReservation,
             borderRadius: BorderRadius.circular(16),
             child: Container(
-              padding: const EdgeInsets.all(16),
+              height: 84,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF1E293B) : Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x06000000), blurRadius: 8, offset: Offset(0, 3)),
+                ],
               ),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    width: 52,
+                    height: 52,
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    alignment: Alignment.center,
                     child: const Icon(Icons.deck_rounded, color: Color(0xFF2563EB), size: 24),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
                           'Nenhuma reserva agendada',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -1916,9 +1991,11 @@ class _HomePageState extends State<HomePage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Toque para agendar salão de festas ou churrasqueira.',
+                          'Toque para agendar salão ou área comum.',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: 12,
                             color: isDark ? Colors.white60 : const Color(0xFF64748B),
                           ),
                         ),
@@ -1939,12 +2016,14 @@ class _HomePageState extends State<HomePage> {
                 ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7))
                 : (isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFDBEAFE));
             final badgeFg = isApproved ? const Color(0xFF15803D) : const Color(0xFF1D4ED8);
+            final imgUrl = (res['imageUrl'] ?? res['commonAreaImageUrl'])?.toString();
 
             return InkWell(
               onTap: () => setState(() => _tab = 2),
               borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.all(14),
+                height: 84,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: isDark ? const Color(0xFF1E293B) : Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -1958,26 +2037,36 @@ class _HomePageState extends State<HomePage> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
-                        width: 72,
-                        height: 54,
+                        width: 52,
+                        height: 52,
                         decoration: BoxDecoration(
                           color: isDark ? const Color(0xFF334155) : const Color(0xFFE0E7FF),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: (res['imageUrl'] != null && res['imageUrl'].toString().isNotEmpty)
-                            ? Image.network(
-                                res['imageUrl'].toString(),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(
-                                  Icons.deck_rounded,
-                                  color: Color(0xFF3B82F6),
-                                  size: 28,
-                                ),
-                              )
+                        child: (imgUrl != null && imgUrl.isNotEmpty)
+                            ? (imgUrl.startsWith('data:')
+                                ? Image.memory(
+                                    base64Decode(imgUrl.split(',').last),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.deck_rounded,
+                                      color: Color(0xFF3B82F6),
+                                      size: 26,
+                                    ),
+                                  )
+                                : Image.network(
+                                    imgUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.deck_rounded,
+                                      color: Color(0xFF3B82F6),
+                                      size: 26,
+                                    ),
+                                  ))
                             : const Icon(
                                 Icons.deck_rounded,
                                 color: Color(0xFF3B82F6),
-                                size: 28,
+                                size: 26,
                               ),
                       ),
                     ),
@@ -1985,9 +2074,12 @@ class _HomePageState extends State<HomePage> {
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             res['commonAreaName']?.toString() ?? 'Área Comum',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w800,
@@ -1997,15 +2089,18 @@ class _HomePageState extends State<HomePage> {
                           const SizedBox(height: 2),
                           Text(
                             _formatReservationDateTime(res),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 12.5,
+                              fontSize: 12,
                               color: isDark ? Colors.white60 : const Color(0xFF64748B),
-                              height: 1.3,
+                              height: 1.25,
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
@@ -2015,7 +2110,7 @@ class _HomePageState extends State<HomePage> {
                       child: Text(
                         statusLabel,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w700,
                           color: badgeFg,
                         ),
@@ -2026,6 +2121,7 @@ class _HomePageState extends State<HomePage> {
               ),
             );
           }),
+
       ],
     );
   }
@@ -2101,11 +2197,12 @@ class _HomePageState extends State<HomePage> {
     final end = r['endAt'];
     if (start == null) return '20/08/2026\n14:00 - 18:00';
     try {
-      final s = DateTime.parse(start.toString()).toLocal();
-      final e = end != null ? DateTime.parse(end.toString()).toLocal() : s.add(const Duration(hours: 4));
+      final s = parseUtcToLocal(start);
+      if (s == null) return '20/08/2026\n14:00 - 18:00';
+      final e = end != null ? parseUtcToLocal(end) : s.add(const Duration(hours: 4));
       final dateStr = DateFormat('dd/MM/yyyy').format(s);
       final sTime = DateFormat('HH:mm').format(s);
-      final eTime = DateFormat('HH:mm').format(e);
+      final eTime = e != null ? DateFormat('HH:mm').format(e) : '';
       return '$dateStr\n$sTime - $eTime';
     } catch (_) {
       return '20/08/2026\n14:00 - 18:00';
@@ -2604,6 +2701,7 @@ class _HomePageState extends State<HomePage> {
                         final status = e['status']?.toString().toUpperCase() ?? '';
                         final isCounter = status == 'COUNTER_PROPOSED';
                         final isPending = status == 'PENDING';
+                        final isWaitlisted = status == 'WAITLISTED';
                         final isApproved = status == 'APPROVED' || status == 'CONFIRMED';
                         final isItemCancelled = isCancelled(e);
                         final notes = e['notes']?.toString();
@@ -2620,6 +2718,10 @@ class _HomePageState extends State<HomePage> {
                           badgeBg = const Color(0xFFFEF3C7);
                           badgeFg = const Color(0xFFB45309);
                           statusLabel = 'Contraproposta';
+                        } else if (isWaitlisted) {
+                          badgeBg = const Color(0xFFF3E8FF);
+                          badgeFg = const Color(0xFF6D28D9);
+                          statusLabel = 'Lista de Espera (#${e['waitlistPosition'] ?? 1})';
                         } else if (isPending) {
                           badgeBg = const Color(0xFFDBEAFE);
                           badgeFg = const Color(0xFF1D4ED8);
@@ -2658,17 +2760,60 @@ class _HomePageState extends State<HomePage> {
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    CircleAvatar(
-                                      backgroundColor: isItemCancelled ? const Color(0xFFFEE2E2) : badgeBg,
-                                      child: Icon(
-                                        isItemCancelled
-                                            ? Icons.cancel_rounded
-                                            : (isCounter
-                                                ? Icons.swap_horiz_rounded
-                                                : (isApproved
-                                                    ? Icons.check_circle_outline_rounded
-                                                    : Icons.event_available_outlined)),
-                                        color: isItemCancelled ? const Color(0xFFDC2626) : badgeFg,
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: SizedBox(
+                                        width: 44,
+                                        height: 44,
+                                        child: (e['imageUrl'] != null && e['imageUrl'].toString().isNotEmpty)
+                                            ? (e['imageUrl'].toString().startsWith('data:')
+                                                ? Image.memory(
+                                                    base64Decode(e['imageUrl'].toString().split(',').last),
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (_, __, ___) => CircleAvatar(
+                                                      backgroundColor: isItemCancelled ? const Color(0xFFFEE2E2) : badgeBg,
+                                                      child: Icon(
+                                                        isItemCancelled
+                                                            ? Icons.cancel_rounded
+                                                            : (isCounter
+                                                                ? Icons.swap_horiz_rounded
+                                                                : (isApproved
+                                                                    ? Icons.check_circle_outline_rounded
+                                                                    : Icons.event_available_outlined)),
+                                                        color: isItemCancelled ? const Color(0xFFDC2626) : badgeFg,
+                                                      ),
+                                                    ),
+                                                  )
+                                                : Image.network(
+                                                    e['imageUrl'].toString(),
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (_, __, ___) => CircleAvatar(
+                                                      backgroundColor: isItemCancelled ? const Color(0xFFFEE2E2) : badgeBg,
+                                                      child: Icon(
+                                                        isItemCancelled
+                                                            ? Icons.cancel_rounded
+                                                            : (isCounter
+                                                                ? Icons.swap_horiz_rounded
+                                                                : (isApproved
+                                                                    ? Icons.check_circle_outline_rounded
+                                                                    : Icons.event_available_outlined)),
+                                                        color: isItemCancelled ? const Color(0xFFDC2626) : badgeFg,
+                                                      ),
+                                                    ),
+                                                  ))
+                                            : CircleAvatar(
+                                                backgroundColor: isItemCancelled ? const Color(0xFFFEE2E2) : badgeBg,
+                                                child: Icon(
+                                                  isItemCancelled
+                                                      ? Icons.cancel_rounded
+                                                      : (isCounter
+                                                          ? Icons.swap_horiz_rounded
+                                                          : (isApproved
+                                                              ? Icons.check_circle_outline_rounded
+                                                              : Icons.event_available_outlined)),
+                                                  color: isItemCancelled ? const Color(0xFFDC2626) : badgeFg,
+                                                ),
+                                              ),
                                       ),
                                     ),
                                     const SizedBox(width: 12),
@@ -2755,7 +2900,7 @@ class _HomePageState extends State<HomePage> {
                                     ),
                                   ),
                                 ],
-                                if (!isItemCancelled && (isCounter || isPending)) ...[
+                                if (!isItemCancelled && (isCounter || isPending || isWaitlisted)) ...[
                                   const SizedBox(height: 10),
                                   SingleChildScrollView(
                                     scrollDirection: Axis.horizontal,
@@ -2786,7 +2931,7 @@ class _HomePageState extends State<HomePage> {
                                 label: const Text('Recusar', style: TextStyle(fontSize: 12)),
                                 onPressed: () => _declineCounterProposal(e['id'] as num),
                               ),
-                            ] else if (isPending) ...[
+                            ] else if (isPending || isWaitlisted) ...[
                               OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: const Color(0xFF64748B),
@@ -2795,7 +2940,7 @@ class _HomePageState extends State<HomePage> {
                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 ),
                                 icon: const Icon(Icons.close_rounded, size: 16),
-                                label: const Text('Cancelar Solicitação', style: TextStyle(fontSize: 12)),
+                                label: Text(isWaitlisted ? 'Sair da Fila de Espera' : 'Cancelar Solicitação', style: const TextStyle(fontSize: 12)),
                                 onPressed: () => _cancelReservation(e['id'] as num),
                               ),
                             ],
@@ -2835,7 +2980,11 @@ class _HomePageState extends State<HomePage> {
             _empty('Nenhum comunicado ativo no momento.', Icons.campaign_outlined)
           else
             ..._announcements.where((e) => recordMatchesQuery(e, _announcementQuery)).map((e) {
+              final isRead = e['readByCurrentUser'] == true;
+              final readCount = e['readCount'] ?? 0;
+              final targetDesc = e['targetDescription']?.toString() ?? 'Todo o condomínio';
               return Card(
+                margin: const EdgeInsets.only(bottom: 12),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -2853,14 +3002,61 @@ class _HomePageState extends State<HomePage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(_text(e['title']), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                                Text(_formatDate(e['createdAt']), style: Theme.of(context).textTheme.bodySmall),
+                                Text('${_formatDate(e['createdAt'])} • Público: $targetDesc', style: Theme.of(context).textTheme.bodySmall),
                               ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isRead ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              isRead ? 'Lido' : 'Novo',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: isRead ? const Color(0xFF15803D) : const Color(0xFFB45309),
+                              ),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 12),
                       Text(_text(e['content'])),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '$readCount confirmação(ões) de leitura',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                          ),
+                          if (!isRead && e['id'] != null)
+                            FilledButton.tonalIcon(
+                              icon: const Icon(Icons.done_all_rounded, size: 16),
+                              label: const Text('Confirmar leitura', style: TextStyle(fontSize: 12)),
+                              onPressed: () async {
+                                try {
+                                  await _communityApi.markAnnouncementAsRead(e['id'] as num);
+                                  await _refreshAnnouncements();
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Leitura confirmada com sucesso!')),
+                                    );
+                                  }
+                                } catch (err) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Erro: $err')),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -3232,23 +3428,19 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _openPaymentDialog() async {
     if (_condominium == null) return;
-    final unitId = _memberships.isNotEmpty ? (_memberships.first['unitId'] ?? 1) : 1;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => BoletoPaymentDialog(
-        condominiumId: _condominium!['id'],
-        unitId: unitId,
-        unitLabel: _unitDisplay,
-        title: 'Taxa de Condomínio – Agosto/2026',
-        amount: 450.00,
-        dueDate: '10/08/2026',
-        digitableLine: '34191.79001 01043.510047 91020.150008 8 98010000045000',
-        status: 'OVERDUE',
-        api: _communityApi,
-        onPaid: _load,
-      ),
+    if (_invoices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nenhuma fatura ou boleto registrado para a sua unidade no momento.'),
+        ),
+      );
+      return;
+    }
+    final targetInvoice = _invoices.firstWhere(
+      (i) => i['status'] != 'PAID',
+      orElse: () => _invoices.first,
     );
-    _load();
+    await _paySingleBoleto(targetInvoice);
   }
 
   Future<void> _openExpectedPackageDialog() async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/config/api_config.dart';
 import '../../data/community_api.dart';
 import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../dialogs/upload_condominium_image_dialog.dart';
@@ -308,9 +309,7 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
         child: const Icon(Icons.image_outlined, size: 36, color: Color(0xFF94A3B8)),
       );
     }
-    final url = path.startsWith('http')
-        ? path
-        : 'http://localhost:8080/${path.startsWith('/') ? path.substring(1) : path}';
+    final url = ApiConfig.resolveMediaUrl(path) ?? path;
 
     return Image.network(
       url,

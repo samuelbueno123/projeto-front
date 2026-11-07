@@ -285,7 +285,7 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
     final idCtrl = TextEditingController();
     List<Map<String, dynamic>> sectors = [];
     try {
-      final res = await widget.api.get('/sectors?page=0&size=50');
+      final res = await widget.api.get('/manager/condominiums/${widget.condominiumId}/sectors');
       if (res is List) {
         sectors = res.whereType<Map<String, dynamic>>().toList();
       } else if (res is Map && res['content'] is List) {
@@ -539,7 +539,7 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
                   final authority = membership['authority']?.toString();
                   final removable = widget.isSystemAdmin
                       ? authority == 'ROLE_MANAGER'
-                      : authority == 'ROLE_DOORMAN';
+                      : (authority == 'ROLE_DOORMAN' || authority == 'ROLE_RESIDENT');
                   final name = membership['userName'] ?? membership['name'];
                   final email = membership['email'] ?? membership['userEmail'];
                   final status = membership['status']?.toString();
