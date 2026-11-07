@@ -41,7 +41,14 @@ class HttpClientWrapper {
 
   /// Constrói URL completa a partir de um endpoint relativo
   Uri _buildUri(String endpoint, {Map<String, String>? queryParameters}) {
-    final url = endpoint.startsWith('http') ? endpoint : '$_baseUrl$endpoint';
+    String url;
+    if (endpoint.startsWith('http')) {
+      url = endpoint;
+    } else {
+      final base = _baseUrl.replaceAll(RegExp(r'/+$'), '');
+      final path = endpoint.startsWith('/') ? endpoint : '/$endpoint';
+      url = '$base$path';
+    }
     final uri = Uri.parse(url);
     if (queryParameters == null || queryParameters.isEmpty) {
       return uri;

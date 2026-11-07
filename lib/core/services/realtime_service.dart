@@ -90,6 +90,10 @@ class RealtimeService {
       final response = await _client!.send(request);
       if (response.statusCode != 200) {
         _setState(RealtimeConnectionState.disconnected);
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          _token = null;
+          return;
+        }
         _scheduleReconnect();
         return;
       }

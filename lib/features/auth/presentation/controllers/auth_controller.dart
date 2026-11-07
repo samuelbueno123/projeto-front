@@ -1,3 +1,4 @@
+import '../../../../core/services/realtime_service.dart';
 import '../../data/services/google_auth_service.dart';
 import '../../domain/entities/auth_session.dart';
 
@@ -108,6 +109,7 @@ class AuthController {
     _errorMessage = null;
     _notify();
     try {
+      RealtimeService.instance.disconnect();
       await _authService.signOut();
       _session = null;
     } catch (_) {
