@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:async' as async;
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -7,7 +7,7 @@ import '../config/api_config.dart';
 import 'api_exception.dart';
 import 'api_response.dart';
 
-/// Cliente HTTP customizado com suporte a autenticação, headers e tratamento de erro
+/// Cliente HTTP customizado com suporte a autenticação, Correlation IDs, retentativas e rastreamento de erros
 class HttpClientWrapper {
   HttpClientWrapper({
     http.Client? httpClient,
@@ -23,8 +23,18 @@ class HttpClientWrapper {
   String? _authToken;
   final bool enableLogging;
 
+  static int _requestSequence = 0;
+
   /// Global callback for 401 Unauthorized
   static void Function()? onUnauthorized;
+
+  /// Gera um identificador de correlação único para rastreamento de requisições
+  String _generateCorrelationId() {
+    final now = DateTime.now().microsecondsSinceEpoch;
+    _requestSequence++;
+    final rand = (now ^ (_requestSequence * 31)) & 0xFFFFFF;
+    return 'req-${now.toRadixString(16)}-${rand.toRadixString(16)}';
+  }
 
   /// Define o token de autenticação (JWT)
   void setAuthToken(String? token) {
@@ -61,9 +71,15 @@ class HttpClientWrapper {
     );
   }
 
-  /// Constrói headers padrão com autenticação se disponível
-  Map<String, String> _buildHeaders({Map<String, String>? customHeaders}) {
+  /// Constrói headers padrão com autenticação e Correlation ID
+  Map<String, String> _buildHeaders({
+    Map<String, String>? customHeaders,
+    String? correlationId,
+  }) {
     final headers = <String, String>{...ApiConfig.defaultHeaders};
+
+    final traceId = correlationId ?? _generateCorrelationId();
+    headers['X-Correlation-ID'] = traceId;
 
     // Adiciona token de autenticação se disponível
     if (_authToken != null && _authToken!.isNotEmpty) {
@@ -78,6 +94,35 @@ class HttpClientWrapper {
     return headers;
   }
 
+  /// Executa chamada HTTP com política de retry para erros temporários (503, 504 e falhas transitórias de conexão)
+  Future<http.Response> _executeWithRetry(
+    String method,
+    Future<http.Response> Function() requestAction, {
+    int maxRetries = 2,
+    Duration retryDelay = const Duration(milliseconds: 300),
+  }) async {
+    int attempts = 0;
+    while (true) {
+      attempts++;
+      try {
+        final response = await requestAction();
+        final isIdempotent = method == 'GET' || method == 'HEAD' || method == 'OPTIONS' || method == 'PUT' || method == 'DELETE';
+        if (isIdempotent && attempts <= maxRetries && (response.statusCode == 503 || response.statusCode == 504)) {
+          await Future.delayed(retryDelay * attempts);
+          continue;
+        }
+        return response;
+      } on http.ClientException {
+        final isIdempotent = method == 'GET' || method == 'HEAD';
+        if (isIdempotent && attempts <= maxRetries) {
+          await Future.delayed(retryDelay * attempts);
+          continue;
+        }
+        rethrow;
+      }
+    }
+  }
+
   /// Log de requisição (apenas em debug mode)
   void _logRequest(
     String method,
@@ -86,24 +131,11 @@ class HttpClientWrapper {
     String? body,
   ) {
     if (!enableLogging) return;
-
-    // print('=== HTTP REQUEST ===');
-    // print('$method ${uri.toString()}');
-    // print('Headers: $headers');
-    if (body != null && body.isNotEmpty) {
-      // print('Body: $body');
-    }
   }
 
   /// Log de resposta (apenas em debug mode)
   void _logResponse(int statusCode, String body) {
     if (!enableLogging) return;
-
-    // print('=== HTTP RESPONSE ===');
-    // print('Status: $statusCode');
-    if (body.isNotEmpty) {
-      // print('Body: $body');
-    }
   }
 
   /// Faz requisição GET
@@ -113,23 +145,27 @@ class HttpClientWrapper {
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint, queryParameters: queryParameters);
-    final headers = _buildHeaders(customHeaders: customHeaders);
+    final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
 
     _logRequest('GET', uri, headers, null);
 
     try {
-      final response = await _httpClient
-          .get(uri, headers: headers)
-          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+      final response = await _executeWithRetry(
+        'GET',
+        () => _httpClient
+            .get(uri, headers: headers)
+            .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds)),
+      );
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(response, fromJsonT: fromJsonT);
-    } on TimeoutException {
-      throw TimeoutException('Timeout ao conectar ao servidor');
+      return _handleResponse<T>(response, fromJsonT: fromJsonT, correlationId: correlationId);
+    } on async.TimeoutException {
+      throw TimeoutException('Timeout ao conectar ao servidor', correlationId: correlationId);
     } catch (e) {
-      return _handleException<T>(e);
+      return _handleException<T>(e, correlationId: correlationId);
     }
   }
 
@@ -140,24 +176,29 @@ class HttpClientWrapper {
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint);
-    final headers = _buildHeaders(customHeaders: customHeaders);
+    final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
     final bodyEncoded = body != null ? jsonEncode(body) : null;
 
     _logRequest('POST', uri, headers, bodyEncoded);
 
     try {
-      final response = await _httpClient
-          .post(uri, headers: headers, body: bodyEncoded)
-          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+      final response = await _executeWithRetry(
+        'POST',
+        () => _httpClient
+            .post(uri, headers: headers, body: bodyEncoded)
+            .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds)),
+        maxRetries: 0, // POST por padrão não deve ser repetido para evitar duplo envio
+      );
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(response, fromJsonT: fromJsonT);
-    } on TimeoutException {
-      throw TimeoutException('Timeout ao conectar ao servidor');
+      return _handleResponse<T>(response, fromJsonT: fromJsonT, correlationId: correlationId);
+    } on async.TimeoutException {
+      throw TimeoutException('Timeout ao conectar ao servidor', correlationId: correlationId);
     } catch (e) {
-      return _handleException<T>(e);
+      return _handleException<T>(e, correlationId: correlationId);
     }
   }
 
@@ -168,24 +209,28 @@ class HttpClientWrapper {
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint);
-    final headers = _buildHeaders(customHeaders: customHeaders);
+    final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
     final bodyEncoded = body != null ? jsonEncode(body) : null;
 
     _logRequest('PUT', uri, headers, bodyEncoded);
 
     try {
-      final response = await _httpClient
-          .put(uri, headers: headers, body: bodyEncoded)
-          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+      final response = await _executeWithRetry(
+        'PUT',
+        () => _httpClient
+            .put(uri, headers: headers, body: bodyEncoded)
+            .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds)),
+      );
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(response, fromJsonT: fromJsonT);
-    } on TimeoutException {
-      throw TimeoutException('Timeout ao conectar ao servidor');
+      return _handleResponse<T>(response, fromJsonT: fromJsonT, correlationId: correlationId);
+    } on async.TimeoutException {
+      throw TimeoutException('Timeout ao conectar ao servidor', correlationId: correlationId);
     } catch (e) {
-      return _handleException<T>(e);
+      return _handleException<T>(e, correlationId: correlationId);
     }
   }
 
@@ -195,23 +240,27 @@ class HttpClientWrapper {
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint);
-    final headers = _buildHeaders(customHeaders: customHeaders);
+    final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
 
     _logRequest('DELETE', uri, headers, null);
 
     try {
-      final response = await _httpClient
-          .delete(uri, headers: headers)
-          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+      final response = await _executeWithRetry(
+        'DELETE',
+        () => _httpClient
+            .delete(uri, headers: headers)
+            .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds)),
+      );
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(response, fromJsonT: fromJsonT);
-    } on TimeoutException {
-      throw TimeoutException('Timeout ao conectar ao servidor');
+      return _handleResponse<T>(response, fromJsonT: fromJsonT, correlationId: correlationId);
+    } on async.TimeoutException {
+      throw TimeoutException('Timeout ao conectar ao servidor', correlationId: correlationId);
     } catch (e) {
-      return _handleException<T>(e);
+      return _handleException<T>(e, correlationId: correlationId);
     }
   }
 
@@ -222,24 +271,29 @@ class HttpClientWrapper {
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint);
-    final headers = _buildHeaders(customHeaders: customHeaders);
+    final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
     final bodyEncoded = body != null ? jsonEncode(body) : null;
 
     _logRequest('PATCH', uri, headers, bodyEncoded);
 
     try {
-      final response = await _httpClient
-          .patch(uri, headers: headers, body: bodyEncoded)
-          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+      final response = await _executeWithRetry(
+        'PATCH',
+        () => _httpClient
+            .patch(uri, headers: headers, body: bodyEncoded)
+            .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds)),
+        maxRetries: 0,
+      );
 
       _logResponse(response.statusCode, response.body);
 
-      return _handleResponse<T>(response, fromJsonT: fromJsonT);
-    } on TimeoutException {
-      throw TimeoutException('Timeout ao conectar ao servidor');
+      return _handleResponse<T>(response, fromJsonT: fromJsonT, correlationId: correlationId);
+    } on async.TimeoutException {
+      throw TimeoutException('Timeout ao conectar ao servidor', correlationId: correlationId);
     } catch (e) {
-      return _handleException<T>(e);
+      return _handleException<T>(e, correlationId: correlationId);
     }
   }
 
@@ -293,13 +347,13 @@ class HttpClientWrapper {
     }
   }
 
-  /// Processa resposta HTTP e extrai dados
+  /// Processa resposta HTTP e extrai dados e erros associando o Correlation ID
   ApiResponse<T> _handleResponse<T>(
     http.Response response, {
     T Function(Map<String, dynamic>)? fromJsonT,
+    String? correlationId,
   }) {
     if (response.statusCode == 204) {
-      // No content - sucesso sem corpo
       return ApiResponse.success(null as T, statusCode: 204);
     }
 
@@ -335,10 +389,22 @@ class HttpClientWrapper {
         throw ParsingException(
           message: 'Erro ao fazer parse da resposta JSON',
           cause: e,
+          correlationId: correlationId,
         );
       }
       decodedJson = <String, dynamic>{};
       jsonData = <String, dynamic>{};
+    }
+
+    // Resolve o Correlation ID
+    String? resolvedId = correlationId;
+    if (jsonData['correlationId'] is String && (jsonData['correlationId'] as String).trim().isNotEmpty) {
+      resolvedId = (jsonData['correlationId'] as String).trim();
+    } else {
+      final headerVal = response.headers['x-correlation-id'] ?? response.headers['X-Correlation-ID'];
+      if (headerVal != null && headerVal.trim().isNotEmpty) {
+        resolvedId = headerVal.trim();
+      }
     }
 
     // Verifica se é sucesso (2xx)
@@ -358,6 +424,7 @@ class HttpClientWrapper {
           throw ParsingException(
             message: 'Erro ao desserializar dados',
             cause: e,
+            correlationId: resolvedId,
           );
         }
       } else if (fromJsonT == null && jsonData.isNotEmpty) {
@@ -385,40 +452,44 @@ class HttpClientWrapper {
         message: errorMessage,
         statusCode: response.statusCode,
         responseBody: response.body,
+        correlationId: resolvedId,
       );
     } else if (response.statusCode == 404) {
       throw NotFoundException(
         message: errorMessage,
         responseBody: response.body,
+        correlationId: resolvedId,
       );
     } else if (response.statusCode >= 400 && response.statusCode < 500) {
       throw ClientException(
         message: errorMessage,
         statusCode: response.statusCode,
         responseBody: response.body,
+        correlationId: resolvedId,
       );
     } else if (response.statusCode >= 500) {
       throw ServerException(
         message: errorMessage,
         statusCode: response.statusCode,
         responseBody: response.body,
+        correlationId: resolvedId,
       );
     }
 
-    throw NetworkException(errorMessage);
+    throw NetworkException(errorMessage, correlationId: resolvedId);
   }
 
-  /// Trata exceções gerais
-  ApiResponse<T> _handleException<T>(dynamic exception) {
+  /// Trata exceções gerais associando o Correlation ID
+  ApiResponse<T> _handleException<T>(dynamic exception, {String? correlationId}) {
     if (exception is ApiException) {
       throw exception;
     }
 
-    if (exception is TimeoutException) {
-      throw TimeoutException('Timeout ao conectar ao servidor');
+    if (exception is async.TimeoutException) {
+      throw TimeoutException('Timeout ao conectar ao servidor', correlationId: correlationId);
     }
 
-    throw NetworkException('Erro de rede: ${exception.toString()}');
+    throw NetworkException('Erro de rede: ${exception.toString()}', correlationId: correlationId);
   }
 
   /// Extrai mensagem de erro de diferentes formatos de resposta
@@ -438,7 +509,6 @@ class HttpClientWrapper {
       }
     }
 
-    // Tenta diferentes campos comuns para mensagem de erro
     final keys = ['message', 'detail', 'msg', 'error'];
 
     for (final key in keys) {
@@ -449,7 +519,6 @@ class HttpClientWrapper {
       }
 
       if (value is Map<String, dynamic>) {
-        // Se é um Map, tenta extrair 'message' do Map
         final msg = value['message'];
         if (msg is String && msg.trim().isNotEmpty) {
           return msg;
@@ -457,7 +526,6 @@ class HttpClientWrapper {
       }
 
       if (value is List && value.isNotEmpty) {
-        // Se é uma lista, tenta o primeiro elemento
         final first = value.first;
         if (first is String && first.trim().isNotEmpty) {
           return first;

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:projeto_front/core/http/api_exception.dart';
 import 'package:projeto_front/core/http/http_client_wrapper.dart';
 
 void main() {
@@ -28,6 +29,7 @@ void main() {
       Uri.parse('https://api.example.test/memberships/my'),
     );
     expect(capturedRequest?.headers['authorization'], 'Bearer session-token');
+    expect(capturedRequest?.headers['x-correlation-id'], isNotNull);
     expect(response.data, {'ok': true});
   });
 
@@ -78,5 +80,101 @@ void main() {
         'https://api.example.test/admin/data/users?page=0&size=25&query=maria',
       ),
     );
+  });
+
+  test('generates and propagates X-Correlation-ID header on outgoing requests', () async {
+    http.Request? capturedRequest;
+    final client = MockClient((request) async {
+      capturedRequest = request;
+      return http.Response(jsonEncode({'success': true}), 200);
+    });
+    final api = HttpClientWrapper(
+      httpClient: client,
+      baseUrl: 'https://api.example.test',
+    );
+
+    await api.get<dynamic>('/health');
+
+    final correlationId = capturedRequest?.headers['x-correlation-id'];
+    expect(correlationId, isNotNull);
+    expect(correlationId!.startsWith('req-'), isTrue);
+  });
+
+  test('preserves explicit X-Correlation-ID when passed in customHeaders', () async {
+    http.Request? capturedRequest;
+    final client = MockClient((request) async {
+      capturedRequest = request;
+      return http.Response(jsonEncode({'success': true}), 200);
+    });
+    final api = HttpClientWrapper(
+      httpClient: client,
+      baseUrl: 'https://api.example.test',
+    );
+
+    await api.get<dynamic>(
+      '/users/me',
+      customHeaders: {'X-Correlation-ID': 'trace-custom-998877'},
+    );
+
+    expect(capturedRequest?.headers['x-correlation-id'], 'trace-custom-998877');
+  });
+
+  test('associates correlationId with ApiException on server error (500)', () async {
+    final client = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'timestamp': '2026-11-10T12:00:00Z',
+          'status': 500,
+          'error': 'Internal Server Error',
+          'message': 'Erro inesperado no servidor',
+          'correlationId': 'err-trace-12345',
+        }),
+        500,
+        headers: {'x-correlation-id': 'err-trace-12345'},
+      );
+    });
+    final api = HttpClientWrapper(
+      httpClient: client,
+      baseUrl: 'https://api.example.test',
+    );
+
+    expect(
+      () => api.get<dynamic>('/reports/export'),
+      throwsA(
+        isA<ServerException>().having(
+          (e) => e.correlationId,
+          'correlationId',
+          'err-trace-12345',
+        ).having(
+          (e) => e.displayMessage,
+          'displayMessage',
+          contains('Código de rastreamento: err-trace-12345'),
+        ),
+      ),
+    );
+  });
+
+  test('retries transient HTTP 503 error on idempotent GET requests', () async {
+    int attempts = 0;
+    final client = MockClient((request) async {
+      attempts++;
+      if (attempts == 1) {
+        return http.Response('Service Temporarily Unavailable', 503);
+      }
+      return http.Response(jsonEncode({'recovered': true}), 200);
+    });
+
+    final api = HttpClientWrapper(
+      httpClient: client,
+      baseUrl: 'https://api.example.test',
+    );
+
+    final response = await api.get<Map<String, dynamic>>(
+      '/actuator/health',
+      fromJsonT: (json) => json,
+    );
+
+    expect(attempts, 2);
+    expect(response.data, {'recovered': true});
   });
 }
