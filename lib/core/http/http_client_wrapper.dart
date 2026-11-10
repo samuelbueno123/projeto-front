@@ -243,6 +243,56 @@ class HttpClientWrapper {
     }
   }
 
+  /// Executa requisição genérica baseada no método HTTP especificado
+  Future<ApiResponse<T>> send<T>(
+    String method,
+    String endpoint, {
+    dynamic body,
+    Map<String, String>? queryParameters,
+    T Function(Map<String, dynamic>)? fromJsonT,
+    Map<String, String>? customHeaders,
+  }) async {
+    final m = method.toUpperCase();
+    switch (m) {
+      case 'GET':
+        return get<T>(
+          endpoint,
+          queryParameters: queryParameters,
+          fromJsonT: fromJsonT,
+          customHeaders: customHeaders,
+        );
+      case 'POST':
+        return post<T>(
+          endpoint,
+          body: body,
+          fromJsonT: fromJsonT,
+          customHeaders: customHeaders,
+        );
+      case 'PUT':
+        return put<T>(
+          endpoint,
+          body: body,
+          fromJsonT: fromJsonT,
+          customHeaders: customHeaders,
+        );
+      case 'DELETE':
+        return delete<T>(
+          endpoint,
+          fromJsonT: fromJsonT,
+          customHeaders: customHeaders,
+        );
+      case 'PATCH':
+        return patch<T>(
+          endpoint,
+          body: body,
+          fromJsonT: fromJsonT,
+          customHeaders: customHeaders,
+        );
+      default:
+        throw ArgumentError('Método HTTP não suportado: $method');
+    }
+  }
+
   /// Processa resposta HTTP e extrai dados
   ApiResponse<T> _handleResponse<T>(
     http.Response response, {

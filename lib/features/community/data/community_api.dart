@@ -1193,12 +1193,22 @@ class CommunityApi {
   }
 
   List<Map<String, dynamic>> _asList(dynamic data) {
+    final List rawList;
     if (data is List) {
-      return data.whereType<Map<String, dynamic>>().toList();
+      rawList = data;
+    } else if (data is Map && data['content'] is List) {
+      rawList = data['content'] as List;
+    } else {
+      return [];
     }
-    if (data is Map && data['content'] is List) {
-      return (data['content'] as List).whereType<Map<String, dynamic>>().toList();
-    }
-    return [];
+
+    return rawList.map((item) {
+      if (item is Map<String, dynamic>) {
+        return item;
+      } else if (item is Map) {
+        return Map<String, dynamic>.from(item);
+      }
+      return null;
+    }).whereType<Map<String, dynamic>>().toList();
   }
 }
