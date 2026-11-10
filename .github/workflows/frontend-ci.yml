@@ -1,0 +1,152 @@
+name: Frontend CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'lib/**'
+      - 'web/**'
+      - 'test/**'
+      - 'assets/**'
+      - 'pubspec.yaml'
+      - 'Dockerfile'
+      - 'nginx.conf'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'lib/**'
+      - 'web/**'
+      - 'test/**'
+      - 'assets/**'
+      - 'pubspec.yaml'
+      - 'Dockerfile'
+      - 'nginx.conf'
+      - '.github/workflows/frontend-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # 1. STATIC CODE ANALYSIS & LINTING
+  # ----------------------------------------------------------------------------
+  analyze-and-format:
+    name: Code Analysis & Linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+          cache-key: "flutter-:os:-:channel:-:version:-:arch:-:hash:"
+
+      - name: Install Pub Dependencies
+        run: flutter pub get
+
+      - name: Run Dart & Flutter Linter
+        run: flutter analyze --no-fatal-infos
+
+  # ----------------------------------------------------------------------------
+  # 2. AUTOMATED UNIT & WIDGET TESTS
+  # ----------------------------------------------------------------------------
+  test:
+    name: Unit & Widget Automated Tests
+    runs-on: ubuntu-latest
+    needs: analyze-and-format
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Pub Dependencies
+        run: flutter pub get
+
+      - name: Run Test Suite with Coverage
+        run: flutter test --coverage
+
+      - name: Archive Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage-report
+          path: coverage/lcov.info
+          retention-days: 7
+
+  # ----------------------------------------------------------------------------
+  # 3. BUILD FLUTTER WEB ARTIFACT
+  # ----------------------------------------------------------------------------
+  build-web:
+    name: Compile Flutter Web Release
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Pub Dependencies
+        run: flutter pub get
+
+      - name: Build Web Application (Release)
+        run: |
+          flutter build web --release \
+            --dart-define=API_BASE_URL=https://api.ancora.com \
+            --dart-define=GOOGLE_WEB_CLIENT_ID=1093543407623-ch2dq0uh0bnvrhm6pkf6kd8v75bvr3a0.apps.googleusercontent.com
+
+      - name: Archive Web Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-dist
+          path: build/web/
+          retention-days: 7
+
+  # ----------------------------------------------------------------------------
+  # 4. DOCKER BUILD & CONTAINER VERIFICATION
+  # ----------------------------------------------------------------------------
+  docker-build:
+    name: Build & Verify Hardened Nginx Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Frontend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: projeto-final-frontend:test
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Container Non-Root User & Healthcheck
+        run: |
+          docker run --rm projeto-final-frontend:test id

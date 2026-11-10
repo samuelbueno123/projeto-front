@@ -171,3 +171,8 @@ app.*.symbols
 .agents/rules/personal-*
 .agents/skills/personal-*
 /.agent-shell/
+
+# Environment files
+.env
+.env.*
+!.env.example
