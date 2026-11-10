@@ -1243,10 +1243,21 @@ components:
     ApiError:
       type: object
       properties:
-        message:
+        timestamp:
           type: string
+          format: date-time
+        status:
+          type: integer
         error:
           type: string
+        message:
+          type: string
+        path:
+          type: string
+        correlationId:
+          type: string
+          description: Código único de rastreamento da requisição
+          example: req-19315b-a4e
         detail:
           type: string
         error_description:

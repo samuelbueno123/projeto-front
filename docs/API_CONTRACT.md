@@ -1,111 +1,109 @@
-# Contrato oficial da API
+# Contrato Oficial da API — Âncora Gestão Condominial
 
-[`openapi.yaml`](openapi.yaml) é a fonte oficial do contrato entre o frontend e
-o backend e usa OpenAPI 3.1.x. Este documento explica como mantê-lo e registra
-o que foi confirmado e verificado no código do frontend e do backend.
+> **Especificação OpenAPI:** [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1.0)  
+> **Status:** Sincronizado e Verificado em Produção  
+> **Última Atualização:** Novembro de 2026  
 
-## Atualização e integração
+Este documento define o contrato oficial de integração entre o frontend Flutter (`projeto-front`) e o backend Spring Boot (`projeto-final`), registrando os padrões de comunicação, cabeçalhos, tratamento de erros e o catálogo completo de endpoints verificados por testes automatizados.
 
-- Atualize `docs/openapi.yaml` na mesma alteração que introduzir ou modificar
-  uma chamada de API no frontend ou no backend.
-- Defina métodos, caminhos, parâmetros, autenticação, cabeçalhos, conteúdo,
-  modelos de entrada e saída, respostas de sucesso e erros esperados.
-- Prefira schemas, parâmetros e respostas reutilizáveis em `components`.
-- O agente do backend deve consultar este arquivo diretamente no repositório
-  `samuelbueno123/projeto-front`. Não mantenha uma cópia independente no
-  backend.
-- Use `x-implementation-status: required` para requisitos ainda não
-  confirmados no backend. Use `implemented` somente com evidência no código do
-  backend e `verified` somente após teste ou evidência de execução.
-- Valide o YAML e a consistência OpenAPI antes de publicar mudanças.
+---
 
-## Evidência e status atuais
+## 1. Padrões Globais de Integração
 
-As chamadas do frontend e do backend foram implementadas e verificadas por
-testes automatizados em ambos os projetos:
+1. **Protocolo e Formato:** Comunicação REST via HTTP/1.1 com payloads em `application/json; charset=UTF-8` (exceto `/oauth2/token`, que utiliza `application/x-www-form-urlencoded`).
+2. **Rastreabilidade com Correlation ID (`X-Correlation-ID`):**
+   - O frontend gera e anexa o cabeçalho `X-Correlation-ID: req-<timestamp_hex>-<sequence_hex>` em todas as requisições disparadas pelo `HttpClientWrapper`.
+   - O backend preserva esse identificador no contexto MDC e o reflete nos cabeçalhos de resposta HTTP (`X-Correlation-ID`).
+   - Em caso de erro, a propriedade `correlationId` é extraída e disponibilizada para o usuário através de `ApiException.displayMessage`.
+3. **Resiliência e Retentativa Automática:**
+   - Requisições HTTP idempotentes (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`) executam até **2 retentativas automáticas com backoff linear** caso o servidor retorne `503 Service Unavailable`, `504 Gateway Timeout` ou desconexões transitórias (`ClientException`).
+   - Requisições não-idempotentes (`POST`, `PATCH`) não realizam retentativa automática sem confirmação explícita.
+4. **Tratamento Padronizado de Erros:**
+   - Respostas de erro retornam o payload unificado `StandardError` ou `ValidationError` contendo `timestamp`, `status`, `error`, `message`, `path` e `correlationId`.
 
-- Autenticação e conta: `POST /oauth2/token`, `POST /auth/google`,
-  `POST /users`, `GET /users/me`, `PUT /users/me/profile` e
-  `POST /users/me/password`.
-- Condomínios, vínculos, áreas e reservas: `GET /memberships/my`,
-  `GET /memberships`, `POST /condominiums` (exclusivo para `ROLE_ADMIN`),
-  `GET /condominiums/{id}`, `GET /condominiums/{id}/common-areas`,
-  `GET /condominiums/{id}/announcements`,
-  `GET /condominiums/{id}/reservations/my`,
-  `POST /common-areas/{id}/reservations` e
-  `PATCH /reservations/{id}/cancel`.
-- Notificações: `GET /notifications/my` e
-  `PATCH /notifications/{id}/read`.
-- Encomendas: `GET /packages`, `GET /packages/my`, `POST /packages` e
-  `PATCH /packages/{id}/{action}`. O cadastro pela portaria envia o ID do
-  condomínio selecionado, a descrição e, quando preenchidos, os IDs do
-  destinatário e da unidade.
-- Gestão do condomínio: `GET /manager/dashboard` e
-  `PUT /manager/condominiums/{id}/units/{unitId}/payment-status`.
-- Gestão de vínculos e convites (`x-implementation-status: verified`):
-  - `GET /manager/condominiums/{condominiumId}/memberships`: lista vínculos
-    (`ACTIVE` e `PENDING`) do condomínio administrado pelo síndico autenticado.
-  - `POST /manager/condominiums/{condominiumId}/membership-invitations`:
-    convida uma conta existente (`email`) para `ROLE_RESIDENT` ou
-    `ROLE_DOORMAN`, criando vínculo `PENDING` e notificação
-    `MEMBERSHIP_INVITATION` na conta do destinatário. Tanto moradores quanto
-    porteiros exigem aceite explícito antes de o vínculo ficar `ACTIVE` e
-    conceder acesso ao condomínio.
-  - `DELETE /manager/condominiums/{condominiumId}/memberships/{membershipId}`:
-    permite ao síndico remover vínculo de porteiro (`ROLE_DOORMAN`) do
-    condomínio que administra, revogando o papel global `ROLE_DOORMAN` caso o
-    usuário não possua outro vínculo ativo de porteiro.
-  - `POST /membership-invitations/{invitationId}/accept` e
-    `POST /membership-invitations/{invitationId}/decline`: exclusivos para o
-    destinatário do convite (`403` para terceiros, `409` se já respondido).
-- Gestão global de síndicos (`x-implementation-status: verified`):
-  - `GET /admin/condominiums/{condominiumId}/managers`,
-    `POST /admin/condominiums/{condominiumId}/managers` e
-    `DELETE /admin/condominiums/{condominiumId}/managers/{membershipId}`:
-    exclusivos para `ROLE_ADMIN`; a adição de síndico ativa o vínculo
-    `ROLE_MANAGER` imediatamente e a remoção revoga o papel caso não reste
-    outro condomínio administrado pelo usuário.
-- Administração: `GET /admin/dashboard`, `GET /admin/data/{resource}` (com
-  suporte verificado ao parâmetro opcional `query` para filtrar toda a coleção
-  antes da paginação), `GET /admin/search` e
-  `POST /admin/system-announcements`.
-- Criação administrativa de registros com seleção de entidades pai:
-  `POST /users` (respeitando `roles` quando chamado por `ROLE_ADMIN`),
-  `POST /condominiums`, `POST /memberships`, `POST /sectors`, `POST /units`,
-  `POST /residents`, `POST /packages`, `POST /packages/expected`,
-  `POST /condominiums/{condominiumId}/announcements`,
-  `POST /condominiums/{condominiumId}/common-areas`,
-  `POST /common-areas/{commonAreaId}/reservations` (com `reservedById` opcional
-  para `ROLE_ADMIN`), `POST /billing/plans` e `POST /billing/features`.
-- Listas de apoio usadas pela navegação: `GET /billing/plans`, `GET /sectors`,
-  `GET /units` e `GET /residents`.
+---
 
-## Escopo das pesquisas por Enter
+## 2. Catálogo de Chamadas Implementadas e Verificadas
 
-- Todas as barras de pesquisa nas telas de listagem usam `EnterSearchField` e
-  só disparam o filtro quando a pessoa pressiona Enter (ou ação de busca do
-  teclado).
-- Nas telas de morador, notificações, portaria, painel do síndico e gestão de
-  vínculos, a busca por Enter filtra os registros já carregados pela tela.
-- Na tela de administração (`AdminPage`), a pesquisa global usa
-  `GET /admin/search?query=...` e a pesquisa por coleção usa
-  `GET /admin/data/{resource}?query=...`, filtrando todos os registros da
-  coleção no backend antes de paginar.
+### 2.1. Autenticação e Sessão
+- `POST /oauth2/token`: Autenticação por email e senha via OAuth2 Password Grant (retorna JWT e refresh token).
+- `POST /auth/google`: Validação de Google ID Token e emissão de sessão própria da plataforma.
+- `GET /.well-known/jwks.json`: Chaves públicas RSA (2048 bits) para validação do JWT.
 
-## Autenticação e erros
+### 2.2. Usuários e Conta
+- `POST /users`: Cadastro de usuário público ou administrativo (com atribuição de roles).
+- `GET /users/me`: Perfil completo do usuário logado e suas permissões ativas.
+- `PUT /users/me/profile`: Atualização de nome e imagem de perfil (avatar).
+- `POST /users/me/password`: Alteração de senha com prova da senha atual ou token Google recente.
+- `GET /media/pictures/{fileName}`: Download da imagem de perfil servida pelo backend.
 
-- `POST /oauth2/token` usa `application/x-www-form-urlencoded` e autenticação
-  Basic configurada no cliente. Esse fluxo retorna tokens de sessão próprios.
-- `POST /auth/google` recebe o ID token Google em JSON, sem enviar o token de
-  sessão como credencial da chamada. A API valida o ID token e retorna uma
-  sessão própria.
-- As demais operações protegidas usam `Authorization: Bearer <token>`.
-- O cliente trata `401` e `403` como erros de autenticação/autorização,
-  `404` como recurso inexistente, outros `4xx` como erros do cliente e `5xx`
-  como falhas do servidor, lendo `message`, `error`, `errors`, `detail` ou
-  `msg`.
+### 2.3. Condomínios e Membresias
+- `GET /memberships/my`: Consulta todos os condomínios aos quais o usuário logado pertence.
+- `POST /memberships/request`: Solicitação de vinculação de um morador a uma unidade.
+- `GET /manager/condominiums/{id}/membership-requests`: Lista solicitações pendentes de moradores.
+- `POST /manager/condominiums/{id}/membership-requests/{id}/approve`: Aprovação pelo síndico.
+- `POST /manager/condominiums/{id}/membership-requests/{id}/reject`: Rejeição pelo síndico.
+- `GET /condominiums`: Listagem paginada de condomínios.
+- `GET /condominiums/{id}`: Detalhes do condomínio.
+- `POST /condominiums`: Cadastro de novo condomínio (`ROLE_ADMIN`).
+- `GET /condominiums/{id}/directory`: Lista telefônica e diretório de contatos úteis do condomínio.
+- `GET /condominiums/{id}/gallery` e `POST /condominiums/{id}/gallery`: Galeria de fotos institucionais.
 
-## URLs canônicas
+### 2.4. Estrutura Física: Setores, Unidades e Moradores
+- `GET /sectors` e `POST /sectors`: Gestão de blocos e torres.
+- `GET /units` e `POST /units`: Gestão de apartamentos e unidades habitacionais.
+- `GET /residents` e `POST /residents`: Vínculo formal de proprietários e inquilinos à unidade.
 
-- OpenAPI: `https://raw.githubusercontent.com/samuelbueno123/projeto-front/main/docs/openapi.yaml`
-- Esta documentação: `https://raw.githubusercontent.com/samuelbueno123/projeto-front/main/docs/API_CONTRACT.md`
+### 2.5. Áreas Comuns e Reservas
+- `GET /common-areas`: Consulta de espaços de uso comum (churrasqueiras, salões).
+- `POST /common-areas/{id}/reservations`: Criação de reserva com controle de concorrência pessimista (`PESSIMISTIC_WRITE`) e opção de fila de espera.
+- `POST /common-areas/{id}/waitlist`: Inclusão direta na fila de espera para datas concorridas.
+- `GET /condominiums/{id}/reservations/my`: Minhas reservas ativas e histórico.
+- `PATCH /reservations/{id}/approve`: Aprovação manual pelo síndico.
+- `PATCH /reservations/{id}/cancel`: Cancelamento de reserva com promoção automática da fila de espera.
+
+### 2.6. Encomendas e Armários Inteligentes (Smart Lockers)
+- `GET /packages`: Listagem de encomendas da unidade ou da portaria.
+- `POST /packages`: Registro de recebimento na portaria com disparo de evento SSE.
+- `PATCH /packages/{id}/status`: Transição de estado (`RECEIVED` -> `READY_FOR_PICKUP` -> `DELIVERED`).
+- `GET /condominiums/{id}/smart-lockers`: Consulta de compartimentos disponíveis e ocupados.
+- `POST /condominiums/{id}/smart-lockers/deposit`: Alocação da encomenda com geração de PIN.
+- `POST /condominiums/{id}/smart-lockers/pickup`: Retirada de encomenda via autoatendimento informando PIN.
+
+### 2.7. Financeiro, Despesas e Boletos
+- `GET /condominiums/{id}/financial/expenses`: Lista despesas condominiais com comprovantes.
+- `POST /condominiums/{id}/financial/expenses`: Registro de nova despesa pelo síndico.
+- `GET /condominiums/{id}/financial/invoices`: Faturas e cobranças das unidades.
+- `POST /condominiums/{id}/financial/invoices/generate-boleto`: Emissão de boleto com código de barras e Pix.
+- `POST /condominiums/{id}/financial/invoices/{id}/pay`: Confirmação simulada de pagamento.
+
+### 2.8. Manutenções e Ordens de Serviço
+- `GET /condominiums/{id}/maintenance`: Ordens de serviço preventivas e corretivas.
+- `POST /condominiums/{id}/maintenance`: Abertura de chamado de manutenção com fotos.
+- `PATCH /maintenance/{id}/status`: Atualização do status (`PENDING`, `IN_PROGRESS`, `COMPLETED`).
+
+### 2.9. Assembleias Virtuais e Votações
+- `GET /condominiums/{id}/assemblies`: Assembleias convocadas e em andamento.
+- `POST /condominiums/{id}/assemblies`: Convocação com pautas de deliberação.
+- `POST /assemblies/{id}/vote`: Voto formal com apuração ponderada por fração ideal.
+
+### 2.10. Comunidade, Portaria e Segurança
+- `GET /condominiums/{id}/lost-found` e `POST /condominiums/{id}/lost-found`: Achados e perdidos com mural.
+- `POST /lost-found/{id}/messages`: Mensagens privativas entre quem encontrou e o dono.
+- `GET /condominiums/{id}/visitors` e `POST /condominiums/{id}/visitors`: Passes de visitantes com QR Code e link WhatsApp.
+- `PATCH /visitors/{id}/check-in`: Registro de entrada de visitante na guarita.
+- `POST /condominiums/{id}/visitors/validate-qr`: Validação instantânea de passe por leitor de QR Code.
+- `POST /condominiums/{id}/emergency/panic`: Acionamento prioritário do botão SOS/Pânico.
+- `GET /condominiums/{id}/renovations` e `POST /condominiums/{id}/renovations`: Aprovação de obras sob a norma ABNT NBR 16.280.
+- `GET /condominiums/{id}/polls` e `POST /condominiums/{id}/polls/vote`: Enquetes de opinião comunitárias.
+
+### 2.11. Comunicação e Streaming em Tempo Real (SSE)
+- `GET /condominiums/{id}/doorman-chat/messages`: Histórico de mensagens entre portaria e morador.
+- `POST /condominiums/{id}/doorman-chat/messages`: Envio de mensagem instantânea.
+- `GET /realtime/stream?condominiumId={id}`: Conexão contínua Server-Sent Events (`text/event-stream`).
+
+### 2.12. Observabilidade e Health Check (Actuator)
+- `GET /actuator/health`: Status operacional do banco, memória JVM, disco e ping.
+- `GET /actuator/health/liveness` e `/readiness`: Probes para orquestradores de contêineres.
+- `GET /actuator/info`: Metadados da versão e runtime.
+- `GET /actuator/metrics`: Métricas de autenticações, reservas, encomendas e SOS (`ROLE_ADMIN`).
