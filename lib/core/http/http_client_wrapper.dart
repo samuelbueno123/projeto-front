@@ -7,7 +7,14 @@ import '../config/api_config.dart';
 import 'api_exception.dart';
 import 'api_response.dart';
 
-/// Cliente HTTP customizado com suporte a autenticação, Correlation IDs, retentativas e rastreamento de erros
+class _CacheEntry {
+  _CacheEntry({required this.response, required this.expiry});
+  final http.Response response;
+  final DateTime expiry;
+  bool get isExpired => DateTime.now().isAfter(expiry);
+}
+
+/// Cliente HTTP customizado com suporte a autenticação, Correlation IDs, retentativas, deduplicação em voo e cache de leitura
 class HttpClientWrapper {
   HttpClientWrapper({
     http.Client? httpClient,
@@ -27,6 +34,26 @@ class HttpClientWrapper {
 
   /// Global callback for 401 Unauthorized
   static void Function()? onUnauthorized;
+
+  /// Mapa de deduplicação de requisições GET em voo (in-flight request deduplication)
+  final Map<String, Future<http.Response>> _inFlightRequests = {};
+
+  /// Cache em memória local para requisições GET idempotentes
+  final Map<String, _CacheEntry> _cache = {};
+
+  /// Limpa todo o cache em memória do cliente HTTP
+  void clearCache() {
+    _cache.clear();
+  }
+
+  /// Invalida entradas de cache que casem com determinado padrão ou limpa tudo
+  void invalidateCache([String? pattern]) {
+    if (pattern == null || pattern.isEmpty) {
+      _cache.clear();
+      return;
+    }
+    _cache.removeWhere((key, _) => key.contains(pattern));
+  }
 
   /// Gera um identificador de correlação único para rastreamento de requisições
   String _generateCorrelationId() {
@@ -138,27 +165,64 @@ class HttpClientWrapper {
     if (!enableLogging) return;
   }
 
-  /// Faz requisição GET
+  /// Faz requisição GET com suporte a deduplicação de requisições em voo e cache de leitura
   Future<ApiResponse<T>> get<T>(
     String endpoint, {
     Map<String, String>? queryParameters,
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
+    Duration? cacheDuration,
+    bool forceRefresh = false,
   }) async {
     final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint, queryParameters: queryParameters);
-    final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
+    final cacheKey = uri.toString();
 
+    // 1. Verifica cache local se aplicável
+    if (!forceRefresh && cacheDuration != null) {
+      final cached = _cache[cacheKey];
+      if (cached != null && !cached.isExpired) {
+        return _handleResponse<T>(cached.response, fromJsonT: fromJsonT, correlationId: correlationId);
+      } else {
+        _cache.remove(cacheKey);
+      }
+    }
+
+    final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
     _logRequest('GET', uri, headers, null);
 
     try {
-      final response = await _executeWithRetry(
-        'GET',
-        () => _httpClient
-            .get(uri, headers: headers)
-            .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds)),
-      );
+      // 2. Se já existe uma requisição idêntica em andamento, compartilha o Future (in-flight deduplication)
+      Future<http.Response> requestFuture;
+      if (_inFlightRequests.containsKey(cacheKey)) {
+        requestFuture = _inFlightRequests[cacheKey]!;
+      } else {
+        final completer = async.Completer<http.Response>();
+        _inFlightRequests[cacheKey] = completer.future;
 
+        _executeWithRetry(
+          'GET',
+          () => _httpClient
+              .get(uri, headers: headers)
+              .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds)),
+        ).then((resp) {
+          if (cacheDuration != null && resp.statusCode >= 200 && resp.statusCode < 300) {
+            _cache[cacheKey] = _CacheEntry(
+              response: resp,
+              expiry: DateTime.now().add(cacheDuration),
+            );
+          }
+          completer.complete(resp);
+        }).catchError((Object err, StackTrace st) {
+          completer.completeError(err, st);
+        }).whenComplete(() {
+          _inFlightRequests.remove(cacheKey);
+        });
+
+        requestFuture = completer.future;
+      }
+
+      final response = await requestFuture;
       _logResponse(response.statusCode, response.body);
 
       return _handleResponse<T>(response, fromJsonT: fromJsonT, correlationId: correlationId);
@@ -169,13 +233,14 @@ class HttpClientWrapper {
     }
   }
 
-  /// Faz requisição POST
+  /// Faz requisição POST (invalida caches locais relacionados)
   Future<ApiResponse<T>> post<T>(
     String endpoint, {
     dynamic body,
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    invalidateCache(); // Limpa cache para garantir dados frescos após mutação
     final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint);
     final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
@@ -202,13 +267,14 @@ class HttpClientWrapper {
     }
   }
 
-  /// Faz requisição PUT
+  /// Faz requisição PUT (invalida caches locais)
   Future<ApiResponse<T>> put<T>(
     String endpoint, {
     dynamic body,
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    invalidateCache();
     final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint);
     final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
@@ -234,12 +300,13 @@ class HttpClientWrapper {
     }
   }
 
-  /// Faz requisição DELETE
+  /// Faz requisição DELETE (invalida caches locais)
   Future<ApiResponse<T>> delete<T>(
     String endpoint, {
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    invalidateCache();
     final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint);
     final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
@@ -264,13 +331,14 @@ class HttpClientWrapper {
     }
   }
 
-  /// Faz requisição PATCH
+  /// Faz requisição PATCH (invalida caches locais)
   Future<ApiResponse<T>> patch<T>(
     String endpoint, {
     dynamic body,
     T Function(Map<String, dynamic>)? fromJsonT,
     Map<String, String>? customHeaders,
   }) async {
+    invalidateCache();
     final correlationId = customHeaders?['X-Correlation-ID'] ?? _generateCorrelationId();
     final uri = _buildUri(endpoint);
     final headers = _buildHeaders(customHeaders: customHeaders, correlationId: correlationId);
