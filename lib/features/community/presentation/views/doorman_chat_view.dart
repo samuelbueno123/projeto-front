@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/responsive/responsive_layout.dart';
 import '../../../../core/services/realtime_service.dart';
 import '../../../../core/utils/formatters.dart';
@@ -377,7 +378,14 @@ class _DoormanChatViewState extends State<DoormanChatView> {
         // List
         Expanded(
           child: _loadingConversations
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: SaaSLoadingState(
+                      message: 'Carregando conversas...',
+                    ),
+                  ),
+                )
               : filtered.isEmpty
                   ? Center(
                       child: Padding(
@@ -643,22 +651,22 @@ class _DoormanChatViewState extends State<DoormanChatView> {
         // Message list
         Expanded(
           child: _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: SaaSLoadingState(
+                      message: 'Carregando mensagens do chat...',
+                    ),
+                  ),
+                )
               : _error != null
                   ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.error_outline_rounded, size: 40, color: Colors.redAccent),
-                          const SizedBox(height: 8),
-                          Text('Erro: $_error', textAlign: TextAlign.center),
-                          const SizedBox(height: 12),
-                          FilledButton.icon(
-                            onPressed: _loadMessages,
-                            icon: const Icon(Icons.refresh_rounded, size: 18),
-                            label: const Text('Tentar novamente'),
-                          ),
-                        ],
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: SaaSErrorState(
+                          message: 'Erro ao carregar mensagens: $_error',
+                          onRetry: _loadMessages,
+                        ),
                       ),
                     )
                   : _messages.isEmpty

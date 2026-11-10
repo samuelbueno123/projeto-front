@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/design_system/saas_design_system.dart';
 import '../../home/data/home_service.dart';
 
 /// Access to the units/residents directory of one condominium
@@ -189,7 +190,7 @@ class _UnitResidentPickerState extends State<_UnitResidentPicker> {
           future: _units,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(child: Padding(padding: EdgeInsets.all(24), child: SaaSLoadingState(message: 'Carregando unidades...')));
             }
             if (snapshot.hasError) {
               return _ErrorRetry(
@@ -266,7 +267,7 @@ class _UnitResidentPickerState extends State<_UnitResidentPicker> {
           future: _residents,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(child: Padding(padding: EdgeInsets.all(24), child: SaaSLoadingState(message: 'Carregando moradores...')));
             }
             if (snapshot.hasError) {
               return _ErrorRetry(
@@ -351,16 +352,9 @@ class _ErrorRetry extends StatelessWidget {
   Widget build(BuildContext context) => Center(
     child: Padding(
       padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: onRetry,
-            child: const Text('Tentar novamente'),
-          ),
-        ],
+      child: SaaSErrorState(
+        message: message,
+        onRetry: onRetry,
       ),
     ),
   );
@@ -433,7 +427,7 @@ class _UnitDirectoryViewState extends State<UnitDirectoryView> {
           future: _units,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(child: Padding(padding: EdgeInsets.all(24), child: SaaSLoadingState(message: 'Carregando estrutura...')));
             }
             if (snapshot.hasError) {
               return _ErrorRetry(

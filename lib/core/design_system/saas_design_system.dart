@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import '../responsive/responsive_layout.dart';
 
 /// Helper to check if running in automated widget test environment
 bool get isRunningTestEnvironment {
@@ -89,7 +90,7 @@ class SaaSColors {
       isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
 
   static Color textSecondary(bool isDark) =>
-      isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+      isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
 
   static Color muted(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -420,20 +421,27 @@ class SaaSEmptyState extends StatelessWidget {
     super.key,
     required this.icon,
     required this.title,
-    required this.description,
+    this.description = '',
+    this.subtitle,
     this.actionLabel,
     this.onAction,
+    this.action,
   });
 
   final IconData icon;
   final String title;
   final String description;
+  final String? subtitle;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final descText = (subtitle != null && subtitle!.isNotEmpty)
+        ? subtitle!
+        : description;
 
     return Center(
       child: Padding(
@@ -465,20 +473,25 @@ class SaaSEmptyState extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 360),
-              child: Text(
-                description,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: SaaSColors.textSecondary(isDark),
-                  height: 1.4,
+            if (descText.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Text(
+                  descText,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: SaaSColors.textSecondary(isDark),
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
               ),
-            ),
-            if (actionLabel != null && onAction != null) ...[
+            ],
+            if (action != null) ...[
+              const SizedBox(height: 18),
+              action!,
+            ] else if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 18),
               ShadButton(
                 onPressed: onAction,
@@ -547,5 +560,639 @@ class SaaSCard extends StatelessWidget {
     }
 
     return card;
+  }
+}
+
+// =========================================================================
+// SAAS NOTIFICATION & FEEDBACK SYSTEM (SaaSFeedback)
+// =========================================================================
+
+class SaaSFeedback {
+  static void showSuccess(
+    BuildContext context,
+    String message, {
+    String? title,
+    Duration duration = const Duration(seconds: 4),
+    VoidCallback? onAction,
+    String? actionLabel,
+  }) {
+    _show(
+      context,
+      message: message,
+      title: title,
+      duration: duration,
+      icon: Icons.check_circle_rounded,
+      fgColor: const Color(0xFF047857),
+      bgColor: const Color(0xFFECFDF5),
+      borderColor: const Color(0xFFA7F3D0),
+      onAction: onAction,
+      actionLabel: actionLabel,
+    );
+  }
+
+  static void showError(
+    BuildContext context,
+    String message, {
+    String? title,
+    Duration duration = const Duration(seconds: 5),
+    VoidCallback? onRetry,
+  }) {
+    _show(
+      context,
+      message: message,
+      title: title ?? 'Atenção',
+      duration: duration,
+      icon: Icons.error_rounded,
+      fgColor: const Color(0xFFB91C1C),
+      bgColor: const Color(0xFFFEF2F2),
+      borderColor: const Color(0xFFFECACA),
+      onAction: onRetry,
+      actionLabel: onRetry != null ? 'Tentar novamente' : null,
+    );
+  }
+
+  static void showWarning(
+    BuildContext context,
+    String message, {
+    String? title,
+    Duration duration = const Duration(seconds: 4),
+  }) {
+    _show(
+      context,
+      message: message,
+      title: title,
+      duration: duration,
+      icon: Icons.warning_rounded,
+      fgColor: const Color(0xFFB45309),
+      bgColor: const Color(0xFFFFFBEB),
+      borderColor: const Color(0xFFFDE68A),
+    );
+  }
+
+  static void showInfo(
+    BuildContext context,
+    String message, {
+    String? title,
+    Duration duration = const Duration(seconds: 4),
+  }) {
+    _show(
+      context,
+      message: message,
+      title: title,
+      duration: duration,
+      icon: Icons.info_rounded,
+      fgColor: const Color(0xFF1D4ED8),
+      bgColor: const Color(0xFFEFF6FF),
+      borderColor: const Color(0xFFBFDBFE),
+    );
+  }
+
+  static void _show(
+    BuildContext context, {
+    required String message,
+    String? title,
+    required Duration duration,
+    required IconData icon,
+    required Color fgColor,
+    required Color bgColor,
+    required Color borderColor,
+    VoidCallback? onAction,
+    String? actionLabel,
+  }) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        duration: duration,
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: 1.2),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: fgColor, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (title != null && title.isNotEmpty)
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: fgColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    Text(
+                      message,
+                      style: TextStyle(
+                        color: fgColor.withValues(alpha: 0.9),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onAction != null && actionLabel != null) ...[
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () {
+                    messenger.hideCurrentSnackBar();
+                    onAction();
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: fgColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                  ),
+                  child: Text(actionLabel),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =========================================================================
+// SAAS LOADING & SKELETON COMPONENTS
+// =========================================================================
+
+class SaaSLoadingState extends StatelessWidget {
+  const SaaSLoadingState({
+    super.key,
+    this.message = 'Carregando dados...',
+    this.submessage,
+  });
+
+  final String message;
+  final String? submessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: SaaSColors.surface(isDark),
+                shape: BoxShape.circle,
+                border: Border.all(color: SaaSColors.border(isDark)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: const SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(SaaSColors.primary),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: SaaSColors.textPrimary(isDark),
+              ),
+            ),
+            if (submessage != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                submessage!,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: SaaSColors.textSecondary(isDark),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SaaSSkeleton extends StatefulWidget {
+  const SaaSSkeleton({
+    super.key,
+    this.width,
+    this.height = 16,
+    this.borderRadius = 8,
+    this.margin,
+  });
+
+  final double? width;
+  final double height;
+  final double borderRadius;
+  final EdgeInsetsGeometry? margin;
+
+  @override
+  State<SaaSSkeleton> createState() => _SaaSSkeletonState();
+}
+
+class _SaaSSkeletonState extends State<SaaSSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _animation = Tween<double>(begin: 0.4, end: 0.9).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    if (!isRunningTestEnvironment) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          margin: widget.margin,
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            color: isRunningTestEnvironment
+                ? baseColor
+                : baseColor.withValues(alpha: _animation.value),
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// =========================================================================
+// SAAS ERROR STATE
+// =========================================================================
+
+class SaaSErrorState extends StatelessWidget {
+  const SaaSErrorState({
+    super.key,
+    required this.message,
+    this.title = 'Não foi possível carregar',
+    this.onRetry,
+  });
+
+  final String message;
+  final String title;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEE2E2),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: const Icon(Icons.cloud_off_rounded, size: 32, color: Color(0xFFDC2626)),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: SaaSColors.textPrimary(isDark),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: Text(
+                message,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: SaaSColors.textSecondary(isDark),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Tentar novamente'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// =========================================================================
+// SAAS SEARCH BAR
+// =========================================================================
+
+class SaaSSearchBar extends StatefulWidget {
+  const SaaSSearchBar({
+    super.key,
+    this.hintText = 'Buscar registros...',
+    required this.onChanged,
+    this.onSubmitted,
+    this.initialValue = '',
+    this.trailing,
+  });
+
+  final String hintText;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final String initialValue;
+  final Widget? trailing;
+
+  @override
+  State<SaaSSearchBar> createState() => _SaaSSearchBarState();
+}
+
+class _SaaSSearchBarState extends State<SaaSSearchBar> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 44,
+            decoration: BoxDecoration(
+              color: SaaSColors.surface(isDark),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: SaaSColors.border(isDark)),
+            ),
+            child: TextField(
+              controller: _controller,
+              onChanged: widget.onChanged,
+              onSubmitted: widget.onSubmitted,
+              style: TextStyle(
+                fontSize: 13.5,
+                color: SaaSColors.textPrimary(isDark),
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                hintText: widget.hintText,
+                hintStyle: TextStyle(
+                  color: SaaSColors.textSecondary(isDark).withValues(alpha: 0.7),
+                  fontSize: 13,
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  size: 18,
+                  color: SaaSColors.textSecondary(isDark),
+                ),
+                suffixIcon: _controller.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 16),
+                        onPressed: () {
+                          _controller.clear();
+                          widget.onChanged('');
+                          setState(() {});
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+              ),
+            ),
+          ),
+        ),
+        if (widget.trailing != null) ...[
+          const SizedBox(width: 8),
+          widget.trailing!,
+        ],
+      ],
+    );
+  }
+}
+
+// =========================================================================
+// SAAS METRIC GRID
+// =========================================================================
+
+class SaaSMetricGrid extends StatelessWidget {
+  const SaaSMetricGrid({
+    super.key,
+    required this.items,
+  });
+
+  final List<Widget> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = ResponsiveLayout.isMobile(context);
+    final isTablet = ResponsiveLayout.isTablet(context);
+
+    int crossAxisCount = 4;
+    if (isMobile) {
+      crossAxisCount = 1;
+    } else if (isTablet) {
+      crossAxisCount = 2;
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = (constraints.maxWidth - ((crossAxisCount - 1) * 12)) / crossAxisCount;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: items.map((child) => SizedBox(width: itemWidth, child: child)).toList(),
+        );
+      },
+    );
+  }
+}
+
+// =========================================================================
+// SAAS DATA CARD (Consolidated list card for items)
+// =========================================================================
+
+class SaaSDataCard extends StatelessWidget {
+  const SaaSDataCard({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.badge,
+    this.leadingIcon,
+    this.metadata = const [],
+    this.actions = const [],
+    this.onTap,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? badge;
+  final IconData? leadingIcon;
+  final List<Widget> metadata;
+  final List<Widget> actions;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return SaaSCard(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 10),
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (leadingIcon != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: SaaSColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(leadingIcon, size: 18, color: SaaSColors.primary),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14.5,
+                              color: SaaSColors.textPrimary(isDark),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (badge != null) ...[
+                          const SizedBox(width: 8),
+                          badge!,
+                        ],
+                      ],
+                    ),
+                    if (subtitle != null && subtitle!.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: SaaSColors.textSecondary(isDark),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (metadata.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              children: metadata,
+            ),
+          ],
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: actions,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

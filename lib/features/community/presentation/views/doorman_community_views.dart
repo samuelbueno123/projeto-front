@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/utils/formatters.dart';
 import '../dialogs/counter_proposal_dialog.dart';
 import 'package:flutter/material.dart';
@@ -332,9 +333,13 @@ class _DoormanVisitorsViewState extends State<DoormanVisitorsView> {
           const SizedBox(height: 10),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando visitantes da portaria...')))
                 : _visitors.isEmpty
-                    ? const Center(child: Text('Nenhum visitante aguardando entrada.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.person_search_outlined,
+                        title: 'Nenhum visitante aguardando',
+                        subtitle: 'Não há visitantes pré-autorizados ou na fila de entrada.',
+                      )
                     : ListView.separated(
                         itemCount: _visitors.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -437,9 +442,13 @@ class _DoormanGuestListsViewState extends State<DoormanGuestListsView> {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando listas de convidados...')))
           : _lists.isEmpty
-              ? const Center(child: Text('Nenhuma lista de convidados para eventos agendados.'))
+              ? const SaaSEmptyState(
+                  icon: Icons.celebration_outlined,
+                  title: 'Nenhuma lista de convidados',
+                  subtitle: 'Não há listas vinculadas a eventos ou reservas ativas.',
+                )
               : ListView.separated(
                   itemCount: _lists.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -582,9 +591,13 @@ class _DoormanSmartLockersViewState extends State<DoormanSmartLockersView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando status dos lockers...')))
                 : _lockers.isEmpty
-                    ? const Center(child: Text('Nenhum compartimento ocupado.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.all_inbox_outlined,
+                        title: 'Nenhum compartimento ocupado',
+                        subtitle: 'Todos os armários inteligentes estão livres no momento.',
+                      )
                     : ListView.separated(
                         itemCount: _lockers.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -719,9 +732,13 @@ class _DoormanLostFoundViewState extends State<DoormanLostFoundView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando achados e perdidos...')))
                 : _items.isEmpty
-                    ? const Center(child: Text('Nenhum item guardado na portaria.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.inventory_outlined,
+                        title: 'Nenhum item guardado',
+                        subtitle: 'Não há objetos perdidos sob custódia da portaria.',
+                      )
                     : ListView.separated(
                         itemCount: _items.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -930,17 +947,16 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando reservas de áreas comuns...')))
                 : _filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      _category == 'CANCELLED'
-                          ? 'Nenhuma reserva cancelada.'
-                          : _category == 'PAST'
-                              ? 'Nenhuma reserva finalizada.'
-                              : 'Nenhuma reserva encontrada.',
-                      style: const TextStyle(color: Color(0xFF64748B)),
-                    ),
+                ? SaaSEmptyState(
+                    icon: Icons.event_busy_rounded,
+                    title: 'Nenhuma reserva encontrada',
+                    subtitle: _category == 'CANCELLED'
+                        ? 'Não há reservas canceladas registradas.'
+                        : _category == 'PAST'
+                            ? 'Não há reservas finalizadas para este filtro.'
+                            : 'Não há agendamentos para este filtro.',
                   )
                 : ListView.separated(
                     itemCount: _filtered.length,

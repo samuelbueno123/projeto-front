@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/config/api_config.dart';
+import '../../../../core/design_system/saas_design_system.dart';
 import '../../data/community_api.dart';
 import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../dialogs/upload_condominium_image_dialog.dart';
@@ -80,20 +81,24 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
     final isDark = theme.brightness == Brightness.dark;
 
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: SaaSLoadingState(
+            message: 'Carregando fotos e espaços do condomínio...',
+          ),
+        ),
+      );
     }
 
     if (_error != null) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline_rounded, size: 40, color: Color(0xFFDC2626)),
-            const SizedBox(height: 10),
-            Text('Erro ao carregar galeria: $_error'),
-            const SizedBox(height: 12),
-            FilledButton.tonal(onPressed: _load, child: const Text('Tentar novamente')),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: SaaSErrorState(
+            message: 'Erro ao carregar galeria: $_error',
+            onRetry: _load,
+          ),
         ),
       );
     }
@@ -152,29 +157,19 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
         // Gallery grid
         Expanded(
           child: _filteredImages.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.photo_library_outlined, size: 52, color: theme.disabledColor),
-                      const SizedBox(height: 14),
-                      Text(
-                        _selectedAreaFilter != null
-                            ? 'Nenhuma imagem cadastrada para esta área comum.'
-                            : 'Nenhuma foto publicada na galeria ainda.',
-                        style: const TextStyle(color: Color(0xFF64748B), fontSize: 14.5),
-                        textAlign: TextAlign.center,
-                      ),
-                      if (widget.canManage) ...[
-                        const SizedBox(height: 14),
-                        FilledButton.tonalIcon(
+              ? SaaSEmptyState(
+                  icon: Icons.photo_library_outlined,
+                  title: 'Nenhuma foto na galeria',
+                  subtitle: _selectedAreaFilter != null
+                      ? 'Nenhuma imagem cadastrada para esta área comum.'
+                      : 'Nenhuma foto publicada na galeria ainda.',
+                  action: widget.canManage
+                      ? FilledButton.tonalIcon(
                           onPressed: _openUploadDialog,
                           icon: const Icon(Icons.add_photo_alternate_outlined),
                           label: const Text('Subir primeira imagem'),
-                        ),
-                      ],
-                    ],
-                  ),
+                        )
+                      : null,
                 )
               : LayoutBuilder(
                   builder: (context, constraints) {

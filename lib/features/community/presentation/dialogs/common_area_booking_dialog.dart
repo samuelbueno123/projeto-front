@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../data/community_api.dart';
 
@@ -116,13 +117,11 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
     if (_selectedArea == null) return;
     final phoneErr = validatePhone(_phoneController.text);
     if (phoneErr != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(phoneErr)));
+      SaaSFeedback.showWarning(context, phoneErr);
       return;
     }
     if (_isAvailable == false) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecione um horário disponível antes de prosseguir.')),
-      );
+      SaaSFeedback.showWarning(context, 'Por favor, selecione um horário disponível antes de prosseguir.');
       return;
     }
 
@@ -141,22 +140,21 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
       final isPending = status == 'PENDING';
 
       Navigator.of(context).pop(true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: isPending ? const Color(0xFFB45309) : const Color(0xFF15803D),
-          content: Text(
-            isPending
-                ? 'Solicitação de reserva enviada! Aguardando aprovação do síndico.'
-                : 'Reserva confirmada com sucesso!',
-          ),
-        ),
-      );
+      if (isPending) {
+        SaaSFeedback.showWarning(
+          context,
+          'Solicitação de reserva enviada! Aguardando aprovação do síndico.',
+        );
+      } else {
+        SaaSFeedback.showSuccess(
+          context,
+          'Reserva confirmada com sucesso!',
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Falha ao reservar: $e')),
-      );
+      SaaSFeedback.showError(context, 'Falha ao reservar: $e');
     }
   }
 
@@ -164,7 +162,7 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
     if (_selectedArea == null) return;
     final phoneErr = validatePhone(_phoneController.text);
     if (phoneErr != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(phoneErr)));
+      SaaSFeedback.showWarning(context, phoneErr);
       return;
     }
 
@@ -181,20 +179,14 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
       if (!mounted) return;
       final pos = res['waitlistPosition'] ?? 1;
       Navigator.of(context).pop(true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF2F3FB0),
-          content: Text(
-            'Você entrou na Lista de Espera (posição #$pos)! Caso haja cancelamento, sua reserva será promovida automaticamente.',
-          ),
-        ),
+      SaaSFeedback.showInfo(
+        context,
+        'Você entrou na Lista de Espera (posição #$pos)! Caso haja cancelamento, sua reserva será promovida automaticamente.',
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Falha ao entrar na lista de espera: $e')),
-      );
+      SaaSFeedback.showError(context, 'Falha ao entrar na lista de espera: $e');
     }
   }
 
@@ -225,9 +217,16 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
       content: SizedBox(
         width: 540,
         child: _loadingAreas
-            ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: SaaSLoadingState(message: 'Carregando áreas comuns...'),
+              )
             : _areas.isEmpty
-                ? const Text('Nenhuma área comum ativa encontrada neste condomínio.')
+                ? const SaaSEmptyState(
+                    icon: Icons.deck_outlined,
+                    title: 'Nenhum espaço cadastrado',
+                    subtitle: 'Nenhuma área comum ativa encontrada neste condomínio.',
+                  )
                 : SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,6 +235,7 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
                         // Seleção de Área
                         DropdownButtonFormField<Map<String, dynamic>>(
                           value: _selectedArea,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Espaço / Área Comum',
                             prefixIcon: Icon(Icons.deck_outlined),
@@ -408,6 +408,7 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
                             Expanded(
                               child: DropdownButtonFormField<int>(
                                 value: _durationHours,
+                                isExpanded: true,
                                 decoration: const InputDecoration(
                                   labelText: 'Duração',
                                   contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),

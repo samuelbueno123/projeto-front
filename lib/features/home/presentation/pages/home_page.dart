@@ -416,7 +416,14 @@ class _HomePageState extends State<HomePage> {
             // Content Area
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: SaaSLoadingState(
+                          message: 'Carregando suas informações e comunicados...',
+                        ),
+                      ),
+                    )
                   : _error != null
                       ? _errorPanel()
                       : _memberships.isEmpty && _tab == 0
@@ -889,7 +896,11 @@ class _HomePageState extends State<HomePage> {
                 api: _communityApi,
                 isDoormanMode: false,
               )
-            : const Center(child: Text('Nenhum condomínio ativo.'));
+            : const SaaSEmptyState(
+                icon: Icons.chat_bubble_outline_rounded,
+                title: 'Nenhum condomínio ativo',
+                subtitle: 'Vincule-se a um condomínio para conversar com a portaria.',
+              );
       case 5:
         return _condominium != null
             ? CondominiumGalleryView(
@@ -897,7 +908,11 @@ class _HomePageState extends State<HomePage> {
                 api: _communityApi,
                 canManage: _canManage,
               )
-            : const Center(child: Text('Nenhum condomínio ativo.'));
+            : const SaaSEmptyState(
+                icon: Icons.photo_library_outlined,
+                title: 'Nenhum condomínio ativo',
+                subtitle: 'Vincule-se a um condomínio para visualizar a galeria de fotos.',
+              );
       case 6:
         return _condominium != null
             ? CommunityHubView(
@@ -3065,41 +3080,17 @@ class _HomePageState extends State<HomePage> {
         ],
       );
 
-  Widget _empty(String message, IconData icon) => Card(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-          child: Center(
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: const Color(0xFFE8ECFF),
-                  child: Icon(icon, size: 28, color: const Color(0xFF2F3FB0)),
-                ),
-                const SizedBox(height: 12),
-                Text(message, textAlign: TextAlign.center),
-              ],
-            ),
-          ),
-        ),
+  Widget _empty(String message, IconData icon) => SaaSEmptyState(
+        icon: icon,
+        title: message,
       );
 
   Widget _errorPanel() => Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off_outlined, size: 44),
-              const SizedBox(height: 12),
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Tentar novamente'),
-              ),
-            ],
+          child: SaaSErrorState(
+            message: _error!,
+            onRetry: _load,
           ),
         ),
       );

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../core/design_system/saas_design_system.dart';
 import '../core/theme/app_theme.dart';
 import '../features/auth/presentation/controllers/auth_controller.dart';
 import '../features/auth/presentation/pages/login_page.dart';
@@ -85,7 +86,16 @@ class _AppWidgetState extends State<AppWidget> {
 
   Widget _buildHome() {
     if (_authController.isBootstrapping) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: SaaSLoadingState(
+              message: 'Inicializando o sistema...',
+            ),
+          ),
+        ),
+      );
     }
 
     if (_authController.isAuthenticated) {

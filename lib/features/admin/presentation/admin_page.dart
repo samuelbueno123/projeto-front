@@ -231,7 +231,11 @@ class _AdminPageState extends State<AdminPage> {
             backgroundColor: Theme.of(context).brightness == Brightness.dark
                 ? const Color(0xFF0F172A)
                 : const Color(0xFFF8FAFC),
-            body: const Center(child: CircularProgressIndicator()),
+            body: const Center(
+              child: SaaSLoadingState(
+                message: 'Carregando painel administrativo global...',
+              ),
+            ),
           );
         }
         if (snapshot.hasError) {
@@ -239,18 +243,9 @@ class _AdminPageState extends State<AdminPage> {
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.cloud_off_outlined, size: 42),
-                    const SizedBox(height: 12),
-                    Text(snapshot.error.toString(), textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _refresh,
-                      child: const Text('Tentar novamente'),
-                    ),
-                  ],
+                child: SaaSErrorState(
+                  message: snapshot.error.toString(),
+                  onRetry: _refresh,
                 ),
               ),
             ),
@@ -1546,15 +1541,22 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
       future: _data,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: SaaSLoadingState(
+                message: 'Carregando registros...',
+              ),
+            ),
+          );
         }
         if (snapshot.hasError) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: Text(
-                snapshot.error.toString(),
-                textAlign: TextAlign.center,
+              child: SaaSErrorState(
+                message: snapshot.error.toString(),
+                onRetry: _load,
               ),
             ),
           );
@@ -1585,7 +1587,11 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
             ),
             if (rows.isEmpty)
               const Expanded(
-                child: Center(child: Text('Nenhum registro encontrado.')),
+                child: SaaSEmptyState(
+                  icon: Icons.search_off_rounded,
+                  title: 'Nenhum registro encontrado',
+                  subtitle: 'Não há registros correspondentes aos critérios de pesquisa.',
+                ),
               )
             else
               Expanded(

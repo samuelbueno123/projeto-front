@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/design_system/saas_design_system.dart';
 import '../../data/community_api.dart';
 
 class JoinCondominiumDialog extends StatefulWidget {
@@ -93,17 +94,16 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Color(0xFF15803D),
-          content: Text('Solicitação enviada ao síndico! Você será notificado assim que aprovada.'),
-        ),
+      SaaSFeedback.showSuccess(
+        context,
+        'Solicitação enviada ao síndico! Você será notificado assim que aprovada.',
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Falha ao enviar solicitação: $e')),
+      SaaSFeedback.showError(
+        context,
+        'Falha ao enviar solicitação: $e',
       );
     }
   }
@@ -124,9 +124,16 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
       content: SizedBox(
         width: 480,
         child: _loading
-            ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: SaaSLoadingState(message: 'Buscando condomínios abertos...'),
+              )
             : _condos.isEmpty
-                ? const Text('Nenhum condomínio aberto para solicitações de novos moradores no momento.')
+                ? const SaaSEmptyState(
+                    icon: Icons.domain_disabled_rounded,
+                    title: 'Nenhum condomínio disponível',
+                    subtitle: 'No momento não há condomínios abertos para novas solicitações.',
+                  )
                 : SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -141,6 +148,7 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
                         // Seleção do condomínio
                         DropdownButtonFormField<Map<String, dynamic>>(
                           value: _selectedCondo,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Selecione o Condomínio',
                             prefixIcon: Icon(Icons.apartment_rounded),
@@ -175,6 +183,7 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
                         else if (_units.isNotEmpty)
                           DropdownButtonFormField<Map<String, dynamic>>(
                             value: _selectedUnit,
+                            isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'Sua Unidade / Apartamento',
                               prefixIcon: Icon(Icons.home_outlined),
@@ -205,6 +214,7 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
                         // Tipo de vínculo (Proprietário ou Inquilino)
                         DropdownButtonFormField<String>(
                           value: _residentType,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Tipo de Residência',
                             prefixIcon: Icon(Icons.badge_outlined),

@@ -364,7 +364,14 @@ class _UserProfilePageState extends State<UserProfilePage> {
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: SaaSLoadingState(
+                  message: 'Carregando dados do seu perfil...',
+                ),
+              ),
+            )
           : LayoutBuilder(
               builder: (context, constraints) {
                 if (constraints.maxWidth >= 900) {

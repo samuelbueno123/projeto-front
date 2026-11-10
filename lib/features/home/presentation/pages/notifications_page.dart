@@ -257,7 +257,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
         future: _load,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: SaaSLoadingState(
+                  message: 'Carregando notificações e avisos...',
+                ),
+              ),
+            );
           }
           if (snapshot.hasError) {
             return Center(

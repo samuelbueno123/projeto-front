@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/services/realtime_service.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../data/community_api.dart';
@@ -525,9 +526,13 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando chamados e ocorrências...')))
                 : _tickets.isEmpty
-                    ? const Center(child: Text('Nenhuma ocorrência registrada no condomínio.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.report_problem_outlined,
+                        title: 'Nenhuma ocorrência registrada',
+                        subtitle: 'Tudo tranquilo! Não há chamados ou ocorrências abertas no momento.',
+                      )
                     : ListView.separated(
                         itemCount: _tickets.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -885,9 +890,13 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando visitantes pré-autorizados...')))
                 : _visitors.isEmpty
-                    ? const Center(child: Text('Nenhum visitante pré-autorizado.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.person_add_disabled_outlined,
+                        title: 'Nenhum visitante pré-autorizado',
+                        subtitle: 'Gere convites com QR Code ou PIN para liberar a entrada na portaria.',
+                      )
                     : ListView.separated(
                         itemCount: _visitors.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -1176,9 +1185,13 @@ class _PollsSubViewState extends State<_PollsSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando votações e assembleias virtuais...')))
                 : _polls.isEmpty
-                    ? const Center(child: Text('Nenhuma votação ou assembleia virtual aberta no momento.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.how_to_vote_outlined,
+                        title: 'Nenhuma votação em andamento',
+                        subtitle: 'Não há enquetes ou votações virtuais ativas no momento.',
+                      )
                     : ListView.separated(
                         itemCount: _polls.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -1418,9 +1431,13 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando anúncios e classificados...')))
                 : _ads.isEmpty
-                    ? const Center(child: Text('Nenhum anúncio disponível no momento.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.storefront_outlined,
+                        title: 'Nenhum anúncio disponível',
+                        subtitle: 'Compartilhe itens para venda, doação ou serviços com os vizinhos.',
+                      )
                     : ListView.separated(
                         itemCount: _ads.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -1799,9 +1816,13 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando veículos cadastrados...')))
                 : _vehicles.isEmpty
-                    ? const Center(child: Text('Nenhum veículo registrado na sua unidade.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.directions_car_outlined,
+                        title: 'Nenhum veículo registrado',
+                        subtitle: 'Cadastre seus carros ou motos para controle de acesso às vagas.',
+                      )
                     : ListView.separated(
                         itemCount: _vehicles.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -2082,9 +2103,13 @@ class _PetsSubViewState extends State<_PetsSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando pets cadastrados...')))
                 : _pets.isEmpty
-                    ? const Center(child: Text('Nenhum animal cadastrado no condomínio.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.pets_outlined,
+                        title: 'Nenhum animal cadastrado',
+                        subtitle: 'Cadastre seu animal de estimação para melhor identificação e convivência.',
+                      )
                     : ListView.separated(
                         itemCount: _pets.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -2376,9 +2401,13 @@ class _MovingSubViewState extends State<_MovingSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando agendamentos de mudança...')))
                 : _requests.isEmpty
-                    ? const Center(child: Text('Nenhum agendamento de mudança registrado.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.local_shipping_outlined,
+                        title: 'Nenhum agendamento de mudança',
+                        subtitle: 'Reserve elevadores de serviço e horários para carga e descarga.',
+                      )
                     : ListView.separated(
                         itemCount: _requests.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -2634,9 +2663,13 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando documentos e atas...')))
                 : _docs.isEmpty
-                    ? const Center(child: Text('Nenhum documento ou regimento publicado pela administração ainda.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.folder_open_rounded,
+                        title: 'Nenhum documento publicado',
+                        subtitle: 'Não há regimentos, atas ou convenções disponíveis no momento.',
+                      )
                     : ListView.separated(
                         itemCount: _docs.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -2878,9 +2911,13 @@ class _InfractionsSubViewState extends State<_InfractionsSubView> {
           ],
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando notificações e advertências...')))
                 : _infractions.isEmpty
-                    ? const Center(child: Text('Nenhuma advertência ou multa registrada para sua unidade. Parabéns! 🎉'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.verified_user_outlined,
+                        title: 'Nenhuma advertência ou multa',
+                        subtitle: 'Sua unidade está em total conformidade com o regulamento interno. Parabéns!',
+                      )
                     : ListView.separated(
                         itemCount: _infractions.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -3138,9 +3175,13 @@ class _LockersSubViewState extends State<_LockersSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando status dos lockers...')))
                 : _lockers.isEmpty
-                    ? const Center(child: Text('Nenhuma encomenda aguardando em armários inteligentes.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.all_inbox_outlined,
+                        title: 'Nenhum armário ocupado',
+                        subtitle: 'Não há encomendas aguardando retirada em armários inteligentes no momento.',
+                      )
                     : ListView.separated(
                         itemCount: _lockers.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -3370,9 +3411,13 @@ class _GuestListsSubViewState extends State<_GuestListsSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando listas de convidados...')))
                 : _lists.isEmpty
-                    ? const Center(child: Text('Nenhuma lista de convidados criada para eventos.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.checklist_rtl_rounded,
+                        title: 'Nenhuma lista de convidados',
+                        subtitle: 'Crie listas para eventos, festas e churrascos para sincronização com a portaria.',
+                      )
                     : ListView.separated(
                         itemCount: _lists.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -3959,7 +4004,7 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
             : (_subTab == 1 ? _openNewEquipmentDialog : _openNewSupplierDialog),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando gestão de manutenção...')))
           : Column(
               children: [
                 Padding(
@@ -4020,7 +4065,11 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
                   ),
                   Expanded(
                     child: _orders.isEmpty
-                        ? const Center(child: Text('Nenhuma ordem de serviço encontrada.'))
+                        ? const SaaSEmptyState(
+                            icon: Icons.assignment_outlined,
+                            title: 'Nenhuma ordem de serviço',
+                            subtitle: 'Não há ordens de serviço cadastradas para este filtro.',
+                          )
                         : ListView.builder(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                             itemCount: _orders.length,
@@ -4131,7 +4180,11 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
                 ] else if (_subTab == 1) ...[
                   Expanded(
                     child: _equipment.isEmpty
-                        ? const Center(child: Text('Nenhum equipamento cadastrado no plano de manutenção preventiva.'))
+                        ? const SaaSEmptyState(
+                            icon: Icons.precision_manufacturing_outlined,
+                            title: 'Nenhum equipamento cadastrado',
+                            subtitle: 'Cadastre elevadores, bombas, portões e geradores para o plano preventivo.',
+                          )
                         : ListView.builder(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
                             itemCount: _equipment.length,
@@ -4177,7 +4230,11 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
                 ] else ...[
                   Expanded(
                     child: _suppliers.isEmpty
-                        ? const Center(child: Text('Nenhum fornecedor ou prestador homologado cadastrado.'))
+                        ? const SaaSEmptyState(
+                            icon: Icons.engineering_outlined,
+                            title: 'Nenhum fornecedor cadastrado',
+                            subtitle: 'Cadastre empresas e prestadores de serviço homologados pelo condomínio.',
+                          )
                         : ListView.builder(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
                             itemCount: _suppliers.length,
@@ -4471,9 +4528,13 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
             )
           : null,
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando assembleias gerais...')))
           : _assemblies.isEmpty
-              ? const Center(child: Text('Nenhuma assembleia agendada no momento.'))
+              ? const SaaSEmptyState(
+                  icon: Icons.groups_outlined,
+                  title: 'Nenhuma assembleia agendada',
+                  subtitle: 'Não há assembleias ordinárias ou extraordinárias convocadas no momento.',
+                )
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
                   itemCount: _assemblies.length,
@@ -4856,7 +4917,7 @@ class _FinancialSubViewState extends State<_FinancialSubView> {
             )
           : null,
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando demonstrativo financeiro e balancete...')))
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
@@ -5195,9 +5256,13 @@ class _LostFoundSubViewState extends State<_LostFoundSubView> {
           const SizedBox(height: 12),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando achados e perdidos...')))
                 : _items.isEmpty
-                    ? const Center(child: Text('Nenhum objeto registrado em Achados e Perdidos.'))
+                    ? const SaaSEmptyState(
+                        icon: Icons.search_off_rounded,
+                        title: 'Nenhum item registrado',
+                        subtitle: 'Não há objetos perdidos ou encontrados registrados no momento.',
+                      )
                     : ListView.separated(
                         itemCount: _items.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -5350,7 +5415,7 @@ class _ReportsSubViewState extends State<_ReportsSubView> {
     final areas = (_report?['commonAreaUtilization'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
 
     return _loading
-        ? const Center(child: CircularProgressIndicator())
+        ? const Center(child: Padding(padding: EdgeInsets.all(32), child: SaaSLoadingState(message: 'Carregando métricas e relatórios gerenciais...')))
         : ListView(
             padding: const EdgeInsets.all(16),
             children: [

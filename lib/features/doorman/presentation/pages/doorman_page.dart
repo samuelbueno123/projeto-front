@@ -1053,18 +1053,29 @@ class _DoormanPageState extends State<DoormanPage>
                       ],
                       Expanded(
                         child: _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : _error != null
-                            ? Center(child: Text(_error!))
-                            : _condominiums.isEmpty
                             ? const Center(
                                 child: Padding(
-                                  padding: EdgeInsets.all(24),
-                                  child: Text(
-                                    'Nenhum condomínio associado no momento. Verifique suas notificações para aceitar convites.',
-                                    textAlign: TextAlign.center,
+                                  padding: EdgeInsets.all(32),
+                                  child: SaaSLoadingState(
+                                    message: 'Carregando painel da portaria...',
                                   ),
                                 ),
+                              )
+                            : _error != null
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: SaaSErrorState(
+                                    message: _error!,
+                                    onRetry: _loadCondominiums,
+                                  ),
+                                ),
+                              )
+                            : _condominiums.isEmpty
+                            ? const SaaSEmptyState(
+                                icon: Icons.meeting_room_outlined,
+                                title: 'Nenhum condomínio associado',
+                                subtitle: 'Nenhum condomínio associado no momento. Verifique suas notificações para aceitar convites de portaria.',
                               )
                             : TabBarView(
                                 controller: _tabs,
@@ -1151,8 +1162,10 @@ class _DoormanPageState extends State<DoormanPage>
       ),
       Expanded(
         child: visiblePackages.isEmpty
-            ? const Center(
-                child: Text('Nenhuma encomenda encontrada para este filtro.'),
+            ? const SaaSEmptyState(
+                icon: Icons.inventory_2_outlined,
+                title: 'Nenhuma encomenda encontrada',
+                subtitle: 'Não há encomendas correspondentes ao filtro atual.',
               )
             : ListView.builder(
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 84),

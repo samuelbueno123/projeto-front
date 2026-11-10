@@ -894,36 +894,30 @@ Emitido via Âncora Gestão
             _buildManagerHeader(isDesktop, isDark),
             Expanded(
               child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.cloud_off_outlined, size: 44),
-                        const SizedBox(height: 12),
-                        Text(_error!, textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        FilledButton(
-                          onPressed: _load,
-                          child: const Text('Tentar novamente'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : _condos.isEmpty
                   ? const Center(
                       child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'Sua conta ainda não está vinculada como síndico a nenhum condomínio.',
-                          textAlign: TextAlign.center,
+                        padding: EdgeInsets.all(32),
+                        child: SaaSLoadingState(
+                          message: 'Carregando painel de gestão do síndico...',
                         ),
                       ),
                     )
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: SaaSErrorState(
+                              message: _error!,
+                              onRetry: _load,
+                            ),
+                          ),
+                        )
+                      : _condos.isEmpty
+                          ? const SaaSEmptyState(
+                              icon: Icons.domain_disabled_rounded,
+                              title: 'Nenhum condomínio vinculado',
+                              subtitle: 'Sua conta ainda não está vinculada como síndico a nenhum condomínio.',
+                            )
                   : LayoutBuilder(
                       builder: (context, constraints) {
                         if (constraints.maxWidth >= 980) {
@@ -3008,9 +3002,16 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
 
                     // Tab 2: Áreas Comuns
                     _loadingAreas
-                        ? const Center(child: CircularProgressIndicator())
+                        ? const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: SaaSLoadingState(message: 'Carregando áreas comuns...'),
+                          )
                         : _commonAreas.isEmpty
-                            ? const Center(child: Text('Nenhuma área comum cadastrada no condomínio.'))
+                            ? const SaaSEmptyState(
+                                icon: Icons.deck_rounded,
+                                title: 'Nenhuma área comum',
+                                subtitle: 'Nenhuma área comum cadastrada no condomínio.',
+                              )
                             : ListView.separated(
                                 padding: const EdgeInsets.all(16),
                                 itemCount: _commonAreas.length,
@@ -3076,9 +3077,16 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
 
                     // Tab 3: Setores / Blocos
                     _loadingSectors
-                        ? const Center(child: CircularProgressIndicator())
+                        ? const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: SaaSLoadingState(message: 'Carregando setores e blocos...'),
+                          )
                         : _sectors.isEmpty
-                            ? const Center(child: Text('Nenhum setor ou bloco cadastrado.'))
+                            ? const SaaSEmptyState(
+                                icon: Icons.view_quilt_outlined,
+                                title: 'Nenhum setor ou bloco',
+                                subtitle: 'Nenhum setor ou bloco cadastrado no condomínio.',
+                              )
                             : ListView.separated(
                                 padding: const EdgeInsets.all(16),
                                 itemCount: _sectors.length,
