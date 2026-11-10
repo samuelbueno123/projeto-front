@@ -16,6 +16,7 @@ import '../../auth/presentation/pages/user_profile_page.dart';
 import '../../manager/presentation/membership_management_page.dart';
 import 'admin_create_dialogs.dart';
 import 'system_announcement_page.dart';
+import 'admin_command_center_views.dart';
 
 class AdminPage extends StatefulWidget {
   const AdminPage({
@@ -31,6 +32,7 @@ class AdminPage extends StatefulWidget {
     this.currentRole,
     this.availableRoles = const [],
     this.onSwitchRole,
+    this.api,
   });
 
   final String? token;
@@ -45,15 +47,17 @@ class AdminPage extends StatefulWidget {
   final String? currentRole;
   final List<String> availableRoles;
   final ValueChanged<String>? onSwitchRole;
+  final HomeService? api;
 
   @override
   State<AdminPage> createState() => _AdminPageState();
 }
 
 class _AdminPageState extends State<AdminPage> {
-  late HomeService _api = HomeService(token: widget.token);
+  late HomeService _api = widget.api ?? HomeService(token: widget.token);
   Map<String, dynamic> _profile = {};
   late Future<Map<String, dynamic>> _summary;
+  String _activeTab = 'overview';
   String? _selectedResourceKey;
   String? _selectedResourceTitle;
 
@@ -65,11 +69,35 @@ class _AdminPageState extends State<AdminPage> {
     ('Unidades', 'units', Icons.home_work_outlined),
     ('Moradores', 'residents', Icons.groups_outlined),
     ('Encomendas', 'packages', Icons.inventory_2_outlined),
+    ('Histórico Encomendas', 'package-history', Icons.history_outlined),
     ('Comunicados', 'announcements', Icons.campaign_outlined),
     ('Reservas', 'reservations', Icons.event_available_outlined),
     ('Áreas comuns', 'common-areas', Icons.deck_outlined),
+    ('Notificações', 'notifications', Icons.notifications_none_outlined),
     ('Planos', 'billing-plans', Icons.receipt_long_outlined),
     ('Recursos do sistema', 'features', Icons.extension_outlined),
+    ('Chamados / Ocorrências', 'tickets', Icons.report_problem_outlined),
+    ('Acesso Visitantes', 'visitors', Icons.badge_outlined),
+    ('Achados e Perdidos', 'lost-found', Icons.search_outlined),
+    ('Classificados', 'classifieds', Icons.storefront_outlined),
+    ('Veículos', 'vehicles', Icons.directions_car_outlined),
+    ('Pets', 'pets', Icons.pets_outlined),
+    ('Mudanças', 'moving-requests', Icons.local_shipping_outlined),
+    ('Documentos', 'documents', Icons.description_outlined),
+    ('Armários Inteligentes', 'lockers', Icons.lock_clock_outlined),
+    ('Listas de Convidados', 'guest-lists', Icons.checklist_outlined),
+    ('Infrações e Multas', 'infractions', Icons.gavel_outlined),
+    ('Assembleias Virtuais', 'assemblies', Icons.how_to_vote_outlined),
+    ('Manutenções', 'maintenance-orders', Icons.build_circle_outlined),
+    ('Despesas', 'expenses', Icons.attach_money_outlined),
+    ('Boletos e Pagamentos', 'unit-payments', Icons.receipt_outlined),
+    ('Alertas de Pânico (SOS)', 'emergency-alerts', Icons.emergency_outlined),
+    ('Livro de Plantão', 'shift-logs', Icons.menu_book_outlined),
+    ('Reformas (NBR 16.280)', 'renovation-requests', Icons.construction_outlined),
+    ('Livro de Chaves', 'key-registry', Icons.key_outlined),
+    ('Leituras de Água/Gás', 'utility-readings', Icons.speed_outlined),
+    ('Vagas de Garagem', 'parking-spots', Icons.local_parking_outlined),
+    ('Enquetes', 'polls', Icons.poll_outlined),
   ];
 
   @override
@@ -99,6 +127,18 @@ class _AdminPageState extends State<AdminPage> {
   }
 
   Future<Map<String, dynamic>> _loadSummary() async {
+    try {
+      final overview = await _api.get('/admin/overview');
+      if (overview is Map<String, dynamic>) {
+        final moduleVolumes = (overview['moduleVolumes'] as Map?) ?? {};
+        final merged = Map<String, dynamic>.from(overview);
+        moduleVolumes.forEach((k, v) {
+          merged[k.toString()] = v;
+        });
+        return merged;
+      }
+    } catch (_) {}
+
     final result = await _api.get('/admin/dashboard');
     if (result is! Map<String, dynamic>) {
       throw const FormatException(
@@ -344,11 +384,54 @@ class _AdminPageState extends State<AdminPage> {
                   child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12, bottom: 6),
+                        child: Text(
+                          'CENTRAL DE COMANDO',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: SaaSColors.muted(context),
+                            letterSpacing: 0.9,
+                          ),
+                        ),
+                      ),
                       _buildSidebarItem(
                         icon: Icons.dashboard_outlined,
                         label: 'Visão Geral',
-                        isSelected: _selectedResourceKey == null,
+                        isSelected: _activeTab == 'overview' && _selectedResourceKey == null,
                         onTap: () => setState(() {
+                          _activeTab = 'overview';
+                          _selectedResourceKey = null;
+                          _selectedResourceTitle = null;
+                        }),
+                      ),
+                      _buildSidebarItem(
+                        icon: Icons.shield_outlined,
+                        label: 'Logs e Auditoria',
+                        isSelected: _activeTab == 'auditLogs' && _selectedResourceKey == null,
+                        onTap: () => setState(() {
+                          _activeTab = 'auditLogs';
+                          _selectedResourceKey = null;
+                          _selectedResourceTitle = null;
+                        }),
+                      ),
+                      _buildSidebarItem(
+                        icon: Icons.monitor_heart_outlined,
+                        label: 'Saúde e Diagnóstico',
+                        isSelected: _activeTab == 'diagnostics' && _selectedResourceKey == null,
+                        onTap: () => setState(() {
+                          _activeTab = 'diagnostics';
+                          _selectedResourceKey = null;
+                          _selectedResourceTitle = null;
+                        }),
+                      ),
+                      _buildSidebarItem(
+                        icon: Icons.lock_person_outlined,
+                        label: 'Permissões e Papéis',
+                        isSelected: _activeTab == 'permissions' && _selectedResourceKey == null,
+                        onTap: () => setState(() {
+                          _activeTab = 'permissions';
                           _selectedResourceKey = null;
                           _selectedResourceTitle = null;
                         }),
@@ -452,95 +535,130 @@ class _AdminPageState extends State<AdminPage> {
                   ),
                   child: Row(
                     children: [
-                      if (_selectedResourceKey != null) ...[
-                        TextButton.icon(
-                          onPressed: () => setState(() {
-                            _selectedResourceKey = null;
-                            _selectedResourceTitle = null;
-                          }),
-                          icon: const Icon(Icons.arrow_back, size: 16),
-                          label: const Text('Visão Geral'),
-                        ),
-                        const SizedBox(width: 8),
-                        Text('/', style: TextStyle(color: SaaSColors.muted(context))),
-                        const SizedBox(width: 8),
-                        Text(
-                          _selectedResourceTitle!,
-                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                        ),
-                      ] else ...[
-                        Text(
-                          'Olá, ${firstNameOf(widget.userName, fallback: 'administrador')}! 👋',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const SaaSBadge(
-                          label: 'Administrador do Sistema',
-                          variant: SaaSBadgeVariant.primary,
-                        ),
-                      ],
-
-                      const Spacer(),
-
-                      if (widget.currentRole != null && widget.onSwitchRole != null)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 12),
-                          child: RoleSwitcherPill(
-                            currentRole: widget.currentRole!,
-                            availableRoles: widget.availableRoles,
-                            onSwitchRole: widget.onSwitchRole!,
-                          ),
-                        ),
-
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: SaaSColors.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        ),
-                        onPressed: _openCreateCondominium,
-                        icon: const Icon(Icons.domain_add_outlined, size: 18),
-                        label: const Text('Novo condomínio'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        ),
-                        onPressed: _openCreateAnyEntityMenu,
-                        icon: const Icon(Icons.add_circle_outline, size: 18),
-                        label: const Text('Criar registro'),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        tooltip: 'Publicar aviso geral',
-                        icon: const Icon(Icons.campaign_outlined),
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => SystemAnnouncementPage(api: _api),
-                          ),
+                      Flexible(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_selectedResourceKey != null) ...[
+                              TextButton.icon(
+                                onPressed: () => setState(() {
+                                  _selectedResourceKey = null;
+                                  _selectedResourceTitle = null;
+                                }),
+                                icon: const Icon(Icons.arrow_back, size: 16),
+                                label: const Text('Visão Geral'),
+                              ),
+                              const SizedBox(width: 8),
+                              Text('/', style: TextStyle(color: SaaSColors.muted(context))),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  _selectedResourceTitle!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ] else ...[
+                              Flexible(
+                                child: Text(
+                                  switch (_activeTab) {
+                                    'auditLogs' => 'Logs e Auditoria do Sistema',
+                                    'diagnostics' => 'Saúde e Diagnóstico do Cluster',
+                                    'permissions' => 'Matriz de Permissões e Perfis (RBAC)',
+                                    _ => 'Olá, ${firstNameOf(widget.userName, fallback: 'administrador')}! 👋',
+                                  },
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              SaaSBadge(
+                                label: switch (_activeTab) {
+                                  'auditLogs' => 'Registros Imutáveis',
+                                  'diagnostics' => 'Métricas em Tempo Real',
+                                  'permissions' => '4 Perfis do Sistema',
+                                  _ => 'Administrador do Sistema',
+                                },
+                                variant: switch (_activeTab) {
+                                  'auditLogs' => SaaSBadgeVariant.primary,
+                                  'diagnostics' => SaaSBadgeVariant.success,
+                                  'permissions' => SaaSBadgeVariant.neutral,
+                                  _ => SaaSBadgeVariant.primary,
+                                },
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Atualizar dados',
-                        icon: const Icon(Icons.refresh),
-                        onPressed: _refresh,
-                      ),
-                      IconButton(
-                        tooltip: 'Minha conta',
-                        icon: const Icon(Icons.person_outline),
-                        onPressed: _openProfile,
-                      ),
-                      IconButton(
-                        tooltip: isDark ? 'Modo claro' : 'Modo escuro',
-                        icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
-                        onPressed: () {
-                          AppTheme.themeModeNotifier.value =
-                              isDark ? ThemeMode.light : ThemeMode.dark;
-                        },
+                      const SizedBox(width: 12),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (widget.currentRole != null && widget.onSwitchRole != null)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: RoleSwitcherPill(
+                                  currentRole: widget.currentRole!,
+                                  availableRoles: widget.availableRoles,
+                                  onSwitchRole: widget.onSwitchRole!,
+                                ),
+                              ),
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: SaaSColors.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              ),
+                              onPressed: _openCreateCondominium,
+                              icon: const Icon(Icons.domain_add_outlined, size: 18),
+                              label: const Text('Novo condomínio'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              ),
+                              onPressed: _openCreateAnyEntityMenu,
+                              icon: const Icon(Icons.add_circle_outline, size: 18),
+                              label: const Text('Criar registro'),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              tooltip: 'Publicar aviso geral',
+                              icon: const Icon(Icons.campaign_outlined),
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => SystemAnnouncementPage(api: _api),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Atualizar dados',
+                              icon: const Icon(Icons.refresh),
+                              onPressed: _refresh,
+                            ),
+                            IconButton(
+                              tooltip: 'Minha conta',
+                              icon: const Icon(Icons.person_outline),
+                              onPressed: _openProfile,
+                            ),
+                            IconButton(
+                              tooltip: isDark ? 'Modo claro' : 'Modo escuro',
+                              icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+                              onPressed: () {
+                                AppTheme.themeModeNotifier.value =
+                                    isDark ? ThemeMode.light : ThemeMode.dark;
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -560,10 +678,31 @@ class _AdminPageState extends State<AdminPage> {
                             _selectedResourceTitle = null;
                           }),
                         )
-                      : Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                      : switch (_activeTab) {
+                          'auditLogs' => AdminAuditLogView(api: _api),
+                          'diagnostics' => AdminDiagnosticsView(api: _api),
+                          'permissions' => AdminPermissionsView(api: _api),
+                          _ => _buildOverviewContent(context, data, isDark, borderColor),
+                        },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverviewContent(
+    BuildContext context,
+    Map<String, dynamic> data,
+    bool isDark,
+    Color borderColor,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               // 4 Top Metric Cards
                               Row(
@@ -745,14 +884,7 @@ class _AdminPageState extends State<AdminPage> {
                               ),
                             ],
                           ),
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+                        );
   }
 
   Widget _buildSidebarItem({
@@ -1021,6 +1153,51 @@ class _AdminPageState extends State<AdminPage> {
                         ),
                       ),
                     ),
+                    _QuickActionCard(
+                      width: cardWidth,
+                      icon: Icons.shield_outlined,
+                      color: const Color(0xFF4F46E5),
+                      title: 'Logs e Auditoria',
+                      subtitle: 'Trilha permanente e imutável de eventos',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => Scaffold(
+                            appBar: AppBar(title: const Text('Logs e Auditoria')),
+                            body: AdminAuditLogView(api: _api),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _QuickActionCard(
+                      width: cardWidth,
+                      icon: Icons.monitor_heart_outlined,
+                      color: const Color(0xFF059669),
+                      title: 'Saúde e Diagnóstico',
+                      subtitle: 'Telemetria, JVM, caches e latência',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => Scaffold(
+                            appBar: AppBar(title: const Text('Saúde e Diagnóstico')),
+                            body: AdminDiagnosticsView(api: _api),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _QuickActionCard(
+                      width: cardWidth,
+                      icon: Icons.lock_person_outlined,
+                      color: const Color(0xFF7C3AED),
+                      title: 'Permissões e Papéis',
+                      subtitle: 'Matriz RBAC e planos de assinatura',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => Scaffold(
+                            appBar: AppBar(title: const Text('Permissões e Papéis (RBAC)')),
+                            body: AdminPermissionsView(api: _api),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 22),
@@ -1071,6 +1248,18 @@ class _AdminPageState extends State<AdminPage> {
   String _countKey(String resource) => switch (resource) {
     'common-areas' => 'commonAreas',
     'billing-plans' => 'billingPlans',
+    'package-history' => 'packageHistory',
+    'lost-found' => 'lostFound',
+    'moving-requests' => 'movingRequests',
+    'guest-lists' => 'guestLists',
+    'maintenance-orders' => 'maintenanceOrders',
+    'unit-payments' => 'unitPayments',
+    'emergency-alerts' => 'emergencyAlerts',
+    'shift-logs' => 'shiftLogs',
+    'renovation-requests' => 'renovationRequests',
+    'key-registry' => 'keyRegistry',
+    'utility-readings' => 'utilityReadings',
+    'parking-spots' => 'parkingSpots',
     _ => resource,
   };
 

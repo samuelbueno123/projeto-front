@@ -27,6 +27,18 @@ class HomeService {
     }
   }
 
+  Future<dynamic> post(String path, [Map<String, dynamic>? body]) =>
+      send('POST', path, body: body);
+
+  Future<dynamic> put(String path, [Map<String, dynamic>? body]) =>
+      send('PUT', path, body: body);
+
+  Future<dynamic> patch(String path, [Map<String, dynamic>? body]) =>
+      send('PATCH', path, body: body);
+
+  Future<dynamic> delete(String path) =>
+      send('DELETE', path);
+
   Future<dynamic> send(
     String method,
     String path, {
