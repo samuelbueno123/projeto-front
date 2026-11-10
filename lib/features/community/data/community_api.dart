@@ -1192,6 +1192,162 @@ class CommunityApi {
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
+  // 13. OBRAS E REFORMAS (NBR 16.280)
+  Future<List<Map<String, dynamic>>> getRenovations(num condoId, {bool mine = false}) async {
+    final res = await api.get('/condominiums/$condoId/renovations?mine=$mine');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> requestRenovation(num condoId, Map<String, dynamic> body) async {
+    final res = await api.send('POST', '/condominiums/$condoId/renovations', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<void> approveRenovation(num id, {String? decisionNotes}) async {
+    await api.send('PATCH', '/renovations/$id/approve', body: {
+      if (decisionNotes != null) 'decisionNotes': decisionNotes,
+    });
+  }
+
+  Future<void> rejectRenovation(num id, {String? decisionNotes}) async {
+    await api.send('PATCH', '/renovations/$id/reject', body: {
+      if (decisionNotes != null) 'decisionNotes': decisionNotes,
+    });
+  }
+
+  Future<void> completeRenovation(num id) async {
+    await api.send('PATCH', '/renovations/$id/complete');
+  }
+
+  // 14. LIVRO DIGITAL DE PASSAGEM DE TURNO DA PORTARIA
+  Future<List<Map<String, dynamic>>> getShiftLogs(num condoId) async {
+    final res = await api.get('/condominiums/$condoId/shift-logs');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> createShiftLog(num condoId, Map<String, dynamic> body) async {
+    final res = await api.send('POST', '/condominiums/$condoId/shift-logs', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<void> acknowledgeShiftLog(num id) async {
+    await api.send('PATCH', '/shift-logs/$id/acknowledge');
+  }
+
+  // 15. CONTROLE DE CHAVES E TAGS DA PORTARIA
+  Future<List<Map<String, dynamic>>> getKeys(num condoId, {String? status}) async {
+    final q = (status != null && status.isNotEmpty) ? '?status=$status' : '';
+    final res = await api.get('/condominiums/$condoId/keys$q');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> createKey(num condoId, Map<String, dynamic> body) async {
+    final res = await api.send('POST', '/condominiums/$condoId/keys', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<void> checkoutKey(num id, Map<String, dynamic> body) async {
+    await api.send('POST', '/keys/$id/checkout', body: body);
+  }
+
+  Future<void> checkinKey(num id, {String? notes}) async {
+    await api.send('POST', '/keys/$id/checkin', body: {
+      if (notes != null) 'notes': notes,
+    });
+  }
+
+  // 16. BOTÃO DE PÂNICO & ALERTA DE EMERGÊNCIA (SOS)
+  Future<List<Map<String, dynamic>>> getEmergencyAlerts(num condoId, {String? status}) async {
+    final q = (status != null && status.isNotEmpty) ? '?status=$status' : '';
+    final res = await api.get('/condominiums/$condoId/emergency-alerts$q');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> triggerEmergencyAlert(num condoId, Map<String, dynamic> body) async {
+    final res = await api.send('POST', '/condominiums/$condoId/emergency-alerts', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<void> attendEmergencyAlert(num id) async {
+    await api.send('PATCH', '/emergency-alerts/$id/attend');
+  }
+
+  Future<void> resolveEmergencyAlert(num id, {String? resolutionNotes}) async {
+    await api.send('PATCH', '/emergency-alerts/$id/resolve', body: {
+      if (resolutionNotes != null) 'resolutionNotes': resolutionNotes,
+    });
+  }
+
+  // 17. MEDIÇÃO INDIVIDUALIZADA DE ÁGUA E GÁS
+  Future<List<Map<String, dynamic>>> getUtilityReadings(num condoId, {int? year, int? month, num? unitId}) async {
+    final params = <String>[];
+    if (year != null) params.add('year=$year');
+    if (month != null) params.add('month=$month');
+    if (unitId != null) params.add('unitId=$unitId');
+    final q = params.isEmpty ? '' : '?${params.join('&')}';
+    final res = await api.get('/condominiums/$condoId/utility-readings$q');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> createUtilityReading(num condoId, Map<String, dynamic> body) async {
+    final res = await api.send('POST', '/condominiums/$condoId/utility-readings', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  // 18. PREVISÃO ORÇAMENTÁRIA vs REALIZADO
+  Future<Map<String, dynamic>> getBudgetComparison(num condoId, {int? year, int? month}) async {
+    final params = <String>[];
+    if (year != null) params.add('year=$year');
+    if (month != null) params.add('month=$month');
+    final q = params.isEmpty ? '' : '?${params.join('&')}';
+    final res = await api.get('/condominiums/$condoId/financial/budget-comparison$q');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> saveBudgetForecast(num condoId, Map<String, dynamic> body) async {
+    final res = await api.send('POST', '/condominiums/$condoId/financial/budgets', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  // 19. CHECKLISTS DE INSPEÇÃO PREDIAL
+  Future<List<Map<String, dynamic>>> getChecklists(num condoId) async {
+    final res = await api.get('/condominiums/$condoId/maintenance/checklists');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> createChecklist(num condoId, Map<String, dynamic> body) async {
+    final res = await api.send('POST', '/condominiums/$condoId/maintenance/checklists', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<void> completeChecklist(num id, {String? generalNotes}) async {
+    await api.send('PATCH', '/maintenance/checklists/$id/complete', body: {
+      if (generalNotes != null) 'generalNotes': generalNotes,
+    });
+  }
+
+  // 20. CONTRATOS E GARANTIAS
+  Future<List<Map<String, dynamic>>> getContracts(num condoId, {String? status}) async {
+    final q = (status != null && status.isNotEmpty) ? '?status=$status' : '';
+    final res = await api.get('/condominiums/$condoId/contracts$q');
+    return _asList(res);
+  }
+
+  Future<Map<String, dynamic>> createContract(num condoId, Map<String, dynamic> body) async {
+    final res = await api.send('POST', '/condominiums/$condoId/contracts', body: body);
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
+  Future<void> terminateContract(num id) async {
+    await api.send('PATCH', '/contracts/$id/terminate');
+  }
+
+  // 21. CONVITE DIGITAL WHATSAPP
+  Future<Map<String, dynamic>> getVisitorDigitalPass(num visitorId) async {
+    final res = await api.get('/visitors/$visitorId/digital-pass');
+    return res is Map<String, dynamic> ? res : <String, dynamic>{};
+  }
+
   List<Map<String, dynamic>> _asList(dynamic data) {
     final List rawList;
     if (data is List) {
