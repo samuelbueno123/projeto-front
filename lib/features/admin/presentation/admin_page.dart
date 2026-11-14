@@ -1745,7 +1745,7 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
               padding: const EdgeInsets.all(24),
               child: SaaSErrorState(
                 message: snapshot.error.toString(),
-                onRetry: _load,
+                onRetry: () => setState(_load),
               ),
             ),
           );

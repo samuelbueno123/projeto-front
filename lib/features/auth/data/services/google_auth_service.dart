@@ -66,7 +66,9 @@ class AuthService {
     try {
       await _googleSignIn.disconnect();
     } catch (_) {}
-    await _googleSignIn.signOut();
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
     await clearSession();
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/utils/formatters.dart';
 import '../../data/community_api.dart';
 
 class CounterProposalDialog extends StatefulWidget {
@@ -28,12 +29,15 @@ class _CounterProposalDialogState extends State<CounterProposalDialog> {
   @override
   void initState() {
     super.initState();
-    final rawStart = widget.reservation['startAt']?.toString();
-    final dt = rawStart != null ? DateTime.tryParse(rawStart) ?? DateTime.now() : DateTime.now();
-    _proposedDate = dt;
+    final dt =
+        parseUtcToLocal(widget.reservation['startAt']) ?? DateTime.now();
+    final rawEnd = parseUtcToLocal(widget.reservation['endAt']);
+    final endDt = rawEnd ?? dt.add(const Duration(hours: 4));
+    _proposedDate = DateTime(dt.year, dt.month, dt.day);
     _proposedStartTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
-    _proposedEndTime = TimeOfDay(hour: (dt.hour + 4) % 24, minute: dt.minute);
-    _notesCtrl.text = 'Sugerimos este horário alternativo para melhor acomodar seu evento.';
+    _proposedEndTime = TimeOfDay(hour: endDt.hour, minute: endDt.minute);
+    _notesCtrl.text =
+        'Sugerimos este horário alternativo para melhor acomodar seu evento.';
   }
 
   @override
@@ -230,11 +234,14 @@ class _CounterProposalDialogState extends State<CounterProposalDialog> {
   }
 
   Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initial = _proposedDate.isBefore(today) ? today : _proposedDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _proposedDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 180)),
+      initialDate: initial,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 180)),
     );
     if (picked != null) setState(() => _proposedDate = picked);
   }

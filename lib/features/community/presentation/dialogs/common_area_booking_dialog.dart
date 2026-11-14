@@ -139,7 +139,6 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
       final status = res['status']?.toString();
       final isPending = status == 'PENDING';
 
-      Navigator.of(context).pop(true);
       if (isPending) {
         SaaSFeedback.showWarning(
           context,
@@ -151,6 +150,7 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
           'Reserva confirmada com sucesso!',
         );
       }
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
@@ -178,11 +178,11 @@ class _CommonAreaBookingDialogState extends State<CommonAreaBookingDialog> {
 
       if (!mounted) return;
       final pos = res['waitlistPosition'] ?? 1;
-      Navigator.of(context).pop(true);
       SaaSFeedback.showInfo(
         context,
         'Você entrou na Lista de Espera (posição #$pos)! Caso haja cancelamento, sua reserva será promovida automaticamente.',
       );
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);

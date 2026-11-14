@@ -394,9 +394,9 @@ class _BoletoPaymentDialogState extends State<BoletoPaymentDialog> {
                         children: [
                           Expanded(
                             child: Text(
-                              widget.digitableLine.isNotEmpty
+                              widget.digitableLine.trim().isNotEmpty
                                   ? widget.digitableLine
-                                  : '34191.79001 01043.510047 91020.150008 8 98010000045000',
+                                  : 'Linha digitável indisponível',
                               style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5, fontWeight: FontWeight.w600),
                             ),
                           ),
@@ -405,15 +405,19 @@ class _BoletoPaymentDialogState extends State<BoletoPaymentDialog> {
                             icon: Icon(
                               _copied ? Icons.check_rounded : Icons.copy_rounded,
                               size: 18,
-                              color: _copied ? const Color(0xFF15803D) : const Color(0xFF2563EB),
+                              color: widget.digitableLine.trim().isEmpty
+                                  ? Colors.grey
+                                  : (_copied ? const Color(0xFF15803D) : const Color(0xFF2563EB)),
                             ),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: widget.digitableLine));
-                              setState(() => _copied = true);
-                              Future.delayed(const Duration(seconds: 2), () {
-                                if (mounted) setState(() => _copied = false);
-                              });
-                            },
+                            onPressed: widget.digitableLine.trim().isEmpty
+                                ? null
+                                : () {
+                                    Clipboard.setData(ClipboardData(text: widget.digitableLine));
+                                    setState(() => _copied = true);
+                                    Future.delayed(const Duration(seconds: 2), () {
+                                      if (mounted) setState(() => _copied = false);
+                                    });
+                                  },
                           ),
                         ],
                       ),

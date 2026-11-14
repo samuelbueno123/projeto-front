@@ -31,6 +31,11 @@ class ManagerPage extends StatefulWidget {
     required this.token,
     required this.userName,
     required this.onLogout,
+    this.userEmail,
+    this.authProvider = 'password',
+    this.reauthenticateWithGoogle,
+    this.refreshWithCredentials,
+    this.refreshGoogleSession,
     this.currentRole,
     this.availableRoles = const [],
     this.onSwitchRole,
@@ -38,6 +43,12 @@ class ManagerPage extends StatefulWidget {
 
   final String? token;
   final String? userName;
+  final String? userEmail;
+  final String authProvider;
+  final Future<String> Function()? reauthenticateWithGoogle;
+  final Future<void> Function(String email, String password)?
+  refreshWithCredentials;
+  final Future<void> Function()? refreshGoogleSession;
   final Future<void> Function() onLogout;
   final String? currentRole;
   final List<String> availableRoles;
@@ -48,8 +59,8 @@ class ManagerPage extends StatefulWidget {
 }
 
 class _ManagerPageState extends State<ManagerPage> {
-  late final HomeService _api = HomeService(token: widget.token);
-  late final CommunityApi _communityApi = CommunityApi(api: _api);
+  late HomeService _api = HomeService(token: widget.token);
+  late CommunityApi _communityApi = CommunityApi(api: _api);
   List<Map<String, dynamic>> _condos = [];
   Map<String, dynamic> _profile = {};
   Map<String, dynamic>? _condoDetails;
@@ -64,6 +75,17 @@ class _ManagerPageState extends State<ManagerPage> {
     super.initState();
     _loadProfile();
     _init();
+  }
+
+  @override
+  void didUpdateWidget(covariant ManagerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.token != widget.token) {
+      _api = HomeService(token: widget.token);
+      _communityApi = CommunityApi(api: _api);
+      _loadProfile();
+      _init();
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -81,16 +103,19 @@ class _ManagerPageState extends State<ManagerPage> {
         builder: (_) => UserProfilePage(
           token: widget.token,
           userName: widget.userName,
-          userEmail: _profile['email'] as String?,
-          provider: 'password',
+          userEmail: _profile['email'] as String? ?? widget.userEmail,
+          provider: widget.authProvider,
           onLogout: widget.onLogout,
           onClose: () {
             Navigator.of(context).pop();
             _loadProfile();
           },
-          reauthenticateWithGoogle: () async => '',
-          refreshWithCredentials: (_, __) async {},
-          refreshGoogleSession: () async {},
+          reauthenticateWithGoogle:
+              widget.reauthenticateWithGoogle ?? () async => '',
+          refreshWithCredentials:
+              widget.refreshWithCredentials ?? (_, __) async {},
+          refreshGoogleSession:
+              widget.refreshGoogleSession ?? () async {},
         ),
       ),
     );
@@ -655,10 +680,17 @@ class _ManagerPageState extends State<ManagerPage> {
     if (mounted) _load();
   }
 
-  Future<void> _editPayment(Map<String, dynamic> unit) async {
-    var status = unit['paymentStatus'] == 'NOT_RECORDED'
-        ? 'PENDING'
-        : unit['paymentStatus'] as String;
+  Future<bool> _editPayment(Map<String, dynamic> unit) async {
+    const allowedStatuses = {
+      'PAID',
+      'PENDING',
+      'OVERDUE',
+      'CONFIRMATION_REQUESTED',
+    };
+    final rawStatus = unit['paymentStatus']?.toString();
+    var status = (rawStatus != null && allowedStatuses.contains(rawStatus))
+        ? rawStatus
+        : 'PENDING';
     final amount = TextEditingController(
       text: unit['amount']?.toString() ?? '',
     );
@@ -690,6 +722,10 @@ class _ManagerPageState extends State<ManagerPage> {
                     DropdownMenuItem(
                       value: 'OVERDUE',
                       child: Text('Em atraso'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'CONFIRMATION_REQUESTED',
+                      child: Text('Confirmação solicitada'),
                     ),
                   ],
                   onChanged: (value) =>
@@ -730,7 +766,7 @@ class _ManagerPageState extends State<ManagerPage> {
         ),
       ),
     );
-    if (save != true) return;
+    if (save != true) return false;
     try {
       await _api.send(
         'PUT',
@@ -749,12 +785,14 @@ class _ManagerPageState extends State<ManagerPage> {
           const SnackBar(content: Text('Situação financeira atualizada!')),
         );
       }
+      return true;
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
+      return false;
     }
   }
 
@@ -2203,7 +2241,7 @@ class _ManagerUnitsMenuPage extends StatefulWidget {
   });
 
   final List<Map<String, dynamic>> units;
-  final Future<void> Function(Map<String, dynamic> unit) onEditPayment;
+  final Future<bool> Function(Map<String, dynamic> unit) onEditPayment;
 
   @override
   State<_ManagerUnitsMenuPage> createState() => _ManagerUnitsMenuPageState();
@@ -2273,11 +2311,13 @@ class _ManagerUnitsMenuPageState extends State<_ManagerUnitsMenuPage> {
                                     foregroundColor: Colors.white,
                                   ),
                                   onPressed: () async {
-                                    await widget.onEditPayment({
+                                    final updated = await widget.onEditPayment({
                                       ...unit,
                                       'paymentStatus': 'PAID',
                                     });
-                                    if (context.mounted) Navigator.pop(context);
+                                    if (updated && context.mounted) {
+                                      Navigator.pop(context);
+                                    }
                                   },
                                   icon: const Icon(Icons.check_circle_outline, size: 16),
                                   label: const Text('Confirmar Pagamento'),
@@ -2285,8 +2325,10 @@ class _ManagerUnitsMenuPageState extends State<_ManagerUnitsMenuPage> {
                                 const SizedBox(width: 8),
                                 OutlinedButton.icon(
                                   onPressed: () async {
-                                    await widget.onEditPayment(unit);
-                                    if (context.mounted) Navigator.pop(context);
+                                    final updated = await widget.onEditPayment(unit);
+                                    if (updated && context.mounted) {
+                                      Navigator.pop(context);
+                                    }
                                   },
                                   icon: const Icon(Icons.edit_outlined, size: 18),
                                   label: const Text('Editar'),
@@ -2295,8 +2337,10 @@ class _ManagerUnitsMenuPageState extends State<_ManagerUnitsMenuPage> {
                             )
                           : OutlinedButton.icon(
                               onPressed: () async {
-                                await widget.onEditPayment(unit);
-                                if (context.mounted) Navigator.pop(context);
+                                final updated = await widget.onEditPayment(unit);
+                                if (updated && context.mounted) {
+                                  Navigator.pop(context);
+                                }
                               },
                               icon: const Icon(Icons.edit_outlined, size: 18),
                               label: const Text('Atualizar'),

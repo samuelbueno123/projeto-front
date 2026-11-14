@@ -50,6 +50,43 @@ class _RenovationRequestDialogState extends State<RenovationRequestDialog> {
     super.dispose();
   }
 
+  String _formatDateBr(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year.toString().padLeft(4, '0')}';
+
+  String _sectorLabel(Map<String, dynamic> unit) {
+    final sectorName = unit['sectorName']?.toString().trim();
+    if (sectorName != null && sectorName.isNotEmpty) return sectorName;
+    final rawSector = unit['sector'];
+    if (rawSector is Map) {
+      return rawSector['name']?.toString().trim() ?? '';
+    }
+    return rawSector?.toString().trim() ?? '';
+  }
+
+  Future<void> _pickDate({required bool isStart}) async {
+    final initial = isStart ? _startDate : _endDate;
+    final first = isStart
+        ? DateTime.now().subtract(const Duration(days: 1))
+        : _startDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(first) ? first : initial,
+      firstDate: first,
+      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (isStart) {
+        _startDate = picked;
+        if (_endDate.isBefore(_startDate)) {
+          _endDate = _startDate.add(const Duration(days: 7));
+        }
+      } else {
+        _endDate = picked;
+      }
+    });
+  }
+
   Future<void> _submit() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
@@ -58,6 +95,12 @@ class _RenovationRequestDialogState extends State<RenovationRequestDialog> {
     }
     if (_selectedUnitId == null) {
       setState(() => _error = 'Selecione a unidade correspondente.');
+      return;
+    }
+    if (_endDate.isBefore(_startDate)) {
+      setState(
+        () => _error = 'A data de término não pode ser anterior à data de início.',
+      );
       return;
     }
 
@@ -145,7 +188,7 @@ class _RenovationRequestDialogState extends State<RenovationRequestDialog> {
                 isExpanded: true,
                 value: _selectedUnitId,
                 items: widget.units.map((u) {
-                  final sec = u['sector']?.toString() ?? '';
+                  final sec = _sectorLabel(u);
                   final idf = u['identifier']?.toString() ?? '';
                   return DropdownMenuItem<num>(
                     value: u['id'] as num?,
@@ -166,6 +209,55 @@ class _RenovationRequestDialogState extends State<RenovationRequestDialog> {
                   hintText: 'Ex.: Reforma completa de cozinha e banheiro',
                   contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
+              ),
+              const SizedBox(height: 14),
+
+              // Description
+              const Text('Descrição Detalhada dos Serviços', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _descCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Descreva ambientes, demolições, elétrica, hidráulica ou alterações previstas',
+                  contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // Start & End dates
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Início Previsto *', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                        const SizedBox(height: 6),
+                        OutlinedButton.icon(
+                          onPressed: _submitting ? null : () => _pickDate(isStart: true),
+                          icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                          label: Text(_formatDateBr(_startDate)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Término Previsto *', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                        const SizedBox(height: 6),
+                        OutlinedButton.icon(
+                          onPressed: _submitting ? null : () => _pickDate(isStart: false),
+                          icon: const Icon(Icons.event_available_rounded, size: 16),
+                          label: Text(_formatDateBr(_endDate)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 14),
 

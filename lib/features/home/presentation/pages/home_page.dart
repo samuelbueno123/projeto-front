@@ -86,7 +86,7 @@ class _HomePageState extends State<HomePage> {
     if (fromSession.isNotEmpty && !fromSession.contains('@')) {
       return fromSession;
     }
-    return 'Lucas';
+    return 'Morador';
   }
 
   String get _unitDisplay {
@@ -648,7 +648,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Bem-vindo ao ${_text(_condominium?['name'], 'Residencial Vila das Flores')}',
+            'Bem-vindo ao ${_text(_condominium?['name'], 'Seu Condomínio')}',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.8),
               fontSize: 13.5,
@@ -662,9 +662,17 @@ class _HomePageState extends State<HomePage> {
   Widget _desktopNavTab(String title, int tabIndex) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _tab == tabIndex;
-    final hasNew = (tabIndex == 1 && _packages.any((p) => p['status'] == 'WAITING_PICKUP' || p['status'] == 'RECEIVED')) ||
-                   (tabIndex == 2 && _reservations.any((r) => r['status'] == 'COUNTER_PROPOSED')) ||
-                   (tabIndex == 6 && _announcements.isNotEmpty);
+    final hasNew =
+        (tabIndex == 1 &&
+            _packages.any(
+              (p) =>
+                  p['status'] == 'WAITING_PICKUP' ||
+                  p['status'] == 'RECEIVED' ||
+                  p['status'] == 'NOTIFIED',
+            )) ||
+        (tabIndex == 2 &&
+            _reservations.any((r) => r['status'] == 'COUNTER_PROPOSED')) ||
+        (tabIndex == 7 && _announcements.isNotEmpty);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -949,7 +957,12 @@ class _HomePageState extends State<HomePage> {
   // MOBILE DASHBOARD (EXACT VISUAL MATCH TO SCREENSHOT)
   // ----------------------------------------------------
   Widget _mobileDashboard() {
-    final hasNewPackage = _packages.any((p) => p['status'] == 'WAITING_PICKUP' || p['status'] == 'RECEIVED');
+    final hasNewPackage = _packages.any(
+      (p) =>
+          p['status'] == 'WAITING_PICKUP' ||
+          p['status'] == 'RECEIVED' ||
+          p['status'] == 'NOTIFIED',
+    );
     final hasNewAnnouncement = _announcements.isNotEmpty;
 
     return RefreshIndicator(
@@ -1025,10 +1038,22 @@ class _HomePageState extends State<HomePage> {
   // ----------------------------------------------------
   Widget _desktopDashboard() {
     final pendingPkgs = _packages
-        .where((e) => e['status'] == 'WAITING_PICKUP' || e['status'] == 'PENDING')
+        .where(
+          (e) =>
+              e['status'] == 'WAITING_PICKUP' ||
+              e['status'] == 'RECEIVED' ||
+              e['status'] == 'NOTIFIED' ||
+              e['status'] == 'PENDING',
+        )
         .length;
     final activeRes = _reservations
-        .where((r) => r['status'] == 'APPROVED' || r['status'] == 'PENDING')
+        .where(
+          (r) =>
+              r['status'] == 'CONFIRMED' ||
+              r['status'] == 'PENDING' ||
+              r['status'] == 'COUNTER_PROPOSED' ||
+              r['status'] == 'APPROVED',
+        )
         .length;
     final totalAnnouncements = _announcements.length;
     final hasOverdueInvoices = _invoices.any((i) => i['status'] == 'OVERDUE');
@@ -1725,13 +1750,22 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _formatDueDate(dynamic raw) {
-    if (raw == null) return '10/08/2026';
+    if (raw == null) return '—';
     return formatDate(raw);
   }
 
   Future<void> _paySingleBoleto(Map<String, dynamic> invoice) async {
-    final condoId = _condominium?['id'] ?? 1;
-    final unitId = _memberships.isNotEmpty ? (_memberships.first['unitId'] ?? 1) : 1;
+    final condoId = _condominium?['id'];
+    final unitId =
+        invoice['unitId'] ??
+        (_memberships.isNotEmpty ? _memberships.first['unitId'] : null);
+    if (condoId is! num || unitId is! num) {
+      SaaSFeedback.showWarning(
+        context,
+        'Nenhuma unidade vinculada para realizar o pagamento.',
+      );
+      return;
+    }
 
     await showDialog<void>(
       context: context,
@@ -1740,9 +1774,9 @@ class _HomePageState extends State<HomePage> {
         unitId: unitId,
         unitLabel: _unitDisplay,
         title: invoice['title']?.toString() ?? 'Taxa de Condomínio',
-        amount: (invoice['amount'] as num?)?.toDouble() ?? 450.00,
+        amount: (invoice['amount'] as num?)?.toDouble() ?? 0.0,
         dueDate: _formatDueDate(invoice['dueDate']),
-        digitableLine: invoice['digitableLine']?.toString() ?? '34191.79001 01043.510047 91020.150008 8 98010000045000',
+        digitableLine: invoice['digitableLine']?.toString() ?? '',
         status: invoice['status']?.toString() ?? 'PENDING',
         api: _communityApi,
         onPaid: () {
@@ -1930,7 +1964,7 @@ class _HomePageState extends State<HomePage> {
     final scheduledReservations = _reservations.where((r) {
       final s = (r['status']?.toString() ?? '').toUpperCase();
       if (s == 'CANCELLED' || s == 'REJECTED' || s == 'DENIED') return false;
-      final end = DateTime.tryParse(r['endAt']?.toString() ?? '');
+      final end = parseUtcToLocal(r['endAt']);
       return end == null || end.isAfter(DateTime.now());
     }).toList();
 
@@ -2210,17 +2244,17 @@ class _HomePageState extends State<HomePage> {
   String _formatReservationDateTime(Map<String, dynamic> r) {
     final start = r['startAt'];
     final end = r['endAt'];
-    if (start == null) return '20/08/2026\n14:00 - 18:00';
+    if (start == null) return 'Horário a definir';
     try {
       final s = parseUtcToLocal(start);
-      if (s == null) return '20/08/2026\n14:00 - 18:00';
+      if (s == null) return 'Horário a definir';
       final e = end != null ? parseUtcToLocal(end) : s.add(const Duration(hours: 4));
       final dateStr = DateFormat('dd/MM/yyyy').format(s);
       final sTime = DateFormat('HH:mm').format(s);
       final eTime = e != null ? DateFormat('HH:mm').format(e) : '';
       return '$dateStr\n$sTime - $eTime';
     } catch (_) {
-      return '20/08/2026\n14:00 - 18:00';
+      return 'Horário a definir';
     }
   }
 
@@ -2649,7 +2683,7 @@ class _HomePageState extends State<HomePage> {
 
             bool isPast(Map<String, dynamic> r) {
               if (isCancelled(r)) return false;
-              final end = DateTime.tryParse(r['endAt']?.toString() ?? '');
+              final end = parseUtcToLocal(r['endAt']);
               return end != null && end.isBefore(now);
             }
 
@@ -3352,10 +3386,10 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _showMoreMenus() async {
     final entries = <(String, String, IconData, String)>[
-      ('Áreas Comuns', '/condominiums/{id}/common-areas', Icons.deck_outlined, 'Espaços de lazer e agendamentos'),
+      ('Áreas Comuns', 'common-areas', Icons.deck_outlined, 'Espaços de lazer e agendamentos'),
       ('Galeria de Fotos', 'gallery', Icons.photo_library_outlined, 'Fotos das áreas do condomínio'),
       ('Chat com a Portaria', 'chat', Icons.chat_bubble_outline_rounded, 'Conversa em tempo real com a portaria'),
-      ('Planos e Serviços', '/billing/plans?page=0&size=50', Icons.receipt_long_outlined, 'Planos do condomínio'),
+      ('Planos e Serviços', 'plans', Icons.receipt_long_outlined, 'Planos e recursos do condomínio'),
     ];
 
     final selected = await showModalBottomSheet<(String, String, IconData, String)>(
@@ -3390,11 +3424,80 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (selected == null || !mounted) return;
-    if (selected.$2 == 'gallery') {
+    if (selected.$2 == 'common-areas') {
+      setState(() => _tab = 2);
+    } else if (selected.$2 == 'gallery') {
       setState(() => _tab = 5);
     } else if (selected.$2 == 'chat') {
       setState(() => _tab = 3);
+    } else if (selected.$2 == 'plans') {
+      await _showPlansInfoDialog();
     }
+  }
+
+  Future<void> _showPlansInfoDialog() async {
+    List<Map<String, dynamic>> plans = const [];
+    String? error;
+    try {
+      final res = await _api.get('/billing/plans');
+      if (res is List) {
+        plans = res.whereType<Map<String, dynamic>>().toList();
+      }
+    } catch (e) {
+      error = e.toString().replaceFirst('Exception: ', '');
+    }
+    if (!mounted) return;
+    final activePlan = _condominium?['billingPlanName']?.toString() ?? 'Não informado';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Planos e Recursos'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Plano atual do condomínio: $activePlan',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                if (error != null)
+                  Text('Não foi possível carregar os planos: $error')
+                else if (plans.isEmpty)
+                  const Text('Nenhum plano disponível encontrado.')
+                else
+                  ...plans.map((p) {
+                    final name = p['name']?.toString() ?? 'Plano';
+                    final fee = p['monthlyFee'];
+                    final isCurrent = name.toLowerCase() == activePlan.toLowerCase();
+                    final features = p['features'] is List
+                        ? (p['features'] as List).join(', ')
+                        : '';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        isCurrent ? Icons.check_circle_rounded : Icons.layers_outlined,
+                        color: isCurrent ? const Color(0xFF15803D) : null,
+                      ),
+                      title: Text('$name${fee != null ? ' • R\$ $fee/mês' : ''}'),
+                      subtitle: features.isNotEmpty ? Text(features) : null,
+                    );
+                  }),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _createReservation() async {

@@ -24,6 +24,11 @@ class DoormanPage extends StatefulWidget {
     required this.token,
     required this.userName,
     required this.onLogout,
+    this.userEmail,
+    this.authProvider = 'password',
+    this.reauthenticateWithGoogle,
+    this.refreshWithCredentials,
+    this.refreshGoogleSession,
     this.currentRole,
     this.availableRoles = const [],
     this.onSwitchRole,
@@ -31,6 +36,12 @@ class DoormanPage extends StatefulWidget {
 
   final String? token;
   final String? userName;
+  final String? userEmail;
+  final String authProvider;
+  final Future<String> Function()? reauthenticateWithGoogle;
+  final Future<void> Function(String email, String password)?
+  refreshWithCredentials;
+  final Future<void> Function()? refreshGoogleSession;
   final Future<void> Function() onLogout;
   final String? currentRole;
   final List<String> availableRoles;
@@ -44,8 +55,8 @@ class _DoormanPageState extends State<DoormanPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 8, vsync: this);
   DirectoryApi? _directory;
-  late final HomeService _api;
-  late final CommunityApi _communityApi;
+  late HomeService _api;
+  late CommunityApi _communityApi;
   List<Map<String, dynamic>> _condominiums = [];
   Map<String, dynamic>? _selectedCondominium;
   List<Map<String, dynamic>> _packages = [];
@@ -75,6 +86,31 @@ class _DoormanPageState extends State<DoormanPage>
     _loadCondominiums();
   }
 
+  @override
+  void didUpdateWidget(covariant DoormanPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.token != widget.token) {
+      _api = HomeService(token: widget.token);
+      _communityApi = CommunityApi(api: _api);
+      final selectedId = (_selectedCondominium?['id'] as num?)?.toInt();
+      _directory = selectedId == null
+          ? null
+          : DirectoryApi(api: _api, condominiumId: selectedId);
+      RealtimeService.instance.setToken(widget.token);
+      if (widget.token != null &&
+          widget.token!.isNotEmpty &&
+          _sseSub == null) {
+        _sseSub = RealtimeService.instance.events.listen((event) {
+          if (event.type == 'PACKAGE_UPDATED') {
+            _loadPackages();
+          }
+        });
+      }
+      _loadProfile();
+      _loadCondominiums();
+    }
+  }
+
   Future<void> _loadProfile() async {
     try {
       final data = await _api.get('/users/me');
@@ -90,16 +126,19 @@ class _DoormanPageState extends State<DoormanPage>
         builder: (_) => UserProfilePage(
           token: widget.token,
           userName: widget.userName,
-          userEmail: _profile['email'] as String?,
-          provider: 'password',
+          userEmail: _profile['email'] as String? ?? widget.userEmail,
+          provider: widget.authProvider,
           onLogout: widget.onLogout,
           onClose: () {
             Navigator.of(context).pop();
             _loadProfile();
           },
-          reauthenticateWithGoogle: () async => '',
-          refreshWithCredentials: (_, __) async {},
-          refreshGoogleSession: () async {},
+          reauthenticateWithGoogle:
+              widget.reauthenticateWithGoogle ?? () async => '',
+          refreshWithCredentials:
+              widget.refreshWithCredentials ?? (_, __) async {},
+          refreshGoogleSession:
+              widget.refreshGoogleSession ?? () async {},
         ),
       ),
     );
@@ -408,22 +447,38 @@ class _DoormanPageState extends State<DoormanPage>
     );
     if (ok == true && pinCtrl.text.trim().isNotEmpty) {
       final raw = pinCtrl.text.trim();
+      final upper = raw.toUpperCase();
       final parsedId = int.tryParse(raw);
       final matching = _packages.firstWhere(
-        (p) => p['id'] == parsedId || p['id']?.toString() == raw || p['trackingCode']?.toString().toUpperCase() == raw.toUpperCase(),
+        (p) {
+          final status = p['status']?.toString();
+          if (status == 'PICKED_UP' ||
+              status == 'RETURNED' ||
+              status == 'CANCELLED') {
+            return false;
+          }
+          final pPin = p['pickupPin']?.toString().trim().toUpperCase();
+          final paddedId = p['id']?.toString().padLeft(6, '0');
+          final tracking = p['trackingCode']?.toString().trim().toUpperCase();
+          return (pPin != null && pPin.isNotEmpty && pPin == upper) ||
+              paddedId == raw ||
+              (parsedId != null && p['id'] == parsedId) ||
+              p['id']?.toString() == raw ||
+              (tracking != null && tracking.isNotEmpty && tracking == upper);
+        },
         orElse: () => {},
       );
-      final targetId = (matching['id'] as num?)?.toInt() ?? parsedId;
+      final targetId = (matching['id'] as num?)?.toInt();
       if (targetId != null) {
         try {
-          await _updatePackageStatus(targetId, 'pick-up');
+          await _updatePackageStatus(targetId, 'pickup');
         } catch (e) {
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Código PIN não encontrado para as encomendas deste condomínio.')),
+            const SnackBar(content: Text('Código PIN não encontrado para as encomendas pendentes deste condomínio.')),
           );
         }
       }
@@ -851,7 +906,45 @@ class _DoormanPageState extends State<DoormanPage>
                   label: 'Atualizar',
                   onTap: _loadPackages,
                 ),
-
+                const SizedBox(width: 6),
+                _doormanMobileActionButton(
+                  icon: Icons.notifications_none_rounded,
+                  label: 'Notificações',
+                  onTap: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => NotificationsPage(
+                          api: _api,
+                          condominiumId:
+                              (_selectedCondominium?['id'] as num?)?.toInt(),
+                          onInvitationChanged: _loadCondominiums,
+                        ),
+                      ),
+                    );
+                    if (mounted) _loadCondominiums();
+                  },
+                ),
+                const SizedBox(width: 6),
+                _doormanMobileActionButton(
+                  icon: isDark
+                      ? Icons.light_mode_rounded
+                      : Icons.dark_mode_outlined,
+                  label: isDark ? 'Modo Claro' : 'Modo Noturno',
+                  onTap: () {
+                    final nextPref = isDark ? 'LIGHT' : 'DARK';
+                    AppTheme.setThemePreference(nextPref);
+                    _communityApi.updateThemePreference(nextPref);
+                  },
+                ),
+                const SizedBox(width: 6),
+                _doormanMobileActionButton(
+                  icon: Icons.logout_rounded,
+                  label: 'Sair',
+                  onTap: () {
+                    widget.onLogout();
+                  },
+                  isDestructive: true,
+                ),
               ],
             ),
           ),
@@ -943,7 +1036,10 @@ class _DoormanPageState extends State<DoormanPage>
         .toList();
 
     final hasPendingPackages = _packages.any(
-      (p) => p['status'] == 'RECEIVED' || p['status'] == 'WAITING_PICKUP',
+      (p) =>
+          p['status'] == 'RECEIVED' ||
+          p['status'] == 'NOTIFIED' ||
+          p['status'] == 'WAITING_PICKUP',
     );
 
     return Scaffold(
@@ -1031,7 +1127,9 @@ class _DoormanPageState extends State<DoormanPage>
                                 const Spacer(),
                               const SizedBox(width: 12),
                               OutlinedButton.icon(
-                                onPressed: () => _registerReceivedPackage(),
+                                onPressed: _selectedCondominium == null
+                                    ? null
+                                    : () => _registerReceivedPackage(),
                                 icon: const Icon(Icons.add_box_outlined, size: 16),
                                 label: const Text('Nova Encomenda'),
                                 style: OutlinedButton.styleFrom(
@@ -1040,7 +1138,9 @@ class _DoormanPageState extends State<DoormanPage>
                               ),
                               const SizedBox(width: 8),
                               OutlinedButton.icon(
-                                onPressed: _quickPickupByPin,
+                                onPressed: _selectedCondominium == null
+                                    ? null
+                                    : _quickPickupByPin,
                                 icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
                                 label: const Text('Baixa (PIN)'),
                                 style: OutlinedButton.styleFrom(
@@ -1082,14 +1182,17 @@ class _DoormanPageState extends State<DoormanPage>
                                 children: [
                                   _packagesTab(visiblePackages),
                                   DoormanVisitorsView(
+                                    key: ValueKey('visitors_${_selectedCondominium!['id']}'),
                                     api: _communityApi,
                                     condominiumId: _selectedCondominium!['id'],
                                   ),
                                   DoormanPlateCheckView(
+                                    key: ValueKey('plate_${_selectedCondominium!['id']}'),
                                     api: _communityApi,
                                     condominiumId: _selectedCondominium!['id'],
                                   ),
                                   DoormanGuestListsView(
+                                    key: ValueKey('guests_${_selectedCondominium!['id']}'),
                                     api: _communityApi,
                                     condominiumId: _selectedCondominium!['id'],
                                   ),
@@ -1115,6 +1218,7 @@ class _DoormanPageState extends State<DoormanPage>
                                       Expanded(
                                         flex: 2,
                                         child: DoormanLostFoundView(
+                                          key: ValueKey('lost_found_${_selectedCondominium!['id']}'),
                                           api: _communityApi,
                                           condominiumId: _selectedCondominium!['id'],
                                         ),
@@ -1122,10 +1226,12 @@ class _DoormanPageState extends State<DoormanPage>
                                     ],
                                   ),
                                   DoormanReservationsView(
+                                    key: ValueKey('reservations_${_selectedCondominium!['id']}'),
                                     api: _communityApi,
                                     condominiumId: _selectedCondominium!['id'],
                                   ),
                                   DoormanSmartLockersView(
+                                    key: ValueKey('lockers_${_selectedCondominium!['id']}'),
                                     api: _communityApi,
                                     condominiumId: _selectedCondominium!['id'],
                                   ),

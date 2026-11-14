@@ -121,14 +121,17 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
   Future<void> _remove(Map<String, dynamic> membership) async {
     final membershipId = membership['id'];
     if (membershipId == null) return;
+    final authority = membership['authority']?.toString();
+    final roleNoun = switch (authority) {
+      'ROLE_MANAGER' => 'síndico',
+      'ROLE_DOORMAN' => 'porteiro',
+      'ROLE_RESIDENT' => 'morador',
+      _ => widget.isSystemAdmin ? 'síndico' : 'membro',
+    };
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          widget.isSystemAdmin
-              ? 'Remover síndico deste condomínio?'
-              : 'Remover porteiro deste condomínio?',
-        ),
+        title: Text('Remover $roleNoun deste condomínio?'),
         content: const Text(
           'A conta perderá imediatamente as permissões desta função neste condomínio.',
         ),
@@ -254,8 +257,12 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
                 decoration: const InputDecoration(labelText: 'Tipo Estrutural'),
                 items: const [
                   DropdownMenuItem(value: 'BLOCK', child: Text('Bloco')),
-                  DropdownMenuItem(value: 'TOWER', child: Text('Torre')),
-                  DropdownMenuItem(value: 'HOUSE_GROUP', child: Text('Grupo de Casas / Vilas')),
+                  DropdownMenuItem(value: 'STREET', child: Text('Rua / Alameda')),
+                  DropdownMenuItem(value: 'COURT', child: Text('Quadra')),
+                  DropdownMenuItem(
+                    value: 'GRILL',
+                    child: Text('Área Gourmet / Quiosque'),
+                  ),
                 ],
                 onChanged: (v) => setD(() => structuralType = v ?? structuralType),
               ),
@@ -270,13 +277,23 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
     );
 
     if (ok == true && name.text.trim().isNotEmpty) {
-      await widget.api.send(
-        'POST',
-        '/manager/condominiums/${widget.condominiumId}/sectors',
-        body: {'name': name.text.trim(), 'structuralType': structuralType},
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Setor criado com sucesso!')));
+      try {
+        await widget.api.send(
+          'POST',
+          '/manager/condominiums/${widget.condominiumId}/sectors',
+          body: {'name': name.text.trim(), 'structuralType': structuralType},
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Setor criado com sucesso!')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao criar setor: $e')),
+          );
+        }
       }
     }
   }
@@ -335,13 +352,23 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
     );
 
     if (ok == true && idCtrl.text.trim().isNotEmpty) {
-      await widget.api.send(
-        'POST',
-        '/manager/condominiums/${widget.condominiumId}/units',
-        body: {'sectorId': selectedSector['id'], 'identifier': idCtrl.text.trim()},
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unidade criada com sucesso!')));
+      try {
+        await widget.api.send(
+          'POST',
+          '/manager/condominiums/${widget.condominiumId}/units',
+          body: {'sectorId': selectedSector['id'], 'identifier': idCtrl.text.trim()},
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Unidade criada com sucesso!')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao criar unidade: $e')),
+          );
+        }
       }
     }
   }

@@ -93,11 +93,11 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
       );
 
       if (!mounted) return;
-      Navigator.of(context).pop(true);
       SaaSFeedback.showSuccess(
         context,
         'Solicitação enviada ao síndico! Você será notificado assim que aprovada.',
       );
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);

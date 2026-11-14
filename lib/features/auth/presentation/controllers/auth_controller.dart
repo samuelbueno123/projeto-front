@@ -111,10 +111,10 @@ class AuthController {
     try {
       RealtimeService.instance.disconnect();
       await _authService.signOut();
-      _session = null;
     } catch (_) {
       _errorMessage = 'Não foi possível encerrar a sessão.';
     } finally {
+      _session = null;
       _isLoading = false;
       _notify();
     }

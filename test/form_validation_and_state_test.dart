@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:projeto_front/features/auth/presentation/pages/login_page.dart';
 import 'package:projeto_front/features/community/data/community_api.dart';
+import 'package:projeto_front/features/community/presentation/dialogs/boleto_payment_dialog.dart';
 import 'package:projeto_front/features/community/presentation/dialogs/generate_boleto_dialog.dart';
+import 'package:projeto_front/features/community/presentation/dialogs/renovation_request_dialog.dart';
 import 'package:projeto_front/features/home/data/home_service.dart';
 
 void main() {
@@ -150,6 +152,110 @@ void main() {
       expect(find.text('Valor (R\$)'), findsOneWidget);
       expect(find.text('Vencimento'), findsOneWidget);
       expect(find.text('Gerar e Enviar Cobrança'), findsOneWidget);
+    });
+
+    testWidgets('GenerateBoletoDialog formats sector Map cleanly', (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final api = CommunityApi(api: HomeService(token: 'mock-token'));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: GenerateBoletoDialog(
+              condominiumId: 1,
+              units: const [
+                {
+                  'id': 204,
+                  'identifier': '204',
+                  'sector': {'id': 2, 'name': 'Torre Sul'},
+                },
+              ],
+              api: api,
+              onGenerated: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Torre Sul • Unidade 204'), findsOneWidget);
+    });
+
+    testWidgets('BoletoPaymentDialog shows unavailable notice and disables copy when digitableLine is empty', (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final api = CommunityApi(api: HomeService(token: 'mock-token'));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BoletoPaymentDialog(
+              condominiumId: 1,
+              unitId: 101,
+              unitLabel: 'Bloco A • 101',
+              title: 'Taxa Ordinária',
+              amount: 350.0,
+              dueDate: '10/12/2026',
+              digitableLine: '',
+              status: 'PENDING',
+              api: api,
+              onPaid: () {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Boleto Bancário'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Linha digitável indisponível'), findsOneWidget);
+      final copyBtn = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.copy_rounded),
+      );
+      expect(copyBtn.onPressed, isNull);
+    });
+  });
+
+  group('RenovationRequestDialog Tests', () {
+    testWidgets('renders description, date pickers, Map sector and validates required title', (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final api = CommunityApi(api: HomeService(token: 'mock-token'));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RenovationRequestDialog(
+              condominiumId: 1,
+              units: const [
+                {
+                  'id': 302,
+                  'identifier': '302',
+                  'sector': {'id': 3, 'name': 'Torre Norte'},
+                },
+              ],
+              api: api,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Torre Norte • Unidade 302'), findsOneWidget);
+      expect(find.text('Descrição Detalhada dos Serviços'), findsOneWidget);
+      expect(find.text('Início Previsto *'), findsOneWidget);
+      expect(find.text('Término Previsto *'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Enviar para Aprovação do Síndico'));
+      await tester.tap(find.text('Enviar para Aprovação do Síndico'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Informe o título da obra ou reforma.'), findsOneWidget);
     });
   });
 }

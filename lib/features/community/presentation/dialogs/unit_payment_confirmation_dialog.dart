@@ -67,13 +67,13 @@ class _UnitPaymentConfirmationDialogState extends State<UnitPaymentConfirmationD
       );
 
       if (!mounted) return;
-      Navigator.of(context).pop(true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           backgroundColor: Color(0xFF15803D),
           content: Text('Solicitação de confirmação de pagamento enviada com sucesso à administração!'),
         ),
       );
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);

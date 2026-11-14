@@ -50,6 +50,9 @@ class RealtimeService {
   RealtimeConnectionState _state = RealtimeConnectionState.disconnected;
   RealtimeConnectionState get state => _state;
 
+  @visibleForTesting
+  bool get hasToken => _token != null && _token!.isNotEmpty;
+
   String? _token;
   bool _disposed = false;
   http.Client? _client;
@@ -60,6 +63,9 @@ class RealtimeService {
     if (_token == token) return;
     _token = token;
     if (_token != null && _token!.isNotEmpty) {
+      if (_client != null || _state != RealtimeConnectionState.disconnected) {
+        disconnect(clearToken: false);
+      }
       connect();
     } else {
       disconnect();
@@ -78,7 +84,8 @@ class RealtimeService {
   Future<void> _startSseStream() async {
     _setState(RealtimeConnectionState.connecting);
     _client?.close();
-    _client = http.Client();
+    final client = http.Client();
+    _client = client;
 
     final url = Uri.parse('${ApiConfig.baseUrl}/realtime/events');
     final request = http.Request('GET', url);
@@ -87,7 +94,10 @@ class RealtimeService {
     request.headers['Cache-Control'] = 'no-cache';
 
     try {
-      final response = await _client!.send(request);
+      final response = await client.send(request);
+      if (!identical(_client, client)) {
+        return;
+      }
       if (response.statusCode != 200) {
         _setState(RealtimeConnectionState.disconnected);
         if (response.statusCode == 401 || response.statusCode == 403) {
@@ -104,6 +114,9 @@ class RealtimeService {
       String buffer = '';
 
       await for (final chunk in response.stream.transform(utf8.decoder)) {
+        if (!identical(_client, client)) {
+          return;
+        }
         buffer += chunk;
         final lines = buffer.split('\n');
         buffer = lines.removeLast(); // Linha incompleta fica no buffer para o próximo chunk
@@ -137,10 +150,14 @@ class RealtimeService {
         print('Conexão SSE encerrada: $e');
       }
     } finally {
-      if (_state == RealtimeConnectionState.connected || _state == RealtimeConnectionState.connecting) {
-        _setState(RealtimeConnectionState.disconnected);
-        _scheduleReconnect();
+      if (identical(_client, client)) {
+        _client = null;
+        if (_state == RealtimeConnectionState.connected || _state == RealtimeConnectionState.connecting) {
+          _setState(RealtimeConnectionState.disconnected);
+          _scheduleReconnect();
+        }
       }
+      client.close();
     }
   }
 
@@ -163,7 +180,10 @@ class RealtimeService {
     }
   }
 
-  void disconnect() {
+  void disconnect({bool clearToken = true}) {
+    if (clearToken) {
+      _token = null;
+    }
     _reconnectTimer?.cancel();
     _reconnectAttempts = 0;
     _client?.close();

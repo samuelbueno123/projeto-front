@@ -21,8 +21,13 @@ class AppWidget extends StatefulWidget {
 }
 
 class _AppWidgetState extends State<AppWidget> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   late final AuthController _authController;
   String? _overrideRoleView;
+
+  void _resetNavigationStack() {
+    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+  }
 
   @override
   void initState() {
@@ -31,6 +36,7 @@ class _AppWidgetState extends State<AppWidget> {
     _authController.addListener(_handleControllerChange);
     HttpClientWrapper.onUnauthorized = () {
       _overrideRoleView = null;
+      _resetNavigationStack();
       _authController.signOut();
     };
     _authController.bootstrap();
@@ -57,6 +63,7 @@ class _AppWidgetState extends State<AppWidget> {
 
   Future<void> _handleLogout() async {
     _overrideRoleView = null;
+    _resetNavigationStack();
     await _authController.signOut();
   }
 
@@ -66,6 +73,7 @@ class _AppWidgetState extends State<AppWidget> {
       valueListenable: AppTheme.themeModeNotifier,
       builder: (context, themeMode, _) {
         return MaterialApp(
+          navigatorKey: _navigatorKey,
           debugShowCheckedModeBanner: false,
           title: 'Âncora Gestão',
           theme: AppTheme.light(),
@@ -125,6 +133,13 @@ class _AppWidgetState extends State<AppWidget> {
           return ManagerPage(
             token: token,
             userName: session?.userName,
+            userEmail: session?.userEmail,
+            authProvider: session?.provider ?? 'password',
+            reauthenticateWithGoogle: _authController.reauthenticateWithGoogle,
+            refreshWithCredentials: (email, password) => _authController
+                .refreshAfterCredentialChange(email: email, password: password),
+            refreshGoogleSession:
+                _authController.refreshGoogleAfterCredentialChange,
             onLogout: _handleLogout,
             currentRole: effectiveRole,
             availableRoles: availableRoles,
@@ -134,6 +149,13 @@ class _AppWidgetState extends State<AppWidget> {
           return DoormanPage(
             token: token,
             userName: session?.userName,
+            userEmail: session?.userEmail,
+            authProvider: session?.provider ?? 'password',
+            reauthenticateWithGoogle: _authController.reauthenticateWithGoogle,
+            refreshWithCredentials: (email, password) => _authController
+                .refreshAfterCredentialChange(email: email, password: password),
+            refreshGoogleSession:
+                _authController.refreshGoogleAfterCredentialChange,
             onLogout: _handleLogout,
             currentRole: effectiveRole,
             availableRoles: availableRoles,

@@ -1706,6 +1706,8 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
   int? _selectedUnitId;
   int? _selectedUserId;
   int? _selectedPlanId;
+  String? _selectedPlanName;
+  bool _boolFlag = true;
   String _selectedRole = 'ROLE_RESIDENT';
   final Set<String> _selectedUserRoles = {};
   String _selectedStructuralType = 'BLOCK';
@@ -1756,9 +1758,25 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
       case 'condominiums':
         _text1.text = item['name']?.toString() ?? '';
         _text2.text = item['address']?.toString() ?? '';
-        _text3.text = item['code']?.toString() ?? '';
-        _text4.text = item['taxId']?.toString() ?? '';
         _selectedPlanId = _asInt(item['billingPlanId'] ?? item['planId']);
+        final itemPlanName =
+            item['billingPlanName']?.toString().trim() ??
+            item['billingPlan']?.toString().trim() ??
+            '';
+        if (itemPlanName.isNotEmpty) {
+          _selectedPlanName = itemPlanName;
+        } else if (_selectedPlanId != null) {
+          final matched = widget.plans
+              .where((p) => _asInt(p['id']) == _selectedPlanId)
+              .firstOrNull;
+          _selectedPlanName = matched?['name']?.toString().trim();
+        }
+        if ((_selectedPlanName ?? '').isEmpty) {
+          _selectedPlanName = widget.plans.isNotEmpty
+              ? (widget.plans.first['name']?.toString().trim() ?? 'Básico')
+              : 'Básico';
+        }
+        _boolFlag = item['isActive'] != false;
         _imageDataUrl = item['imageUrl']?.toString();
 
       case 'memberships':
@@ -1811,7 +1829,7 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
 
       case 'billing-plans':
         _text1.text = item['name']?.toString() ?? '';
-        _text2.text = item['monthlyFee']?.toString() ?? '';
+        _text2.text = (item['monthlyFee'] ?? item['price'])?.toString() ?? '';
         if (item['features'] is List) {
           for (final f in item['features'] as List) {
             if (f is Map && f['code'] != null) {
@@ -1928,8 +1946,7 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         case 'condominiums':
           final name = _text1.text.trim();
           final address = _text2.text.trim();
-          final code = _text3.text.trim();
-          final taxId = _text4.text.trim();
+          final billingPlan = (_selectedPlanName ?? '').trim();
           if (name.isEmpty || address.isEmpty) {
             throw Exception('Informe o nome e o endereço do condomínio.');
           }
@@ -1939,9 +1956,8 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
             body: {
               'name': name,
               'address': address,
-              'code': code.isEmpty ? null : code,
-              'taxId': taxId.isEmpty ? null : taxId,
-              'planId': _selectedPlanId,
+              'billingPlan': billingPlan.isNotEmpty ? billingPlan : 'Básico',
+              'isActive': _boolFlag,
               'imageUrl': _imageDataUrl,
             },
           );
@@ -2270,6 +2286,26 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         ];
 
       case 'condominiums':
+        final availablePlans = <String>['Básico', 'Profissional', 'Premium'];
+        for (final p in widget.plans) {
+          final n = p['name']?.toString().trim() ?? '';
+          if (n.isNotEmpty &&
+              !availablePlans.any((e) => e.toLowerCase() == n.toLowerCase())) {
+            availablePlans.add(n);
+          }
+        }
+        if ((_selectedPlanName ?? '').isNotEmpty &&
+            !availablePlans.any(
+              (e) => e.toLowerCase() == _selectedPlanName!.toLowerCase(),
+            )) {
+          availablePlans.add(_selectedPlanName!);
+        }
+        final matchedPlan = availablePlans.firstWhere(
+          (e) =>
+              e.toLowerCase() ==
+              (_selectedPlanName ?? availablePlans.first).toLowerCase(),
+          orElse: () => availablePlans.first,
+        );
         return [
           TextField(
             controller: _text1,
@@ -2281,16 +2317,28 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
             decoration: const InputDecoration(labelText: 'Endereço Completo', prefixIcon: Icon(Icons.pin_drop_outlined)),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _text3,
-            decoration: const InputDecoration(labelText: 'Código / Sigla (code)', prefixIcon: Icon(Icons.tag_outlined)),
+          DropdownButtonFormField<String>(
+            initialValue: matchedPlan,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Plano Comercial (billingPlan)',
+              prefixIcon: Icon(Icons.receipt_long_outlined),
+            ),
+            items: availablePlans
+                .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                .toList(),
+            onChanged: _saving
+                ? null
+                : (v) => setState(() => _selectedPlanName = v),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _text4,
-            decoration: const InputDecoration(labelText: 'CNPJ (taxId)', prefixIcon: Icon(Icons.business_outlined)),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Condomínio ativo (isActive)'),
+            value: _boolFlag,
+            onChanged: _saving ? null : (v) => setState(() => _boolFlag = v),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _pickImage,
             icon: const Icon(Icons.camera_alt_outlined),

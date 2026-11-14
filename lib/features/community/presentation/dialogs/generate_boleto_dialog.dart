@@ -98,7 +98,12 @@ class _GenerateBoletoDialogState extends State<GenerateBoletoDialog> {
               DropdownButtonFormField<num>(
                 value: _selectedUnitId,
                 items: widget.units.map((u) {
-                  final sector = u['sector']?.toString() ?? '';
+                  final rawSector = u['sector'];
+                  final sector = (u['sectorName']?.toString().trim().isNotEmpty ?? false)
+                      ? u['sectorName'].toString().trim()
+                      : (rawSector is Map
+                          ? rawSector['name']?.toString().trim() ?? ''
+                          : rawSector?.toString().trim() ?? '');
                   final idf = u['identifier']?.toString() ?? '';
                   final label = sector.isNotEmpty ? '$sector • Unidade $idf' : 'Unidade $idf';
                   return DropdownMenuItem<num>(

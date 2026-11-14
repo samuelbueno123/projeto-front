@@ -199,6 +199,7 @@ class _CommunityHubViewState extends State<CommunityHubView> with SingleTickerPr
         // Content area sized properly
         Expanded(
           child: TabBarView(
+            key: ValueKey('community_${widget.condominiumId}_${widget.canManage}'),
             controller: _tabController,
             children: [
               _TicketsSubView(api: widget.api, condominiumId: widget.condominiumId, canManage: widget.canManage),
@@ -2285,99 +2286,160 @@ class _MovingSubViewState extends State<_MovingSubView> {
     String type = 'IN';
     final company = TextEditingController();
     final notes = TextEditingController();
-    bool checking = false;
-    bool available = true;
+    bool checking = true;
+    bool morningAvailable = true;
+    bool afternoonAvailable = true;
+    bool initialLoaded = false;
+    bool dialogOpen = true;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (c, setD) => AlertDialog(
-          title: const Text('Agendar Mudança / Carga'),
-          content: SizedBox(
-            width: 440,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    value: type,
-                    decoration: const InputDecoration(labelText: 'Tipo'),
-                    items: const [
-                      DropdownMenuItem(value: 'IN', child: Text('Mudança de Entrada')),
-                      DropdownMenuItem(value: 'OUT', child: Text('Mudança de Saída')),
-                      DropdownMenuItem(value: 'LARGE_DELIVERY', child: Text('Entrega de Carga Pesada')),
+    bool isPeriodAvailable() =>
+        period == 'MORNING' ? morningAvailable : afternoonAvailable;
+
+    Future<void> refreshAvailability(
+      DateTime targetDate,
+      void Function(void Function()) setD,
+    ) async {
+      try {
+        final res = await widget.api.checkMovingAvailability(
+          widget.condominiumId,
+          targetDate,
+        );
+        if (!dialogOpen) return;
+        setD(() {
+          checking = false;
+          morningAvailable = res['morningAvailable'] != false;
+          afternoonAvailable = res['afternoonAvailable'] != false;
+        });
+      } catch (_) {
+        if (!dialogOpen) return;
+        setD(() {
+          checking = false;
+        });
+      }
+    }
+
+    bool? ok;
+    try {
+      ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (c, setD) {
+            if (!initialLoaded) {
+              initialLoaded = true;
+              refreshAvailability(date, setD);
+            }
+            final available = isPeriodAvailable();
+            return AlertDialog(
+              title: const Text('Agendar Mudança / Carga'),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: type,
+                        decoration: const InputDecoration(labelText: 'Tipo'),
+                        items: const [
+                          DropdownMenuItem(value: 'IN', child: Text('Mudança de Entrada')),
+                          DropdownMenuItem(value: 'OUT', child: Text('Mudança de Saída')),
+                          DropdownMenuItem(value: 'LARGE_DELIVERY', child: Text('Entrega de Carga Pesada')),
+                        ],
+                        onChanged: (v) => setD(() => type = v ?? type),
+                      ),
+                      const SizedBox(height: 10),
+                      ListTile(
+                        title: Text('Data: ${date.day}/${date.month}/${date.year}'),
+                        trailing: const Icon(Icons.calendar_month),
+                        onTap: () async {
+                          final d = await showDatePicker(
+                            context: context,
+                            initialDate: date,
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(const Duration(days: 90)),
+                          );
+                          if (d != null && dialogOpen) {
+                            setD(() {
+                              date = d;
+                              checking = true;
+                            });
+                            await refreshAvailability(d, setD);
+                          }
+                        },
+                      ),
+                      DropdownButtonFormField<String>(
+                        value: period,
+                        decoration: const InputDecoration(labelText: 'Turno do Elevador de Serviço'),
+                        items: const [
+                          DropdownMenuItem(value: 'MORNING', child: Text('Manhã (08h às 12h)')),
+                          DropdownMenuItem(value: 'AFTERNOON', child: Text('Tarde (13h às 17h)')),
+                        ],
+                        onChanged: (v) => setD(() => period = v ?? period),
+                      ),
+                      const SizedBox(height: 10),
+                      if (checking)
+                        const LinearProgressIndicator()
+                      else
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: available ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            available ? 'Turno livre para agendamento' : 'Turno ocupado por outro morador',
+                            style: TextStyle(
+                              color: available ? const Color(0xFF15803D) : const Color(0xFFB91C1C),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      TextField(controller: company, decoration: const InputDecoration(labelText: 'Empresa / Transportadora')),
+                      const SizedBox(height: 10),
+                      TextField(controller: notes, decoration: const InputDecoration(labelText: 'Itens volumosos / Observações')),
                     ],
-                    onChanged: (v) => setD(() => type = v ?? type),
                   ),
-                  const SizedBox(height: 10),
-                  ListTile(
-                    title: Text('Data: ${date.day}/${date.month}/${date.year}'),
-                    trailing: const Icon(Icons.calendar_month),
-                    onTap: () async {
-                      final d = await showDatePicker(
-                        context: context,
-                        initialDate: date,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 90)),
-                      );
-                      if (d != null) {
-                        setD(() { date = d; checking = true; });
-                        final res = await widget.api.checkMovingAvailability(widget.condominiumId, d);
-                        setD(() {
-                          checking = false;
-                          available = period == 'MORNING' ? res['morningAvailable'] == true : res['afternoonAvailable'] == true;
-                        });
-                      }
-                    },
-                  ),
-                  DropdownButtonFormField<String>(
-                    value: period,
-                    decoration: const InputDecoration(labelText: 'Turno do Elevador de Serviço'),
-                    items: const [
-                      DropdownMenuItem(value: 'MORNING', child: Text('Manhã (08h às 12h)')),
-                      DropdownMenuItem(value: 'AFTERNOON', child: Text('Tarde (13h às 17h)')),
-                    ],
-                    onChanged: (v) => setD(() => period = v ?? period),
-                  ),
-                  const SizedBox(height: 10),
-                  if (checking)
-                    const LinearProgressIndicator()
-                  else
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: available ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(6)),
-                      child: Text(available ? 'Turno livre para agendamento' : 'Turno ocupado por outro morador', style: TextStyle(color: available ? const Color(0xFF15803D) : const Color(0xFFB91C1C), fontSize: 12, fontWeight: FontWeight.bold)),
-                    ),
-                  const SizedBox(height: 10),
-                  TextField(controller: company, decoration: const InputDecoration(labelText: 'Empresa / Transportadora')),
-                  const SizedBox(height: 10),
-                  TextField(controller: notes, decoration: const InputDecoration(labelText: 'Itens volumosos / Observações')),
-                ],
+                ),
               ),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-            FilledButton(
-              onPressed: available ? () => Navigator.pop(c, true) : null,
-              child: const Text('Solicitar Agendamento'),
-            ),
-          ],
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+                FilledButton(
+                  onPressed: !checking && available ? () => Navigator.pop(c, true) : null,
+                  child: const Text('Solicitar Agendamento'),
+                ),
+              ],
+            );
+          },
         ),
-      ),
-    );
-
-    if (ok == true) {
-      final dateStr = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-      await widget.api.createMovingRequest(
-        condoId: widget.condominiumId,
-        type: type,
-        movingDate: dateStr,
-        period: period,
-        companyName: company.text.trim().isEmpty ? null : company.text.trim(),
-        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
       );
-      _load();
+      dialogOpen = false;
+
+      if (ok == true) {
+        final dateStr =
+            '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+        await widget.api.createMovingRequest(
+          condoId: widget.condominiumId,
+          type: type,
+          movingDate: dateStr,
+          period: period,
+          companyName: company.text.trim().isEmpty ? null : company.text.trim(),
+          notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        SaaSFeedback.showError(
+          context,
+          'Não foi possível agendar a mudança: ${e.toString().replaceFirst('Exception: ', '')}',
+        );
+      }
+    } finally {
+      dialogOpen = false;
+      company.dispose();
+      notes.dispose();
     }
   }
 

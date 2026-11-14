@@ -43,5 +43,31 @@ void main() {
       expect(service.events.isBroadcast, isTrue);
       expect(service.connectionState.isBroadcast, isTrue);
     });
+
+    test('disconnect clears token by default and stays disconnected on connect', () {
+      final service = RealtimeService.instance;
+      service.setToken('token-user-a');
+      expect(service.hasToken, isTrue);
+
+      service.disconnect();
+      expect(service.hasToken, isFalse);
+      expect(service.state, RealtimeConnectionState.disconnected);
+
+      service.connect();
+      expect(service.state, RealtimeConnectionState.disconnected);
+    });
+
+    test('disconnect with clearToken false preserves token', () {
+      final service = RealtimeService.instance;
+      service.setToken('token-user-b');
+      expect(service.hasToken, isTrue);
+
+      service.disconnect(clearToken: false);
+      expect(service.hasToken, isTrue);
+      expect(service.state, RealtimeConnectionState.disconnected);
+
+      service.disconnect();
+      expect(service.hasToken, isFalse);
+    });
   });
 }
