@@ -9,17 +9,17 @@ import '../../../../core/config/api_config.dart';
 import '../../domain/entities/auth_session.dart';
 
 class AuthService {
+  static final GoogleSignIn sharedGoogleSignIn = GoogleSignIn(
+    clientId: ApiConfig.googleWebClientId,
+    serverClientId: ApiConfig.googleWebClientId,
+    scopes: const ['email', 'profile'],
+  );
+
   AuthService({
     GoogleSignIn? googleSignIn,
     http.Client? httpClient,
     FlutterSecureStorage? secureStorage,
-  }) : _googleSignIn =
-           googleSignIn ??
-           GoogleSignIn(
-             clientId: ApiConfig.googleWebClientId,
-             serverClientId: ApiConfig.googleWebClientId,
-             scopes: const ['email', 'profile'],
-           ),
+  }) : _googleSignIn = googleSignIn ?? sharedGoogleSignIn,
        _httpClient = httpClient ?? http.Client(),
        _secureStorage = secureStorage ?? const FlutterSecureStorage();
 
@@ -64,9 +64,6 @@ class AuthService {
 
   Future<void> signOut() async {
     try {
-      await _googleSignIn.disconnect();
-    } catch (_) {}
-    try {
       await _googleSignIn.signOut();
     } catch (_) {}
     await clearSession();
@@ -79,21 +76,23 @@ class AuthService {
     final normalizedEmail = email.trim().toLowerCase();
     final http.Response response;
     try {
-      response = await _httpClient.post(
-        Uri.parse('$_backendBaseUrl/oauth2/token'),
-        headers: {
-          'Authorization':
-              'Basic ${base64Encode(utf8.encode('${ApiConfig.oauthClientId}:${ApiConfig.oauthClientSecret}'))}',
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-        },
-        body: {
-          'grant_type': 'password',
-          'username': normalizedEmail,
-          'password': password,
-          'scope': 'read write',
-        },
-      );
+      response = await _httpClient
+          .post(
+            Uri.parse('$_backendBaseUrl/oauth2/token'),
+            headers: {
+              'Authorization':
+                  'Basic ${base64Encode(utf8.encode('${ApiConfig.oauthClientId}:${ApiConfig.oauthClientSecret}'))}',
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json',
+            },
+            body: {
+              'grant_type': 'password',
+              'username': normalizedEmail,
+              'password': password,
+              'scope': 'read write',
+            },
+          )
+          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
     } on http.ClientException {
       throw const AuthException(
         'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.',
@@ -103,12 +102,13 @@ class AuthService {
         'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.',
       );
     }
+    final decodedBody = utf8.decode(response.bodyBytes, allowMalformed: true);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw AuthException(
-        _extractErrorMessage(response.body) ?? 'Email ou senha inválidos.',
+        _extractErrorMessage(decodedBody) ?? 'Email ou senha inválidos.',
       );
     }
-    final decoded = jsonDecode(response.body);
+    final decoded = jsonDecode(decodedBody);
     final responseData = decoded is Map<String, dynamic>
         ? decoded
         : <String, dynamic>{};
@@ -135,28 +135,30 @@ class AuthService {
     final parts = name.trim().split(RegExp(r'\s+'));
     final http.Response response;
     try {
-      response = await _httpClient.post(
-        Uri.parse('$_backendBaseUrl${ApiConfig.usersEndpoint}'),
-        headers: const {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
-          'firstName': parts.first,
-          'lastName': parts.length > 1 ? parts.skip(1).join(' ') : '',
-          'email': normalizedEmail,
-          'password': password,
-        }),
-      );
+      response = await _httpClient
+          .post(
+            Uri.parse('$_backendBaseUrl${ApiConfig.usersEndpoint}'),
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'firstName': parts.first,
+              'lastName': parts.length > 1 ? parts.skip(1).join(' ') : '',
+              'email': normalizedEmail,
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
     } catch (error) {
       throw AuthException(
         'Não foi possível conectar à API para criar a conta. Detalhe: $error',
       );
     }
+    final signUpBody = utf8.decode(response.bodyBytes, allowMalformed: true);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw AuthException(
-        _extractErrorMessage(response.body) ??
-            'Não foi possível criar sua conta.',
+        _extractErrorMessage(signUpBody) ?? 'Não foi possível criar sua conta.',
       );
     }
     try {
@@ -197,20 +199,23 @@ class AuthService {
       );
     }
 
-    final response = await _httpClient.post(
-      Uri.parse('$_backendBaseUrl${ApiConfig.authGoogleEndpoint}'),
-      headers: const {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({'idToken': idToken}),
-    );
+    final response = await _httpClient
+        .post(
+          Uri.parse('$_backendBaseUrl${ApiConfig.authGoogleEndpoint}'),
+          headers: const {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode({'idToken': idToken}),
+        )
+        .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+    final googleBody = utf8.decode(response.bodyBytes, allowMalformed: true);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw AuthException(
-        _extractErrorMessage(response.body) ?? 'Falha ao autenticar no Google.',
+        _extractErrorMessage(googleBody) ?? 'Falha ao autenticar no Google.',
       );
     }
-    final decoded = jsonDecode(response.body);
+    final decoded = jsonDecode(googleBody);
     final responseData = decoded is Map<String, dynamic>
         ? decoded
         : <String, dynamic>{};

@@ -5,7 +5,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/design_system/saas_design_system.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/full_screen_image_viewer.dart';
+import '../../../../core/widgets/smart_image.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../home/data/home_service.dart';
 import '../widgets/google_login_button.dart';
@@ -43,9 +46,13 @@ class _UserProfilePageState extends State<UserProfilePage> {
   late HomeService _api = HomeService(token: widget.token);
   final _name = TextEditingController();
   final _email = TextEditingController();
+  final _phone = TextEditingController();
+  final _profileFormKey = GlobalKey<FormState>();
   bool _loading = true;
   bool _saving = false;
+  bool _themeSaving = false;
   String? _profileImage;
+  String _themePreference = AppTheme.currentPreference;
 
   @override
   void initState() {
@@ -66,6 +73,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
   void dispose() {
     _name.dispose();
     _email.dispose();
+    _phone.dispose();
     super.dispose();
   }
 
@@ -77,7 +85,10 @@ class _UserProfilePageState extends State<UserProfilePage> {
         _name.text =
             '${profile['firstName'] ?? ''} ${profile['lastName'] ?? ''}'.trim();
         _email.text = profile['email']?.toString() ?? widget.userEmail ?? '';
+        _phone.text = formatPhone(profile['phone']?.toString());
         _profileImage = profile['profileImage'] as String?;
+        _themePreference =
+            profile['themePreference']?.toString().toUpperCase() ?? 'SYSTEM';
         _loading = false;
       });
     } catch (_) {
@@ -85,6 +96,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       setState(() {
         _name.text = widget.userName ?? '';
         _email.text = widget.userEmail ?? '';
+        _phone.clear();
         _loading = false;
       });
       _message('Não foi possível carregar os dados atuais da conta.');
@@ -93,7 +105,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   void _message(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<String?> _reauthenticate({required String action}) async {
@@ -172,8 +186,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
         imageQuality: 82,
         maxWidth: 1024,
       );
-      if (file == null) return;
+      if (!mounted || file == null) return;
       final bytes = await file.readAsBytes();
+      if (!mounted) return;
       if (bytes.length > 5 * 1024 * 1024) {
         _message('Escolha uma imagem de até 5 MB.');
         return;
@@ -193,15 +208,13 @@ class _UserProfilePageState extends State<UserProfilePage> {
   }
 
   Future<void> _removeImage() async {
+    if (!mounted) return;
     setState(() => _profileImage = null);
   }
 
   Future<void> _saveProfile() async {
+    if (!(_profileFormKey.currentState?.validate() ?? false)) return;
     final parts = _name.text.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts.first.isEmpty || !_email.text.contains('@')) {
-      _message('Informe um nome e um e-mail válidos.');
-      return;
-    }
     final changingEmail =
         _email.text.trim().toLowerCase() !=
         (widget.userEmail ?? '').toLowerCase();
@@ -209,7 +222,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
     String? googleIdToken;
     if (changingEmail) {
       final proof = await _reauthenticate(action: 'alterar o e-mail');
-      if (proof == null) return;
+      if (!mounted || proof == null) return;
       if (widget.provider == 'google') {
         googleIdToken = proof;
       } else {
@@ -225,17 +238,19 @@ class _UserProfilePageState extends State<UserProfilePage> {
           'firstName': parts.first,
           'lastName': parts.skip(1).join(' '),
           'email': _email.text.trim(),
+          'phone': _phone.text.trim(),
           'profileImage': _profileImage,
           'currentPassword': password,
           'googleIdToken': googleIdToken,
         },
       );
-      final updatedProfile = await _api.get('/users/me') as Map<String, dynamic>;
-      if (mounted) {
-        setState(() {
-          _profileImage = updatedProfile['profileImage'] as String?;
-        });
-      }
+      final updatedProfile =
+          await _api.get('/users/me') as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _profileImage = updatedProfile['profileImage'] as String?;
+        _phone.text = formatPhone(updatedProfile['phone']?.toString());
+      });
       if (changingEmail) {
         if (widget.provider == 'google') {
           await widget.refreshGoogleSession();
@@ -243,6 +258,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
           await widget.refreshWithCredentials(_email.text.trim(), password!);
         }
       }
+      if (!mounted) return;
       _message('Seus dados foram atualizados com sucesso!');
       if (changingEmail) widget.onClose();
     } catch (error) {
@@ -252,67 +268,90 @@ class _UserProfilePageState extends State<UserProfilePage> {
     }
   }
 
+  Future<void> _saveThemePreference(String preference) async {
+    if (_themeSaving || preference == _themePreference) return;
+    setState(() => _themeSaving = true);
+    try {
+      await _api.send('PATCH', '/users/me/theme', body: {'theme': preference});
+      if (!mounted) return;
+      setState(() => _themePreference = preference);
+      AppTheme.setThemePreference(preference);
+      _message('Preferência de tema atualizada.');
+    } catch (error) {
+      _message('Não foi possível atualizar o tema: $error');
+    } finally {
+      if (mounted) setState(() => _themeSaving = false);
+    }
+  }
+
   Future<void> _changePassword() async {
     final newPassword = TextEditingController();
     final confirmation = TextEditingController();
     final currentPassword = TextEditingController();
-    final values = await showDialog<List<String>?>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Alterar senha de acesso'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.provider != 'google') ...[
+    List<String>? values;
+    try {
+      values = await showDialog<List<String>?>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Alterar senha de acesso'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.provider != 'google') ...[
+                  TextField(
+                    controller: currentPassword,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Senha atual',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextField(
-                  controller: currentPassword,
+                  controller: newPassword,
                   obscureText: true,
                   decoration: const InputDecoration(
-                    labelText: 'Senha atual',
-                    prefixIcon: Icon(Icons.lock_outline),
+                    labelText: 'Nova senha (mín. 8 caracteres)',
+                    prefixIcon: Icon(Icons.key_outlined),
                   ),
                 ),
                 const SizedBox(height: 12),
+                TextField(
+                  controller: confirmation,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirme a nova senha',
+                    prefixIcon: Icon(Icons.verified_user_outlined),
+                  ),
+                ),
               ],
-              TextField(
-                controller: newPassword,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Nova senha (mín. 8 caracteres)',
-                  prefixIcon: Icon(Icons.key_outlined),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: confirmation,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Confirme a nova senha',
-                  prefixIcon: Icon(Icons.verified_user_outlined),
-                ),
-              ),
-            ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, [
+                currentPassword.text,
+                newPassword.text,
+                confirmation.text,
+              ]),
+              child: const Text('Atualizar senha'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, [
-              currentPassword.text,
-              newPassword.text,
-              confirmation.text,
-            ]),
-            child: const Text('Atualizar senha'),
-          ),
-        ],
-      ),
-    );
-    if (values == null) return;
+      );
+    } finally {
+      currentPassword.dispose();
+      newPassword.dispose();
+      confirmation.dispose();
+    }
+    if (!mounted || values == null) return;
     if (values[1].length < 8 || values[1] != values[2]) {
       _message(
         'A nova senha deve ter pelo menos 8 caracteres e as confirmações devem coincidir.',
@@ -340,9 +379,6 @@ class _UserProfilePageState extends State<UserProfilePage> {
     } catch (error) {
       _message('Não foi possível alterar a senha: $error');
     } finally {
-      currentPassword.dispose();
-      newPassword.dispose();
-      confirmation.dispose();
       if (mounted) setState(() => _saving = false);
     }
   }
@@ -409,10 +445,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
               const SizedBox(width: 24),
 
               // Right Column: Personal Information Form
-              Expanded(
-                flex: 6,
-                child: _buildDetailsCard(isDark),
-              ),
+              Expanded(flex: 6, child: _buildDetailsCard(isDark)),
             ],
           ),
         ),
@@ -448,21 +481,31 @@ class _UserProfilePageState extends State<UserProfilePage> {
           Stack(
             alignment: Alignment.bottomRight,
             children: [
-              UserAvatar(
-                imageSource: _profileImage,
-                name: _name.text,
-                radius: 52,
-                onTap: (_profileImage != null && _profileImage!.trim().isNotEmpty)
-                    ? () => showFullScreenImage(
-                          context,
-                          imageSource: _profileImage!,
-                          title: _name.text,
-                        )
-                    : null,
-                tooltip: (_profileImage != null && _profileImage!.trim().isNotEmpty)
-                    ? 'Ver foto em tela cheia'
-                    : null,
-              ),
+              if (_profileImage != null && _profileImage!.trim().isNotEmpty)
+                Tooltip(
+                  message: 'Ver foto em tela cheia',
+                  child: GestureDetector(
+                    onTap: () => showFullScreenImage(
+                      context,
+                      imageSource: _profileImage!,
+                      title: _name.text,
+                    ),
+                    child: ClipOval(
+                      child: SmartImage(
+                        source: _profileImage,
+                        width: 104,
+                        height: 104,
+                        placeholderIcon: Icons.person_outline_rounded,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                UserAvatar(
+                  imageSource: _profileImage,
+                  name: _name.text,
+                  radius: 52,
+                ),
               IconButton.filled(
                 onPressed: _pickImage,
                 tooltip: 'Alterar foto de perfil',
@@ -480,9 +523,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
               onPressed: _removeImage,
               icon: const Icon(Icons.delete_outline, size: 16),
               label: const Text('Remover foto'),
-              style: TextButton.styleFrom(
-                foregroundColor: SaaSColors.error,
-              ),
+              style: TextButton.styleFrom(foregroundColor: SaaSColors.error),
             ),
           ],
           const SizedBox(height: 14),
@@ -522,52 +563,118 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   Widget _buildDetailsCard(bool isDark) {
     return SaaSCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SaaSSectionHeader(
-            title: 'Informações Pessoais',
-            subtitle: 'Atualize seus dados de cadastro e foto de exibição',
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(
-              labelText: 'Nome de exibição',
-              prefixIcon: Icon(Icons.badge_outlined),
+      child: Form(
+        key: _profileFormKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SaaSSectionHeader(
+              title: 'Informações Pessoais',
+              subtitle: 'Atualize seus dados de cadastro e foto de exibição',
             ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _email,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
-              labelText: 'E-mail da conta',
-              prefixIcon: Icon(Icons.alternate_email_rounded),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nome de exibição',
+                prefixIcon: Icon(Icons.badge_outlined),
+              ),
+              validator: (value) {
+                final name = value?.trim() ?? '';
+                if (name.length < 2) return 'Informe um nome válido.';
+                if (name.length > 100) {
+                  return 'O nome deve ter até 100 caracteres.';
+                }
+                return null;
+              },
             ),
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: _saving ? null : _saveProfile,
-            icon: _saving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.save_outlined, size: 18),
-            label: Text(
-              _saving ? 'Salvando alterações…' : 'Salvar alterações',
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'E-mail da conta',
+                prefixIcon: Icon(Icons.alternate_email_rounded),
+              ),
+              validator: (value) {
+                final email = value?.trim() ?? '';
+                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                  return 'Informe um e-mail válido.';
+                }
+                return null;
+              },
             ),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              backgroundColor: SaaSColors.primary,
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              inputFormatters: const [PhoneInputFormatter()],
+              decoration: const InputDecoration(
+                labelText: 'Telefone com DDD (opcional)',
+                hintText: '(21) 99999-9999',
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
+              validator: validatePhone,
             ),
-          ),
-        ],
+            const SizedBox(height: 22),
+            const SaaSSectionHeader(
+              title: 'Aparência',
+              subtitle: 'Escolha como o Âncora Gestão será exibido',
+            ),
+            const SizedBox(height: 10),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(
+                  value: 'LIGHT',
+                  icon: Icon(Icons.light_mode_outlined),
+                  label: Text('Claro'),
+                ),
+                ButtonSegment(
+                  value: 'DARK',
+                  icon: Icon(Icons.dark_mode_outlined),
+                  label: Text('Escuro'),
+                ),
+                ButtonSegment(
+                  value: 'SYSTEM',
+                  icon: Icon(Icons.settings_suggest_outlined),
+                  label: Text('Sistema'),
+                ),
+              ],
+              selected: {_themePreference},
+              showSelectedIcon: false,
+              onSelectionChanged: _themeSaving
+                  ? null
+                  : (selection) => _saveThemePreference(selection.first),
+            ),
+            if (_themeSaving) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _saving ? null : _saveProfile,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.save_outlined, size: 18),
+              label: Text(
+                _saving ? 'Salvando alterações…' : 'Salvar alterações',
+              ),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                backgroundColor: SaaSColors.primary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -581,7 +688,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                color: isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFFEFF6FF),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
@@ -611,7 +720,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2),
+                color: isDark
+                    ? const Color(0xFF7F1D1D)
+                    : const Color(0xFFFEF2F2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(

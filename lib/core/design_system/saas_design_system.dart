@@ -1,60 +1,102 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
-import '../responsive/responsive_layout.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
-/// Helper to check if running in automated widget test environment
-bool get isRunningTestEnvironment {
-  if (kIsWeb) return false;
-  return Platform.environment.containsKey('FLUTTER_TEST');
-}
+import '../theme/app_theme.dart';
+import 'motion_system.dart';
+import 'test_env_stub.dart' if (dart.library.io) 'test_env_io.dart';
+
+/// Retorna `true` apenas durante a execução de testes Flutter (`dart:io`),
+/// sendo seguro no Flutter Web/WASM via importação condicional.
+bool get isRunningTestEnvironment => isFlutterTestEnvironment();
 
 extension SaasAnimateExtension on Widget {
   Widget saasFadeIn({
-    Duration duration = const Duration(milliseconds: 300),
+    Duration duration = const Duration(milliseconds: 280),
     Duration delay = Duration.zero,
   }) {
     if (isRunningTestEnvironment) return this;
-    return animate().fadeIn(duration: duration, delay: delay);
+    return Builder(
+      builder: (context) {
+        if (AncoraMotion.shouldReduceMotion(context)) return this;
+        return animate().fadeIn(
+          duration: duration,
+          delay: delay,
+          curve: AncoraMotion.easeOut,
+        );
+      },
+    );
   }
 
   Widget saasSlideY({
-    Duration duration = const Duration(milliseconds: 300),
+    Duration duration = const Duration(milliseconds: 280),
     Duration delay = Duration.zero,
     double begin = 0.05,
     double end = 0,
   }) {
     if (isRunningTestEnvironment) return this;
-    return animate()
-        .fadeIn(duration: duration, delay: delay)
-        .slideY(begin: begin, end: end);
+    return Builder(
+      builder: (context) {
+        if (AncoraMotion.shouldReduceMotion(context)) return this;
+        return animate()
+            .fadeIn(
+              duration: duration,
+              delay: delay,
+              curve: AncoraMotion.easeOut,
+            )
+            .slideY(
+              begin: begin,
+              end: end,
+              duration: duration,
+              delay: delay,
+              curve: AncoraMotion.easeOut,
+            );
+      },
+    );
   }
 
   Widget saasSlideX({
-    Duration duration = const Duration(milliseconds: 300),
+    Duration duration = const Duration(milliseconds: 280),
     Duration delay = Duration.zero,
     double begin = -0.05,
     double end = 0,
   }) {
     if (isRunningTestEnvironment) return this;
-    return animate()
-        .fadeIn(duration: duration, delay: delay)
-        .slideX(begin: begin, end: end);
+    return Builder(
+      builder: (context) {
+        if (AncoraMotion.shouldReduceMotion(context)) return this;
+        return animate()
+            .fadeIn(
+              duration: duration,
+              delay: delay,
+              curve: AncoraMotion.easeOut,
+            )
+            .slideX(
+              begin: begin,
+              end: end,
+              duration: duration,
+              delay: delay,
+              curve: AncoraMotion.easeOut,
+            );
+      },
+    );
   }
 
   Widget saasScale({
-    Duration duration = const Duration(milliseconds: 300),
+    Duration duration = const Duration(milliseconds: 260),
     Curve curve = Curves.easeOutBack,
   }) {
     if (isRunningTestEnvironment) return this;
-    return animate().scale(duration: duration, curve: curve);
+    return Builder(
+      builder: (context) {
+        if (AncoraMotion.shouldReduceMotion(context)) return this;
+        return animate().scale(duration: duration, curve: curve);
+      },
+    );
   }
 }
 
-/// Semantic colors for modern SaaS styling.
 class SaaSColors {
-  static const primary = Color(0xFF2563EB); // Vibrant Royal / Electric Blue
+  static const primary = Color(0xFF2563EB);
   static const primaryDark = Color(0xFF1D4ED8);
   static const primaryLight = Color(0xFFEFF6FF);
 
@@ -74,23 +116,29 @@ class SaaSColors {
   static const infoBg = Color(0xFFEFF6FF);
   static const infoText = Color(0xFF1E40AF);
 
-  static Color background(bool isDark) =>
-      isDark ? const Color(0xFF090D16) : const Color(0xFFF8FAFC);
+  static Color background(bool isDark) => isDark
+      ? AncoraThemeTokens.darkTokens.canvas
+      : AncoraThemeTokens.lightTokens.canvas;
 
-  static Color surface(bool isDark) =>
-      isDark ? const Color(0xFF0F172A) : Colors.white;
+  static Color surface(bool isDark) => isDark
+      ? AncoraThemeTokens.darkTokens.surface
+      : AncoraThemeTokens.lightTokens.surface;
 
-  static Color surfaceSubtle(bool isDark) =>
-      isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+  static Color surfaceSubtle(bool isDark) => isDark
+      ? AncoraThemeTokens.darkTokens.surfaceSubtle
+      : AncoraThemeTokens.lightTokens.surfaceSubtle;
 
-  static Color border(bool isDark) =>
-      isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+  static Color border(bool isDark) => isDark
+      ? AncoraThemeTokens.darkTokens.border
+      : AncoraThemeTokens.lightTokens.border;
 
-  static Color textPrimary(bool isDark) =>
-      isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+  static Color textPrimary(bool isDark) => isDark
+      ? AncoraThemeTokens.darkTokens.textPrimary
+      : AncoraThemeTokens.lightTokens.textPrimary;
 
-  static Color textSecondary(bool isDark) =>
-      isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+  static Color textSecondary(bool isDark) => isDark
+      ? AncoraThemeTokens.darkTokens.textSecondary
+      : AncoraThemeTokens.lightTokens.textSecondary;
 
   static Color muted(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -98,7 +146,6 @@ class SaaSColors {
   }
 }
 
-/// A modern Shadcn-style metric / KPI card.
 class SaaSMetricCard extends StatelessWidget {
   const SaaSMetricCard({
     super.key,
@@ -126,128 +173,126 @@ class SaaSMetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fg = iconColor ?? SaaSColors.primary;
-    final bg = iconBgColor ??
+    final fgIcon = iconColor ?? SaaSColors.primary;
+    final bgIcon =
+        iconBgColor ??
         (isDark
-            ? fg.withValues(alpha: 0.15)
-            : fg.withValues(alpha: 0.1));
+            ? fgIcon.withValues(alpha: 0.18)
+            : fgIcon.withValues(alpha: 0.11));
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: SaaSColors.surface(isDark),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: SaaSColors.border(isDark)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final cardContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: SaaSColors.textSecondary(isDark),
-                      letterSpacing: -0.2,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, size: 18, color: fg),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                color: SaaSColors.textPrimary(isDark),
-                letterSpacing: -0.8,
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: bgIcon,
+                borderRadius: BorderRadius.circular(12),
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              child: Icon(icon, color: fgIcon, size: 20),
             ),
-            if (subtitle != null || trend != null) ...[
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  if (trend != null) ...[
+            if (trend != null && trend!.trim().isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: trendPositive
+                      ? (isDark
+                            ? SaaSColors.success.withValues(alpha: 0.18)
+                            : SaaSColors.successBg)
+                      : (isDark
+                            ? SaaSColors.error.withValues(alpha: 0.18)
+                            : SaaSColors.errorBg),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Icon(
                       trendPositive
                           ? Icons.trending_up_rounded
                           : Icons.trending_down_rounded,
-                      size: 15,
+                      size: 13,
                       color: trendPositive
-                          ? SaaSColors.success
-                          : SaaSColors.error,
+                          ? (isDark
+                                ? const Color(0xFF34D399)
+                                : SaaSColors.successText)
+                          : (isDark
+                                ? const Color(0xFFF87171)
+                                : SaaSColors.errorText),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       trend!,
                       style: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: trendPositive
-                            ? SaaSColors.success
-                            : SaaSColors.error,
+                            ? (isDark
+                                  ? const Color(0xFF34D399)
+                                  : SaaSColors.successText)
+                            : (isDark
+                                  ? const Color(0xFFF87171)
+                                  : SaaSColors.errorText),
                       ),
                     ),
-                    const SizedBox(width: 6),
                   ],
-                  if (subtitle != null)
-                    Expanded(
-                      child: Text(
-                        subtitle!,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: SaaSColors.textSecondary(isDark),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
+                ),
               ),
-            ],
           ],
         ),
-      ),
-    ).saasSlideY(duration: 300.ms, begin: 0.08);
+        const SizedBox(height: 16),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.6,
+            color: SaaSColors.textPrimary(isDark),
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: SaaSColors.textSecondary(isDark),
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (subtitle != null && subtitle!.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            subtitle!,
+            style: TextStyle(
+              fontSize: 11.5,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+    );
+
+    return AncoraInteractiveCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(18),
+      backgroundColor: SaaSColors.surface(isDark),
+      borderColor: SaaSColors.border(isDark),
+      child: cardContent,
+    ).saasSlideY(duration: 280.ms, begin: 0.06);
   }
 }
 
-/// A sleek status badge / chip in Shadcn style.
-enum SaaSBadgeVariant {
-  neutral,
-  primary,
-  success,
-  warning,
-  error,
-}
+enum SaaSBadgeVariant { primary, success, warning, error, neutral }
 
 class SaaSBadge extends StatelessWidget {
   const SaaSBadge({
@@ -266,78 +311,93 @@ class SaaSBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    Color bg;
-    Color fg;
-    Color border;
+    late final Color bg;
+    late final Color fg;
+    late final Color border;
 
     switch (variant) {
       case SaaSBadgeVariant.primary:
-        bg = isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF);
-        fg = isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8);
-        border = isDark ? const Color(0xFF2563EB) : const Color(0xFFBFDBFE);
+        bg = isDark
+            ? SaaSColors.primary.withValues(alpha: 0.2)
+            : SaaSColors.infoBg;
+        fg = isDark ? const Color(0xFF93C5FD) : SaaSColors.infoText;
+        border = isDark
+            ? SaaSColors.primary.withValues(alpha: 0.4)
+            : const Color(0xFFBFDBFE);
         break;
       case SaaSBadgeVariant.success:
-        bg = isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5);
-        fg = isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857);
-        border = isDark ? const Color(0xFF059669) : const Color(0xFFA7F3D0);
+        bg = isDark
+            ? SaaSColors.success.withValues(alpha: 0.18)
+            : SaaSColors.successBg;
+        fg = isDark ? const Color(0xFF6EE7B7) : SaaSColors.successText;
+        border = isDark
+            ? SaaSColors.success.withValues(alpha: 0.35)
+            : const Color(0xFFA7F3D0);
         break;
       case SaaSBadgeVariant.warning:
-        bg = isDark ? const Color(0xFF78350F) : const Color(0xFFFFFBEB);
-        fg = isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309);
-        border = isDark ? const Color(0xFFD97706) : const Color(0xFFFDE68A);
+        bg = isDark
+            ? SaaSColors.warning.withValues(alpha: 0.18)
+            : SaaSColors.warningBg;
+        fg = isDark ? const Color(0xFFFCD34D) : SaaSColors.warningText;
+        border = isDark
+            ? SaaSColors.warning.withValues(alpha: 0.35)
+            : const Color(0xFFFDE68A);
         break;
       case SaaSBadgeVariant.error:
-        bg = isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2);
-        fg = isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C);
-        border = isDark ? const Color(0xFFDC2626) : const Color(0xFFFECACA);
+        bg = isDark
+            ? SaaSColors.error.withValues(alpha: 0.2)
+            : SaaSColors.errorBg;
+        fg = isDark ? const Color(0xFFFCA5A5) : SaaSColors.errorText;
+        border = isDark
+            ? SaaSColors.error.withValues(alpha: 0.35)
+            : const Color(0xFFFECACA);
         break;
       case SaaSBadgeVariant.neutral:
-        bg = isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
-        fg = isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
-        border = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+        bg = SaaSColors.surfaceSubtle(isDark);
+        fg = SaaSColors.textSecondary(isDark);
+        border = SaaSColors.border(isDark);
         break;
     }
 
-    final widget = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: border, width: 1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 12, color: fg),
-            const SizedBox(width: 4),
+            Icon(icon, size: 13, color: fg),
+            const SizedBox(width: 5),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              color: fg,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.2,
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: fg,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
       ),
     );
 
-    if (onTap != null) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: widget,
-      );
-    }
-    return widget;
+    if (onTap == null) return pill;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: pill,
+    );
   }
 }
 
-/// A Section Header for dashboard areas with optional actions.
 class SaaSSectionHeader extends StatelessWidget {
   const SaaSSectionHeader({
     super.key,
@@ -355,67 +415,51 @@ class SaaSSectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              title,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: SaaSColors.textPrimary(isDark),
-                                letterSpacing: -0.4,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (badge != null) ...[
-                            const SizedBox(width: 8),
-                            badge!,
-                          ],
-                        ],
-                      ),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle!,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: SaaSColors.textSecondary(isDark),
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.35,
+                          color: SaaSColors.textPrimary(isDark),
                         ),
-                      ],
-                    ],
-                  ),
+                      ),
+                    ),
+                    if (badge != null) ...[const SizedBox(width: 10), badge!],
+                  ],
                 ),
+                if (subtitle != null && subtitle!.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: SaaSColors.textSecondary(isDark),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-          if (action != null) action!,
+          if (action != null) ...[const SizedBox(width: 12), action!],
         ],
       ),
     );
   }
 }
 
-/// Empty state illustration and call to action.
 class SaaSEmptyState extends StatelessWidget {
   const SaaSEmptyState({
     super.key,
@@ -439,73 +483,82 @@ class SaaSEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final descText = (subtitle != null && subtitle!.isNotEmpty)
+    final bodyText = (subtitle != null && subtitle!.isNotEmpty)
         ? subtitle!
         : description;
 
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 440),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
+        decoration: BoxDecoration(
+          color: SaaSColors.surface(isDark),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: SaaSColors.border(isDark)),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: SaaSColors.surfaceSubtle(isDark),
+                gradient: LinearGradient(
+                  colors: [
+                    SaaSColors.primary.withValues(alpha: isDark ? 0.24 : 0.12),
+                    SaaSColors.info.withValues(alpha: isDark ? 0.14 : 0.06),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 shape: BoxShape.circle,
-                border: Border.all(color: SaaSColors.border(isDark)),
               ),
               child: Icon(
                 icon,
                 size: 32,
-                color: SaaSColors.textSecondary(isDark),
+                color: isDark ? const Color(0xFF93C5FD) : SaaSColors.primary,
               ),
             ),
             const SizedBox(height: 16),
             Text(
               title,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: SaaSColors.textPrimary(isDark),
+                fontWeight: FontWeight.w800,
                 letterSpacing: -0.3,
+                color: SaaSColors.textPrimary(isDark),
               ),
-              textAlign: TextAlign.center,
             ),
-            if (descText.isNotEmpty) ...[
+            if (bodyText.isNotEmpty) ...[
               const SizedBox(height: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 360),
-                child: Text(
-                  descText,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: SaaSColors.textSecondary(isDark),
-                    height: 1.4,
-                  ),
-                  textAlign: TextAlign.center,
+              Text(
+                bodyText,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: SaaSColors.textSecondary(isDark),
+                  height: 1.45,
                 ),
               ),
             ],
             if (action != null) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 20),
               action!,
             ] else if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 18),
-              ShadButton(
+              const SizedBox(height: 20),
+              FilledButton.icon(
                 onPressed: onAction,
-                child: Text(actionLabel!),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text(actionLabel!),
               ),
             ],
           ],
         ),
       ),
-    ).saasFadeIn(duration: 250.ms);
+    ).saasFadeIn(duration: 240.ms);
   }
 }
 
-/// A polished card wrapper for SaaS panels.
 class SaaSCard extends StatelessWidget {
   const SaaSCard({
     super.key,
@@ -529,43 +582,21 @@ class SaaSCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final card = Container(
-      margin: margin,
+    final widget = AncoraInteractiveCard(
+      onTap: onTap,
       padding: padding,
-      decoration: BoxDecoration(
-        color: backgroundColor ?? SaaSColors.surface(isDark),
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(
-          color: borderColor ?? SaaSColors.border(isDark),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
+      borderRadius: BorderRadius.circular(borderRadius),
+      backgroundColor: backgroundColor ?? SaaSColors.surface(isDark),
+      borderColor: borderColor ?? SaaSColors.border(isDark),
       child: child,
     );
 
-    if (onTap != null) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: card,
-      );
+    if (margin != null) {
+      return Padding(padding: margin!, child: widget);
     }
-
-    return card;
+    return widget;
   }
 }
-
-// =========================================================================
-// SAAS NOTIFICATION & FEEDBACK SYSTEM (SaaSFeedback)
-// =========================================================================
 
 class SaaSFeedback {
   static void showSuccess(
@@ -576,15 +607,16 @@ class SaaSFeedback {
     VoidCallback? onAction,
     String? actionLabel,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     _show(
       context,
       message: message,
       title: title,
       duration: duration,
       icon: Icons.check_circle_rounded,
-      fgColor: const Color(0xFF047857),
-      bgColor: const Color(0xFFECFDF5),
-      borderColor: const Color(0xFFA7F3D0),
+      fgColor: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF065F46),
+      bgColor: isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5),
+      borderColor: isDark ? const Color(0xFF059669) : const Color(0xFFA7F3D0),
       onAction: onAction,
       actionLabel: actionLabel,
     );
@@ -597,15 +629,16 @@ class SaaSFeedback {
     Duration duration = const Duration(seconds: 5),
     VoidCallback? onRetry,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     _show(
       context,
       message: message,
       title: title ?? 'Atenção',
       duration: duration,
       icon: Icons.error_rounded,
-      fgColor: const Color(0xFFB91C1C),
-      bgColor: const Color(0xFFFEF2F2),
-      borderColor: const Color(0xFFFECACA),
+      fgColor: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C),
+      bgColor: isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2),
+      borderColor: isDark ? const Color(0xFFDC2626) : const Color(0xFFFECACA),
       onAction: onRetry,
       actionLabel: onRetry != null ? 'Tentar novamente' : null,
     );
@@ -617,15 +650,16 @@ class SaaSFeedback {
     String? title,
     Duration duration = const Duration(seconds: 4),
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     _show(
       context,
       message: message,
       title: title,
       duration: duration,
       icon: Icons.warning_rounded,
-      fgColor: const Color(0xFFB45309),
-      bgColor: const Color(0xFFFFFBEB),
-      borderColor: const Color(0xFFFDE68A),
+      fgColor: isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309),
+      bgColor: isDark ? const Color(0xFF78350F) : const Color(0xFFFFFBEB),
+      borderColor: isDark ? const Color(0xFFD97706) : const Color(0xFFFDE68A),
     );
   }
 
@@ -635,15 +669,16 @@ class SaaSFeedback {
     String? title,
     Duration duration = const Duration(seconds: 4),
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     _show(
       context,
       message: message,
       title: title,
       duration: duration,
       icon: Icons.info_rounded,
-      fgColor: const Color(0xFF1D4ED8),
-      bgColor: const Color(0xFFEFF6FF),
-      borderColor: const Color(0xFFBFDBFE),
+      fgColor: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+      bgColor: isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF),
+      borderColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFFBFDBFE),
     );
   }
 
@@ -661,26 +696,25 @@ class SaaSFeedback {
   }) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
-
-    messenger.clearSnackBars();
+    messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         duration: duration,
+        behavior: SnackBarBehavior.floating,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         content: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: borderColor, width: 1.2),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Colors.black12,
-                blurRadius: 12,
-                offset: Offset(0, 4),
+                color: Colors.black.withValues(alpha: 0.14),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
@@ -693,28 +727,31 @@ class SaaSFeedback {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (title != null && title.isNotEmpty)
+                    if (title != null && title.isNotEmpty) ...[
                       Text(
                         title,
                         style: TextStyle(
                           color: fgColor,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13.5,
                         ),
                       ),
+                      const SizedBox(height: 2),
+                    ],
                     Text(
                       message,
                       style: TextStyle(
-                        color: fgColor.withValues(alpha: 0.9),
-                        fontSize: 12.5,
+                        color: fgColor,
                         fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                        height: 1.35,
                       ),
                     ),
                   ],
                 ),
               ),
               if (onAction != null && actionLabel != null) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 TextButton(
                   onPressed: () {
                     messenger.hideCurrentSnackBar();
@@ -722,10 +759,15 @@ class SaaSFeedback {
                   },
                   style: TextButton.styleFrom(
                     foregroundColor: fgColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                   ),
-                  child: Text(actionLabel),
+                  child: Text(
+                    actionLabel,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
               ],
             ],
@@ -735,10 +777,6 @@ class SaaSFeedback {
     );
   }
 }
-
-// =========================================================================
-// SAAS LOADING & SKELETON COMPONENTS
-// =========================================================================
 
 class SaaSLoadingState extends StatelessWidget {
   const SaaSLoadingState({
@@ -753,63 +791,54 @@ class SaaSLoadingState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: SaaSColors.surface(isDark),
-                shape: BoxShape.circle,
-                border: Border.all(color: SaaSColors.border(isDark)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          decoration: BoxDecoration(
+            color: SaaSColors.surface(isDark),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: SaaSColors.border(isDark)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 30,
+                height: 30,
+                child: CircularProgressIndicator(strokeWidth: 3),
               ),
-              child: const SizedBox(
-                width: 26,
-                height: 26,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(SaaSColors.primary),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: SaaSColors.textPrimary(isDark),
-              ),
-            ),
-            if (submessage != null) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: 16),
               Text(
-                submessage!,
+                message,
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 12,
-                  color: SaaSColors.textSecondary(isDark),
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: SaaSColors.textPrimary(isDark),
                 ),
               ),
+              if (submessage != null && submessage!.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  submessage!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: SaaSColors.textSecondary(isDark),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class SaaSSkeleton extends StatefulWidget {
+class SaaSSkeleton extends StatelessWidget {
   const SaaSSkeleton({
     super.key,
     this.width,
@@ -824,62 +853,18 @@ class SaaSSkeleton extends StatefulWidget {
   final EdgeInsetsGeometry? margin;
 
   @override
-  State<SaaSSkeleton> createState() => _SaaSSkeletonState();
-}
-
-class _SaaSSkeletonState extends State<SaaSSkeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-    _animation = Tween<double>(begin: 0.4, end: 0.9).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-    if (!isRunningTestEnvironment) {
-      _controller.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final baseColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
-
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return Container(
-          margin: widget.margin,
-          width: widget.width,
-          height: widget.height,
-          decoration: BoxDecoration(
-            color: isRunningTestEnvironment
-                ? baseColor
-                : baseColor.withValues(alpha: _animation.value),
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-          ),
-        );
-      },
+    final block = AncoraShimmerBlock(
+      width: width ?? double.infinity,
+      height: height,
+      borderRadius: BorderRadius.circular(borderRadius),
     );
+    if (margin != null) {
+      return Padding(padding: margin!, child: block);
+    }
+    return block;
   }
 }
-
-// =========================================================================
-// SAAS ERROR STATE
-// =========================================================================
 
 class SaaSErrorState extends StatelessWidget {
   const SaaSErrorState({
@@ -896,49 +881,60 @@ class SaaSErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 440),
+        margin: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: SaaSColors.surface(isDark),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: SaaSColors.error.withValues(alpha: isDark ? 0.45 : 0.3),
+          ),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEE2E2),
+                color: isDark
+                    ? SaaSColors.error.withValues(alpha: 0.2)
+                    : SaaSColors.errorBg,
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFFFECACA)),
               ),
-              child: const Icon(Icons.cloud_off_rounded, size: 32, color: Color(0xFFDC2626)),
+              child: const Icon(
+                Icons.cloud_off_rounded,
+                size: 30,
+                color: SaaSColors.error,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
               title,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
                 color: SaaSColors.textPrimary(isDark),
               ),
-              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 380),
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: SaaSColors.textSecondary(isDark),
-                ),
-                textAlign: TextAlign.center,
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: SaaSColors.textSecondary(isDark),
+                height: 1.45,
               ),
             ),
             if (onRetry != null) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 20),
               FilledButton.icon(
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded, size: 16),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: const Text('Tentar novamente'),
               ),
             ],
@@ -948,10 +944,6 @@ class SaaSErrorState extends StatelessWidget {
     );
   }
 }
-
-// =========================================================================
-// SAAS SEARCH BAR
-// =========================================================================
 
 class SaaSSearchBar extends StatefulWidget {
   const SaaSSearchBar({
@@ -991,57 +983,46 @@ class _SaaSSearchBarState extends State<SaaSSearchBar> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Row(
       children: [
         Expanded(
-          child: Container(
-            height: 44,
-            decoration: BoxDecoration(
-              color: SaaSColors.surface(isDark),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: SaaSColors.border(isDark)),
-            ),
-            child: TextField(
-              controller: _controller,
-              onChanged: widget.onChanged,
-              onSubmitted: widget.onSubmitted,
-              style: TextStyle(
-                fontSize: 13.5,
-                color: SaaSColors.textPrimary(isDark),
+          child: TextField(
+            controller: _controller,
+            onChanged: (val) {
+              setState(() {});
+              widget.onChanged(val);
+            },
+            onSubmitted: widget.onSubmitted,
+            decoration: InputDecoration(
+              hintText: widget.hintText,
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: SaaSColors.textSecondary(isDark),
               ),
-              decoration: InputDecoration(
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                hintText: widget.hintText,
-                hintStyle: TextStyle(
-                  color: SaaSColors.textSecondary(isDark).withValues(alpha: 0.7),
-                  fontSize: 13,
-                ),
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  size: 18,
-                  color: SaaSColors.textSecondary(isDark),
-                ),
-                suffixIcon: _controller.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 16),
-                        onPressed: () {
-                          _controller.clear();
-                          widget.onChanged('');
-                          setState(() {});
-                        },
-                      )
-                    : null,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
+              suffixIcon: _controller.text.isNotEmpty
+                  ? IconButton(
+                      tooltip: 'Limpar busca',
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () {
+                        _controller.clear();
+                        setState(() {});
+                        widget.onChanged('');
+                        widget.onSubmitted?.call('');
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: SaaSColors.surface(isDark),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
               ),
             ),
           ),
         ),
         if (widget.trailing != null) ...[
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           widget.trailing!,
         ],
       ],
@@ -1049,46 +1030,41 @@ class _SaaSSearchBarState extends State<SaaSSearchBar> {
   }
 }
 
-// =========================================================================
-// SAAS METRIC GRID
-// =========================================================================
-
 class SaaSMetricGrid extends StatelessWidget {
-  const SaaSMetricGrid({
-    super.key,
-    required this.items,
-  });
+  const SaaSMetricGrid({super.key, required this.items});
 
   final List<Widget> items;
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = ResponsiveLayout.isMobile(context);
-    final isTablet = ResponsiveLayout.isTablet(context);
-
-    int crossAxisCount = 4;
-    if (isMobile) {
-      crossAxisCount = 1;
-    } else if (isTablet) {
-      crossAxisCount = 2;
-    }
-
+    if (items.isEmpty) return const SizedBox.shrink();
     return LayoutBuilder(
       builder: (context, constraints) {
-        final itemWidth = (constraints.maxWidth - ((crossAxisCount - 1) * 12)) / crossAxisCount;
+        final maxW = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final columns = maxW >= 1100
+            ? 4
+            : (maxW >= 700 ? 2 : (maxW >= 460 ? 2 : 1));
+        const spacing = 14.0;
+        final itemWidth = (maxW - spacing * (columns - 1)) / columns;
+
         return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: items.map((child) => SizedBox(width: itemWidth, child: child)).toList(),
+          spacing: spacing,
+          runSpacing: spacing,
+          children: items
+              .map(
+                (item) => SizedBox(
+                  width: itemWidth > 0 ? itemWidth : maxW,
+                  child: item,
+                ),
+              )
+              .toList(),
         );
       },
     );
   }
 }
-
-// =========================================================================
-// SAAS DATA CARD (Consolidated list card for items)
-// =========================================================================
 
 class SaaSDataCard extends StatelessWidget {
   const SaaSDataCard({
@@ -1113,11 +1089,9 @@ class SaaSDataCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return SaaSCard(
-      padding: const EdgeInsets.all(16),
-      margin: const EdgeInsets.only(bottom: 10),
       onTap: onTap,
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1126,12 +1100,20 @@ class SaaSDataCard extends StatelessWidget {
             children: [
               if (leadingIcon != null) ...[
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: SaaSColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
+                    color: SaaSColors.primary.withValues(
+                      alpha: isDark ? 0.18 : 0.10,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(leadingIcon, size: 18, color: SaaSColors.primary),
+                  child: Icon(
+                    leadingIcon,
+                    size: 20,
+                    color: isDark
+                        ? const Color(0xFF93C5FD)
+                        : SaaSColors.primary,
+                  ),
                 ),
                 const SizedBox(width: 12),
               ],
@@ -1139,57 +1121,37 @@ class SaaSDataCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14.5,
-                              color: SaaSColors.textPrimary(isDark),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (badge != null) ...[
-                          const SizedBox(width: 8),
-                          badge!,
-                        ],
-                      ],
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: SaaSColors.textPrimary(isDark),
+                      ),
                     ),
                     if (subtitle != null && subtitle!.isNotEmpty) ...[
                       const SizedBox(height: 3),
                       Text(
                         subtitle!,
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 13,
                           color: SaaSColors.textSecondary(isDark),
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],
                 ),
               ),
+              if (badge != null) ...[const SizedBox(width: 8), badge!],
             ],
           ),
           if (metadata.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 6,
-              children: metadata,
-            ),
+            Wrap(spacing: 12, runSpacing: 8, children: metadata),
           ],
           if (actions.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: actions,
-            ),
+            const SizedBox(height: 14),
+            Wrap(spacing: 8, runSpacing: 8, children: actions),
           ],
         ],
       ),

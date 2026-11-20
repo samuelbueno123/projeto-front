@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../design_system/saas_design_system.dart';
-import 'full_screen_image_viewer.dart';
+import '../theme/app_theme.dart';
+import 'smart_image.dart';
 
-/// Reusable avatar widget that reliably resolves images (base64, remote URL,
-/// backend media path) and falls back gracefully to user initials or a person icon,
-/// preventing blank or gray placeholder circles.
+ImageProvider<Object>? resolveAvatarImageProvider(String? source) =>
+    resolveSmartImageProvider(source);
+
 class UserAvatar extends StatelessWidget {
   const UserAvatar({
     super.key,
@@ -30,116 +30,64 @@ class UserAvatar extends StatelessWidget {
   final VoidCallback? onTap;
   final String? tooltip;
 
-  String _getInitials(String? text) {
-    if (text == null) return '';
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return '';
-    final parts = trimmed.split(RegExp(r'\s+'));
-    if (parts.length == 1) {
-      return parts.first.characters.take(2).toString().toUpperCase();
-    }
-    return '${parts.first.characters.take(1)}${parts.last.characters.take(1)}'
+  String _initials() {
+    final clean = (name ?? '').trim();
+    if (clean.isEmpty) return 'U';
+    final parts = clean
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'U';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
         .toUpperCase();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final size = radius * 2;
+    final tokens = AncoraThemeTokens.of(context);
+    final provider = resolveSmartImageProvider(imageSource);
+    final bg = backgroundColor ?? tokens.accent.withValues(alpha: 0.14);
+    final fg = foregroundColor ?? tokens.accent;
+    final bColor = borderColor ?? tokens.borderStrong;
 
-    final bgColor = backgroundColor ??
-        (isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF));
-    final fgColor = foregroundColor ??
-        (isDark ? const Color(0xFF93C5FD) : SaaSColors.primary);
-    final bColor = borderColor ??
-        (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1));
-
-    final imageProvider = resolveAvatarImageProvider(imageSource);
-    final initials = _getInitials(name);
-
-    Widget fallbackWidget = Center(
-      child: initials.isNotEmpty
-          ? Text(
-              initials,
-              style: TextStyle(
-                color: fgColor,
-                fontSize: radius * 0.75,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            )
-          : Icon(
-              Icons.person_rounded,
-              color: fgColor,
-              size: radius * 1.1,
-            ),
-    );
-
-    Widget content = Container(
-      width: size,
-      height: size,
+    Widget avatar = Container(
+      padding: EdgeInsets.all(borderWidth > 0 ? borderWidth : 0),
       decoration: BoxDecoration(
-        color: bgColor,
         shape: BoxShape.circle,
-        border: Border.all(color: bColor, width: borderWidth),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: borderWidth > 0
+            ? Border.all(color: bColor, width: borderWidth)
+            : null,
       ),
-      child: ClipOval(
-        child: imageProvider != null
-            ? Image(
-                image: imageProvider,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => fallbackWidget,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      fallbackWidget,
-                      SizedBox(
-                        width: radius,
-                        height: radius,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: fgColor.withValues(alpha: 0.6),
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                              : null,
-                        ),
-                      ),
-                    ],
-                  );
-                },
+      child: CircleAvatar(
+        radius: radius,
+        backgroundColor: bg,
+        backgroundImage: provider,
+        onBackgroundImageError: provider == null ? null : (_, __) {},
+        child: provider == null
+            ? Text(
+                _initials(),
+                style: TextStyle(
+                  color: fg,
+                  fontWeight: FontWeight.w800,
+                  fontSize: (radius * 0.72).clamp(11.0, 26.0),
+                ),
               )
-            : fallbackWidget,
+            : null,
       ),
     );
-
-    if (tooltip != null && tooltip!.isNotEmpty) {
-      content = Tooltip(message: tooltip!, child: content);
-    }
 
     if (onTap != null) {
-      content = Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: content,
-        ),
+      avatar = MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(onTap: onTap, child: avatar),
       );
     }
 
-    return content;
+    if (tooltip != null && tooltip!.isNotEmpty) {
+      avatar = Tooltip(message: tooltip!, child: avatar);
+    }
+
+    return avatar;
   }
 }

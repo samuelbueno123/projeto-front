@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class RoleSwitcherPill extends StatelessWidget {
   const RoleSwitcherPill({
@@ -15,28 +16,36 @@ class RoleSwitcherPill extends StatelessWidget {
   final bool isLight;
 
   static String roleLabel(String role) {
-    switch (role) {
+    switch (role.trim().toUpperCase()) {
+      case 'ROLE_ADMIN':
       case 'ADMIN':
         return 'Administrador';
+      case 'ROLE_MANAGER':
       case 'MANAGER':
         return 'Síndico / Gestor';
+      case 'ROLE_DOORMAN':
       case 'DOORMAN':
+      case 'ROLE_CONCIERGE':
+      case 'CONCIERGE':
         return 'Portaria';
-      case 'RESIDENT':
       default:
         return 'Morador';
     }
   }
 
   static IconData roleIcon(String role) {
-    switch (role) {
+    switch (role.trim().toUpperCase()) {
+      case 'ROLE_ADMIN':
       case 'ADMIN':
         return Icons.admin_panel_settings_rounded;
+      case 'ROLE_MANAGER':
       case 'MANAGER':
-        return Icons.business_center_rounded;
+        return Icons.manage_accounts_rounded;
+      case 'ROLE_DOORMAN':
       case 'DOORMAN':
-        return Icons.shield_rounded;
-      case 'RESIDENT':
+      case 'ROLE_CONCIERGE':
+      case 'CONCIERGE':
+        return Icons.security_rounded;
       default:
         return Icons.home_rounded;
     }
@@ -46,44 +55,30 @@ class RoleSwitcherPill extends StatelessWidget {
   Widget build(BuildContext context) {
     if (availableRoles.length <= 1) return const SizedBox.shrink();
 
-    final textColor = isLight ? const Color(0xFF1E3A8A) : Colors.white;
-    final bgColor = isLight ? const Color(0xFFEFF6FF) : Colors.white.withValues(alpha: 0.15);
-    final borderColor = isLight ? const Color(0xFFBFDBFE) : Colors.white.withValues(alpha: 0.3);
+    final tokens = AncoraThemeTokens.of(context);
+    final Color textColor = isLight
+        ? (tokens.isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E3A8A))
+        : Colors.white;
+    final Color bgColor = isLight
+        ? (tokens.isDark
+              ? tokens.accent.withValues(alpha: 0.2)
+              : const Color(0xFFEFF6FF))
+        : Colors.white.withValues(alpha: 0.16);
+    final Color borderColor = isLight
+        ? (tokens.isDark
+              ? tokens.accent.withValues(alpha: 0.45)
+              : const Color(0xFFBFDBFE))
+        : Colors.white.withValues(alpha: 0.32);
 
     return PopupMenuButton<String>(
       tooltip: 'Alternar perfil de visualização',
-      initialValue: currentRole,
       onSelected: onSwitchRole,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 6,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: borderColor),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(roleIcon(currentRole), size: 15, color: textColor),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                roleLabel(currentRole),
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.arrow_drop_down_rounded, size: 18, color: textColor),
-          ],
-        ),
+      offset: const Offset(0, 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: tokens.borderStrong),
       ),
+      color: tokens.surfaceElevated,
       itemBuilder: (ctx) => availableRoles.map((role) {
         final isSelected = role == currentRole;
         return PopupMenuItem<String>(
@@ -93,24 +88,50 @@ class RoleSwitcherPill extends StatelessWidget {
               Icon(
                 roleIcon(role),
                 size: 18,
-                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                color: isSelected ? tokens.accent : tokens.textSecondary,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   roleLabel(role),
                   style: TextStyle(
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                    color: isSelected ? const Color(0xFF2563EB) : null,
+                    fontSize: 13.5,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? tokens.accent : tokens.textPrimary,
                   ),
                 ),
               ),
               if (isSelected)
-                const Icon(Icons.check_rounded, size: 18, color: Color(0xFF2563EB)),
+                Icon(Icons.check_rounded, size: 16, color: tokens.accent),
             ],
           ),
         );
       }).toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(roleIcon(currentRole), size: 15, color: textColor),
+            const SizedBox(width: 6),
+            Text(
+              roleLabel(currentRole),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: textColor),
+          ],
+        ),
+      ),
     );
   }
 }

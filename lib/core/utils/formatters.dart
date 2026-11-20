@@ -1,55 +1,50 @@
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
-/// Returns the first name of a full name (or [fallback] when empty).
+/// Retorna o primeiro nome não vazio de um nome completo.
 String firstNameOf(String? fullName, {String fallback = ''}) {
-  final trimmed = fullName?.trim() ?? '';
+  if (fullName == null) return fallback;
+  final trimmed = fullName.trim();
   if (trimmed.isEmpty) return fallback;
-  return trimmed.split(RegExp(r'\s+')).first;
+  final parts = trimmed.split(RegExp(r'\s+'));
+  return parts.first.isEmpty ? fallback : parts.first;
 }
 
-/// Keeps only the digits of [value].
 String onlyDigits(String value) => value.replaceAll(RegExp(r'\D'), '');
 
-/// Formats a Brazilian phone number: `(21) 99999-9999` or `(21) 3333-4444`.
-/// Partial numbers are formatted progressively while the user types.
+/// Formata um telefone brasileiro (10 ou 11 dígitos) preservando strings vazias.
 String formatPhone(String? value) {
-  final digits = onlyDigits(value ?? '');
+  if (value == null) return '';
+  final digits = onlyDigits(value);
   if (digits.isEmpty) return '';
-  final limited = digits.length > 11 ? digits.substring(0, 11) : digits;
-  final buffer = StringBuffer();
-  for (var i = 0; i < limited.length; i++) {
-    if (i == 0) buffer.write('(');
-    if (i == 2) buffer.write(') ');
-    final hyphenAt = limited.length == 11 ? 7 : 6;
-    if (i == hyphenAt) buffer.write('-');
-    buffer.write(limited[i]);
+  final capped = digits.length > 11 ? digits.substring(0, 11) : digits;
+  if (capped.length <= 2) return '($capped';
+  if (capped.length <= 6) {
+    return '(${capped.substring(0, 2)}) ${capped.substring(2)}';
   }
-  return buffer.toString();
+  if (capped.length <= 10) {
+    return '(${capped.substring(0, 2)}) ${capped.substring(2, 6)}-${capped.substring(6)}';
+  }
+  return '(${capped.substring(0, 2)}) ${capped.substring(2, 7)}-${capped.substring(7)}';
 }
 
-/// Validates a real Brazilian phone number (DDD + 8 or 9 digits).
-/// Returns an error message, or `null` when the number is valid.
-String? validatePhone(String? value) {
-  final digits = onlyDigits(value ?? '');
-  if (digits.isEmpty) return 'Informe um telefone de contato.';
-  if (digits.length < 10) return 'Telefone incompleto. Informe DDD + número.';
-  final ddd = int.parse(digits.substring(0, 2));
-  if (ddd < 11 || digits[1] == '0') return 'DDD inválido.';
-  if (digits.length == 11 && digits[2] != '9') {
-    return 'Celular deve começar com 9 após o DDD.';
+/// Valida telefone brasileiro (10 dígitos fixo ou 11 dígitos celular com DDD).
+String? validatePhone(String? value, {bool required = false}) {
+  final raw = value?.trim() ?? '';
+  if (raw.isEmpty) {
+    return required ? 'Informe o telefone com DDD.' : null;
   }
-  if (digits.length == 10 && !'2345'.contains(digits[2])) {
-    return 'Número de telefone fixo inválido.';
+  final digits = onlyDigits(raw);
+  if (digits.length < 10 || digits.length > 11) {
+    return 'Informe um telefone válido com DDD (10 ou 11 dígitos).';
   }
-  final subscriber = digits.substring(2);
-  if (RegExp(r'^(\d)\1+$').hasMatch(subscriber)) {
-    return 'Informe um número de telefone real.';
+  if (digits[0] == '0' || digits[1] == '0') {
+    return 'DDD inválido. Informe um DDD válido com 2 dígitos.';
   }
   return null;
 }
 
-/// Input formatter that accepts only digits and shows them as a phone mask.
+/// Formata telefone brasileiro em tempo real preservando a posição do cursor.
 class PhoneInputFormatter extends TextInputFormatter {
   const PhoneInputFormatter();
 
@@ -58,58 +53,163 @@ class PhoneInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    final formatted = formatPhone(newValue.text);
+    final selectionEnd = newValue.selection.end.clamp(0, newValue.text.length);
+    final digitsBeforeCursor = onlyDigits(
+      newValue.text.substring(0, selectionEnd),
+    ).length;
+
+    final allDigits = onlyDigits(newValue.text);
+    final cappedDigits = allDigits.length > 11
+        ? allDigits.substring(0, 11)
+        : allDigits;
+    final formatted = formatPhone(cappedDigits);
+
+    int targetOffset = formatted.length;
+    if (digitsBeforeCursor == 0) {
+      targetOffset = 0;
+    } else {
+      int seenDigits = 0;
+      for (int i = 0; i < formatted.length; i++) {
+        final code = formatted.codeUnitAt(i);
+        if (code >= 48 && code <= 57) {
+          seenDigits++;
+          if (seenDigits >= digitsBeforeCursor) {
+            targetOffset = i + 1;
+            break;
+          }
+        }
+      }
+    }
+
     return TextEditingValue(
       text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
+      selection: TextSelection.collapsed(
+        offset: targetOffset.clamp(0, formatted.length),
+      ),
     );
   }
 }
 
-/// Parses any date/time string from the backend into a local [DateTime].
-/// If the string is formatted in UTC without offset (e.g. 2026-11-03T01:41:00),
-/// it is properly parsed as UTC and converted to the client's local timezone (.toLocal()).
+final RegExp _dateOnlyPattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+final RegExp _explicitOffsetPattern = RegExp(r'(Z|[+-]\d{2}:?\d{2})$');
+
+/// Converte datas ISO e timestamps UTC da API para o fuso local sem deslocar datas puras (YYYY-MM-DD).
 DateTime? parseUtcToLocal(dynamic raw) {
   if (raw == null) return null;
-  if (raw is DateTime) return raw.toLocal();
-  final s = raw.toString().trim();
-  if (s.isEmpty) return null;
+  if (raw is DateTime) {
+    return raw.isUtc ? raw.toLocal() : raw;
+  }
+  final text = raw.toString().trim();
+  if (text.isEmpty) return null;
 
-  try {
-    // If it's already a full ISO string with timezone offset or Z
-    if (s.endsWith('Z') || s.endsWith('z') || RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(s)) {
-      return DateTime.parse(s).toLocal();
-    }
-    // If standard ISO without timezone (e.g. 2026-11-03T01:41:00 or 2026-11-03 01:41:00),
-    // treat as UTC from backend and convert to local
-    final normalized = s.contains(' ') ? s.replaceAll(' ', 'T') : s;
-    return DateTime.parse('${normalized}Z').toLocal();
-  } catch (_) {
-    try {
-      return DateTime.tryParse(s)?.toLocal();
-    } catch (_) {
-      return null;
+  if (_dateOnlyPattern.hasMatch(text)) {
+    final parts = text.split('-');
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year != null && month != null && day != null) {
+      return DateTime(year, month, day);
     }
   }
+
+  final isoCandidate = text.contains(' ') && !text.contains('T')
+      ? text.replaceFirst(' ', 'T')
+      : text;
+
+  if (_explicitOffsetPattern.hasMatch(isoCandidate)) {
+    return DateTime.tryParse(isoCandidate)?.toLocal();
+  }
+
+  // Timestamps LocalDateTime sem fuso explícito vindos da API em UTC
+  final parsedWithUtc = DateTime.tryParse('${isoCandidate}Z');
+  if (parsedWithUtc != null) {
+    return parsedWithUtc.toLocal();
+  }
+  return DateTime.tryParse(isoCandidate)?.toLocal();
 }
 
-/// Formats date and time in the user's local timezone (e.g. "03/11/2026 14:30")
 String formatDateTime(dynamic raw, {String fallback = '-'}) {
   final dt = parseUtcToLocal(raw);
   if (dt == null) return fallback;
   return DateFormat('dd/MM/yyyy HH:mm').format(dt);
 }
 
-/// Formats only the date in the user's local timezone (e.g. "03/11/2026")
 String formatDate(dynamic raw, {String fallback = '-'}) {
   final dt = parseUtcToLocal(raw);
   if (dt == null) return fallback;
   return DateFormat('dd/MM/yyyy').format(dt);
 }
 
-/// Formats only the time in the user's local timezone (e.g. "14:30")
 String formatTime(dynamic raw, {String fallback = '-'}) {
   final dt = parseUtcToLocal(raw);
   if (dt == null) return fallback;
   return DateFormat('HH:mm').format(dt);
 }
+
+/// Faz o parsing seguro de valores monetários em formato brasileiro ou americano (ex: "R$ 1.250,50" -> 1250.50).
+double? parseBrlDouble(String? raw) {
+  if (raw == null) return null;
+  var cleaned = raw.trim().replaceAll(RegExp(r'[^0-9,.-]'), '');
+  if (cleaned.isEmpty) return null;
+  if (cleaned.contains(',') && cleaned.contains('.')) {
+    if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+      cleaned = cleaned.replaceAll('.', '').replaceAll(',', '.');
+    } else {
+      cleaned = cleaned.replaceAll(',', '');
+    }
+  } else if (cleaned.contains(',')) {
+    cleaned = cleaned.replaceAll(',', '.');
+  }
+  return double.tryParse(cleaned);
+}
+
+/// Formata número em moeda brasileira (R$ 1.234,56).
+String formatCurrencyBrl(num? value, {String fallback = 'R\$ 0,00'}) {
+  if (value == null) return fallback;
+  final formatted = NumberFormat.currency(
+    locale: 'pt_BR',
+    symbol: 'R\$',
+    decimalDigits: 2,
+  ).format(value);
+  return formatted;
+}
+
+/// Realiza busca multi-termo nos valores escalares de um mapa sem serializar JSON em tempo de renderização.
+bool matchesSearchRecord(Map<String, dynamic> record, String query) {
+  final cleanQuery = query.trim().toLowerCase();
+  if (cleanQuery.isEmpty) return true;
+  final terms = cleanQuery.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
+
+  final buffer = StringBuffer();
+  void collect(dynamic value, int depth) {
+    if (value == null || depth > 3) return;
+    if (value is String) {
+      if (value.startsWith('data:image/') && value.length > 120) return;
+      buffer
+        ..write(value.toLowerCase())
+        ..write(' ');
+    } else if (value is num || value is bool) {
+      buffer
+        ..write(value.toString().toLowerCase())
+        ..write(' ');
+    } else if (value is Map) {
+      for (final v in value.values) {
+        collect(v, depth + 1);
+      }
+    } else if (value is Iterable) {
+      int count = 0;
+      for (final item in value) {
+        if (count++ >= 20) break;
+        collect(item, depth + 1);
+      }
+    }
+  }
+
+  collect(record, 0);
+  final haystack = buffer.toString();
+  return terms.every(haystack.contains);
+}
+
+/// Alias compatível para filtros multi-termo nos módulos do sistema.
+bool recordMatchesQuery(Map<String, dynamic> record, String query) =>
+    matchesSearchRecord(record, query);

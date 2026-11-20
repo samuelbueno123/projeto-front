@@ -21,7 +21,11 @@ void main() {
             jsonEncode({
               'total': 42,
               'byOutcome': {'SUCCESS': 38, 'FAILURE': 4},
-              'byCategory': {'ADMIN_OPERATION': 10, 'SECURITY': 12, 'AUTHENTICATION': 20},
+              'byCategory': {
+                'ADMIN_OPERATION': 10,
+                'SECURITY': 12,
+                'AUTHENTICATION': 20,
+              },
               'bySeverity': {'INFO': 30, 'WARN': 8, 'ERROR': 4, 'CRITICAL': 0},
             }),
             200,
@@ -113,8 +117,16 @@ void main() {
                 'connectedCondominiums': 3,
               },
               'caches': [
-                {'name': 'roles', 'entries': 4, 'provider': 'ConcurrentMapCache'},
-                {'name': 'features', 'entries': 18, 'provider': 'ConcurrentMapCache'},
+                {
+                  'name': 'roles',
+                  'entries': 4,
+                  'provider': 'ConcurrentMapCache',
+                },
+                {
+                  'name': 'features',
+                  'entries': 18,
+                  'provider': 'ConcurrentMapCache',
+                },
               ],
               'operationalMetrics': {
                 'loginSuccess': 150,
@@ -141,7 +153,9 @@ void main() {
                   'role': 'ROLE_ADMIN',
                   'label': 'Administrador Global',
                   'scope': 'Plataforma Global',
-                  'permissions': ['Acesso irrestrito a Central de Gerenciamento'],
+                  'permissions': [
+                    'Acesso irrestrito a Central de Gerenciamento',
+                  ],
                 },
                 {
                   'role': 'ROLE_MANAGER',
@@ -162,7 +176,7 @@ void main() {
                   'permissions': ['Acompanhamento de encomendas e reservas'],
                 },
               ],
-              'commercialPlans': [
+              'billingPlans': [
                 {
                   'name': 'Plano Basico',
                   'monthlyFee': '99.00',
@@ -175,7 +189,10 @@ void main() {
                   'monthlyFee': '299.00',
                   'features': [
                     {'name': 'Armarios Inteligentes', 'code': 'SMART_LOCKERS'},
-                    {'name': 'Assembleias Virtuais', 'code': 'VIRTUAL_ASSEMBLIES'},
+                    {
+                      'name': 'Assembleias Virtuais',
+                      'code': 'VIRTUAL_ASSEMBLIES',
+                    },
                   ],
                 },
               ],
@@ -237,181 +254,206 @@ void main() {
           );
         }
 
-        return http.Response('{}', 200, headers: {'content-type': 'application/json'});
+        return http.Response(
+          '{}',
+          200,
+          headers: {'content-type': 'application/json'},
+        );
       });
 
       mockApi = HomeService(token: 'test-token', client: client);
     });
 
-    testWidgets('AdminAuditLogView renders immutability banner, filters, and records', (tester) async {
-      tester.view.physicalSize = const Size(1400, 900);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'AdminAuditLogView renders immutability banner, filters, and records',
+      (tester) async {
+        tester.view.physicalSize = const Size(1400, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: AdminAuditLogView(api: mockApi),
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AdminAuditLogView(api: mockApi)),
           ),
-        ),
-      );
+        );
 
-      await tester.pumpAndSettle();
+        await tester.pumpAndSettle();
 
-      // Verifica banner de imutabilidade
-      expect(find.textContaining('Trilha de Auditoria Imutável'), findsOneWidget);
+        // Verifica banner de imutabilidade
+        expect(
+          find.textContaining('Trilha de Auditoria Imutável'),
+          findsOneWidget,
+        );
 
-      // Verifica estatísticas
-      expect(find.text('Total de Registros'), findsOneWidget);
-      expect(find.text('Falhas / Bloqueios'), findsOneWidget);
+        // Verifica estatísticas
+        expect(find.text('Total de Registros'), findsOneWidget);
+        expect(find.text('Falhas / Bloqueios'), findsOneWidget);
 
-      // Verifica dados na tabela
-      expect(find.text('attacker@bad.com'), findsOneWidget);
-      expect(find.text('admin@system.com'), findsOneWidget);
-      expect(find.text('LOGIN_FAILED'), findsOneWidget);
-      expect(find.text('CREATE_CONDOMINIUM'), findsOneWidget);
+        // Verifica dados na tabela
+        expect(find.text('attacker@bad.com'), findsOneWidget);
+        expect(find.text('admin@system.com'), findsOneWidget);
+        expect(find.text('LOGIN_FAILED'), findsOneWidget);
+        expect(find.text('CREATE_CONDOMINIUM'), findsOneWidget);
 
-      // Verifica modal de detalhes ao clicar no olho
-      final detailButtons = find.byIcon(Icons.visibility_outlined);
-      expect(detailButtons, findsWidgets);
-      await tester.ensureVisible(detailButtons.first);
-      await tester.tap(detailButtons.first);
-      await tester.pumpAndSettle();
+        // Verifica modal de detalhes ao clicar no olho
+        final detailButtons = find.byIcon(Icons.visibility_outlined);
+        expect(detailButtons, findsWidgets);
+        await tester.ensureVisible(detailButtons.first);
+        await tester.tap(detailButtons.first);
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('Registro de Auditoria #1'), findsOneWidget);
-      expect(find.text('Fechar'), findsOneWidget);
-      await tester.tap(find.text('Fechar'));
-      await tester.pumpAndSettle();
-    });
+        expect(find.textContaining('Registro de Auditoria #1'), findsOneWidget);
+        expect(find.text('Fechar'), findsOneWidget);
+        await tester.tap(find.text('Fechar'));
+        await tester.pumpAndSettle();
+      },
+    );
 
-    testWidgets('AdminDiagnosticsView renders telemetry cards and operational counters', (tester) async {
-      tester.view.physicalSize = const Size(1400, 900);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'AdminDiagnosticsView renders telemetry cards and operational counters',
+      (tester) async {
+        tester.view.physicalSize = const Size(1400, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: AdminDiagnosticsView(api: mockApi),
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AdminDiagnosticsView(api: mockApi)),
           ),
-        ),
-      );
+        );
 
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
 
-      // Status Geral
-      expect(find.textContaining('SISTEMA OPERACIONAL (STATUS UP)'), findsOneWidget);
+        // Status Geral
+        expect(
+          find.textContaining('SISTEMA OPERACIONAL (STATUS UP)'),
+          findsOneWidget,
+        );
 
-      // Cards de Infraestrutura
-      expect(find.text('Banco de Dados'), findsOneWidget);
-      expect(find.text('4 ms'), findsOneWidget);
-      expect(find.text('Memória JVM Heap'), findsOneWidget);
-      expect(find.text('23.4%'), findsOneWidget);
-      expect(find.text('Armazenamento'), findsOneWidget);
-      expect(find.text('SSE Realtime'), findsOneWidget);
+        // Cards de Infraestrutura
+        expect(find.text('Banco de Dados'), findsOneWidget);
+        expect(find.text('4 ms'), findsOneWidget);
+        expect(find.text('Memória JVM Heap'), findsOneWidget);
+        expect(find.text('23.4%'), findsOneWidget);
+        expect(find.text('Armazenamento'), findsOneWidget);
+        expect(find.text('SSE Realtime'), findsOneWidget);
 
-      // Métricas Operacionais
-      expect(find.text('Métricas Operacionais em Tempo Real'), findsOneWidget);
-      expect(find.text('Logins Sucesso'), findsOneWidget);
-      expect(find.text('150'), findsOneWidget);
-      expect(find.text('Conflitos de Reserva'), findsOneWidget);
+        // Métricas Operacionais
+        expect(
+          find.text('Métricas Operacionais em Tempo Real'),
+          findsOneWidget,
+        );
+        expect(find.text('Logins Sucesso'), findsOneWidget);
+        expect(find.text('150'), findsOneWidget);
+        expect(find.text('Conflitos de Reserva'), findsOneWidget);
 
-      // Botão Limpar Caches
-      expect(find.text('Limpar Caches'), findsOneWidget);
-    });
+        // Botão Limpar Caches
+        expect(find.text('Limpar Caches'), findsOneWidget);
+      },
+    );
 
-    testWidgets('AdminPermissionsView renders 4-role matrix and commercial billing plans', (tester) async {
-      tester.view.physicalSize = const Size(1400, 900);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'AdminPermissionsView renders 4-role matrix and commercial billing plans',
+      (tester) async {
+        tester.view.physicalSize = const Size(1400, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: AdminPermissionsView(api: mockApi),
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AdminPermissionsView(api: mockApi)),
           ),
-        ),
-      );
+        );
 
-      await tester.pumpAndSettle();
+        await tester.pumpAndSettle();
 
-      // Verifica os 4 perfis
-      expect(find.text('ROLE_ADMIN'), findsOneWidget);
-      expect(find.text('ROLE_MANAGER'), findsOneWidget);
-      expect(find.text('ROLE_DOORMAN'), findsOneWidget);
-      expect(find.text('ROLE_RESIDENT'), findsOneWidget);
+        // Verifica os 4 perfis
+        expect(find.text('ROLE_ADMIN'), findsOneWidget);
+        expect(find.text('ROLE_MANAGER'), findsOneWidget);
+        expect(find.text('ROLE_DOORMAN'), findsOneWidget);
+        expect(find.text('ROLE_RESIDENT'), findsOneWidget);
 
-      // Verifica contagem de usuários por perfil
-      expect(find.text('2 usuários'), findsOneWidget);
-      expect(find.text('8 usuários'), findsOneWidget);
-      expect(find.text('15 usuários'), findsOneWidget);
-      expect(find.text('120 usuários'), findsOneWidget);
+        // Verifica contagem de usuários por perfil
+        expect(find.text('2 usuários'), findsOneWidget);
+        expect(find.text('8 usuários'), findsOneWidget);
+        expect(find.text('15 usuários'), findsOneWidget);
+        expect(find.text('120 usuários'), findsOneWidget);
 
-      // Verifica Planos Comerciais
-      expect(find.text('Plano Basico'), findsOneWidget);
-      expect(find.text('Plano Completo'), findsOneWidget);
-      expect(find.text('R\$ 99.00/mês'), findsOneWidget);
-      expect(find.text('R\$ 299.00/mês'), findsOneWidget);
-    });
+        // Verifica Planos Comerciais
+        expect(find.text('Plano Basico'), findsOneWidget);
+        expect(find.text('Plano Completo'), findsOneWidget);
+        expect(find.text('R\$ 99.00/mês'), findsOneWidget);
+        expect(find.text('R\$ 299.00/mês'), findsOneWidget);
+      },
+    );
 
-    testWidgets('AdminPage desktop renders Command Center navigation sidebar items', (tester) async {
-      tester.view.physicalSize = const Size(1400, 900);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'AdminPage desktop renders Command Center navigation sidebar items',
+      (tester) async {
+        tester.view.physicalSize = const Size(1400, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: AdminPage(
-            api: mockApi,
-            token: 'test-token',
-            userName: 'Admin User',
-            userEmail: 'admin@system.com',
-            onLogout: () async {},
-            reauthenticateWithGoogle: () async => '',
-            refreshWithCredentials: (_, __) async {},
-            refreshGoogleSession: () async {},
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AdminPage(
+              api: mockApi,
+              token: 'test-token',
+              userName: 'Admin User',
+              userEmail: 'admin@system.com',
+              onLogout: () async {},
+              reauthenticateWithGoogle: () async => '',
+              refreshWithCredentials: (_, __) async {},
+              refreshGoogleSession: () async {},
+            ),
           ),
-        ),
-      );
+        );
 
-      await tester.pumpAndSettle();
+        await tester.pumpAndSettle();
 
-      expect(find.text('CENTRAL DE COMANDO'), findsOneWidget);
-      expect(find.text('Visão Geral'), findsWidgets);
-      expect(find.text('Logs e Auditoria'), findsOneWidget);
-      expect(find.text('Saúde e Diagnóstico'), findsOneWidget);
-      expect(find.text('Permissões e Papéis'), findsOneWidget);
+        expect(find.text('CENTRAL DE COMANDO'), findsOneWidget);
+        expect(find.text('Visão Geral'), findsWidgets);
+        expect(find.text('Logs e Auditoria'), findsOneWidget);
+        expect(find.text('Saúde e Diagnóstico'), findsOneWidget);
+        expect(find.text('Permissões e Papéis'), findsOneWidget);
 
-      // Clica em 'Logs e Auditoria' e verifica que a view de auditoria abre
-      await tester.tap(find.text('Logs e Auditoria'));
-      await tester.pumpAndSettle();
+        // Clica em 'Logs e Auditoria' e verifica que a view de auditoria abre
+        await tester.tap(find.text('Logs e Auditoria'));
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('Trilha de Auditoria Imutável'), findsOneWidget);
+        expect(
+          find.textContaining('Trilha de Auditoria Imutável'),
+          findsOneWidget,
+        );
 
-      // Clica em 'Saúde e Diagnóstico'
-      await tester.tap(find.text('Saúde e Diagnóstico'));
-      await tester.pumpAndSettle();
+        // Clica em 'Saúde e Diagnóstico'
+        await tester.tap(find.text('Saúde e Diagnóstico'));
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('SISTEMA OPERACIONAL (STATUS UP)'), findsOneWidget);
+        expect(
+          find.textContaining('SISTEMA OPERACIONAL (STATUS UP)'),
+          findsOneWidget,
+        );
 
-      // Clica em 'Permissões e Papéis'
-      await tester.tap(find.text('Permissões e Papéis'));
-      await tester.pumpAndSettle();
+        // Clica em 'Permissões e Papéis'
+        await tester.tap(find.text('Permissões e Papéis'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('ROLE_ADMIN'), findsOneWidget);
-    });
+        expect(find.text('ROLE_ADMIN'), findsOneWidget);
+      },
+    );
   });
 }

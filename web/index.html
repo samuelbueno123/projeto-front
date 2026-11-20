@@ -1,27 +1,90 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Âncora Gestão - Plataforma de gestão condominial.">
-
-  <meta name="google-signin-client_id" content="1093543407623-ch2dq0uh0bnvrhm6pkf6kd8v75bvr3a0.apps.googleusercontent.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="description" content="Âncora Gestão - Plataforma inteligente e moderna para administração condominial.">
+  <meta name="theme-color" content="#2F3FB0">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Âncora Gestão">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>Âncora Gestão</title>
+  <title>Âncora Gestão — Administração Condominial</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #0F172A;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    #ancora-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top right, #1E293B 0%, #0F172A 65%);
+      color: #F8FAFC;
+      z-index: 9999;
+      transition: opacity 0.25s ease-out;
+    }
+    .ancora-spinner {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 3px solid rgba(255, 255, 255, 0.14);
+      border-top-color: #60A5FA;
+      animation: ancoraSpin 0.8s linear infinite;
+      margin-bottom: 16px;
+    }
+    .ancora-brand {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .ancora-sub {
+      font-size: 13px;
+      color: #94A3B8;
+      margin-top: 6px;
+    }
+    @keyframes ancoraSpin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
+  <div id="ancora-splash" aria-label="Carregando Âncora Gestão">
+    <div class="ancora-spinner"></div>
+    <div class="ancora-brand">Âncora Gestão</div>
+    <div class="ancora-sub">Preparando sua área condominial...</div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var splash = document.getElementById('ancora-splash');
+      if (splash) {
+        splash.style.opacity = '0';
+        setTimeout(function () { splash.remove(); }, 260);
+      }
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

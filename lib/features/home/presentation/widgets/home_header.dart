@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/app_theme.dart';
 
 /// Modern SaaS Header for Resident overview
 class HomeHeader extends StatelessWidget {
@@ -25,7 +26,7 @@ class HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AncoraThemeTokens.of(context);
     final name = userName?.trim().isNotEmpty == true
         ? userName!.trim()
         : 'morador';
@@ -37,10 +38,12 @@ class HomeHeader extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0F172A) : const Color(0xFF1E3A8A),
+        color: tokens.isDark ? tokens.surfaceElevated : tokens.accent,
         border: Border(
           bottom: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFF1D4ED8),
+            color: tokens.isDark
+                ? tokens.borderStrong
+                : tokens.accent.withValues(alpha: 0.72),
             width: 1,
           ),
         ),
@@ -88,12 +91,17 @@ class HomeHeader extends StatelessWidget {
                             color: Colors.white.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(
-                            unitLabel!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 150),
+                            child: Text(
+                              unitLabel!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
@@ -115,13 +123,16 @@ class HomeHeader extends StatelessWidget {
                       ),
                       if (condoName != null && condoName!.isNotEmpty) ...[
                         const SizedBox(width: 6),
-                        Text(
-                          '• $condoName',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.65),
-                            fontSize: 12.5,
+                        Flexible(
+                          child: Text(
+                            '• $condoName',
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.72),
+                              fontSize: 12.5,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ],
@@ -148,18 +159,22 @@ class HomeHeader extends StatelessWidget {
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFEF4444),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          unreadNotifications > 9 ? '9+' : '$unreadNotifications',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
+                      child: IgnorePointer(
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEF4444),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            unreadNotifications > 9
+                                ? '9+'
+                                : '$unreadNotifications',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                       ),

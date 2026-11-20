@@ -1,98 +1,107 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
+export '../utils/formatters.dart' show recordMatchesQuery;
+
+/// Campo de busca moderno com botão de pesquisa, limpeza reativa e suporte opcional a debounce.
 class EnterSearchField extends StatefulWidget {
   const EnterSearchField({
     super.key,
     required this.onSubmitted,
     this.hintText = 'Pesquisar registros (pressione Enter)',
+    this.initialValue = '',
+    this.onChanged,
+    this.debounceDuration,
   });
 
   final ValueChanged<String> onSubmitted;
   final String hintText;
+  final String initialValue;
+  final ValueChanged<String>? onChanged;
+  final Duration? debounceDuration;
 
   @override
   State<EnterSearchField> createState() => _EnterSearchFieldState();
 }
 
 class _EnterSearchFieldState extends State<EnterSearchField> {
-  final _controller = TextEditingController();
+  late final TextEditingController _controller;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   void _triggerSearch() {
+    _debounce?.cancel();
     widget.onSubmitted(_controller.text);
   }
 
+  void _handleChanged(String value) {
+    setState(() {});
+    widget.onChanged?.call(value);
+    if (widget.debounceDuration != null) {
+      _debounce?.cancel();
+      _debounce = Timer(widget.debounceDuration!, () {
+        if (mounted) widget.onSubmitted(value);
+      });
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => TextField(
-    key: const ValueKey('enter-search-field'),
-    controller: _controller,
-    maxLength: 100,
-    textInputAction: TextInputAction.search,
-    onSubmitted: widget.onSubmitted,
-    decoration: InputDecoration(
-      hintText: widget.hintText,
-      prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF2F3FB0)),
-      counterText: '',
-      filled: true,
-      fillColor: Colors.white,
-      suffixIcon: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_controller.text.isNotEmpty)
+  Widget build(BuildContext context) {
+    final tokens = AncoraThemeTokens.of(context);
+    return TextField(
+      controller: _controller,
+      textInputAction: TextInputAction.search,
+      onChanged: _handleChanged,
+      onSubmitted: (_) => _triggerSearch(),
+      decoration: InputDecoration(
+        hintText: widget.hintText,
+        prefixIcon: IconButton(
+          tooltip: 'Pesquisar',
+          onPressed: _triggerSearch,
+          icon: Icon(Icons.search_rounded, size: 20, color: tokens.accent),
+        ),
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_controller.text.isNotEmpty)
+              IconButton(
+                tooltip: 'Limpar pesquisa',
+                onPressed: () {
+                  _controller.clear();
+                  setState(() {});
+                  widget.onChanged?.call('');
+                  _triggerSearch();
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+              ),
             IconButton(
-              tooltip: 'Limpar pesquisa',
-              onPressed: () {
-                _controller.clear();
-                setState(() {});
-                widget.onSubmitted('');
-              },
-              icon: const Icon(Icons.close_rounded, size: 20),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: _triggerSearch,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8ECFF),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  'Enter ↵',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF2F3FB0),
-                  ),
-                ),
+              tooltip: 'Aplicar filtro (Enter)',
+              onPressed: _triggerSearch,
+              icon: Icon(
+                Icons.arrow_forward_rounded,
+                size: 18,
+                color: tokens.textSecondary,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+        filled: true,
+        fillColor: tokens.surface,
       ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFD8E0F0)),
-      ),
-    ),
-    onChanged: (_) => setState(() {}),
-  );
-}
-
-bool recordMatchesQuery(Map<String, dynamic> record, String query) {
-  final normalizedQuery = query.trim().toLowerCase();
-  return normalizedQuery.isEmpty ||
-      jsonEncode(record).toLowerCase().contains(normalizedQuery);
+    );
+  }
 }

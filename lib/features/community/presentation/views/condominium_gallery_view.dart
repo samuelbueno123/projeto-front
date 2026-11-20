@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../../../core/config/api_config.dart';
 import '../../../../core/design_system/saas_design_system.dart';
+import '../../../../core/widgets/smart_image.dart';
 import '../../data/community_api.dart';
 import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../dialogs/upload_condominium_image_dialog.dart';
@@ -60,7 +60,9 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
 
   Future<List<Map<String, dynamic>>> _loadCommonAreas() async {
     try {
-      final res = await widget.api.api.get('/condominiums/${widget.condominiumId}/common-areas');
+      final res = await widget.api.api.get(
+        '/condominiums/${widget.condominiumId}/common-areas',
+      );
       if (res is List) {
         final list = res.whereType<Map<String, dynamic>>().toList();
         _commonAreas = list;
@@ -72,7 +74,9 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
 
   List<Map<String, dynamic>> get _filteredImages {
     if (_selectedAreaFilter == null) return _images;
-    return _images.where((img) => img['commonAreaId'] == _selectedAreaFilter).toList();
+    return _images
+        .where((img) => img['commonAreaId'] == _selectedAreaFilter)
+        .toList();
   }
 
   @override
@@ -119,7 +123,8 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
                       ChoiceChip(
                         label: const Text('Todas as Fotos'),
                         selected: _selectedAreaFilter == null,
-                        onSelected: (val) => setState(() => _selectedAreaFilter = null),
+                        onSelected: (val) =>
+                            setState(() => _selectedAreaFilter = null),
                       ),
                       const SizedBox(width: 8),
                       ..._commonAreas.map((area) {
@@ -129,7 +134,11 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
                           child: ChoiceChip(
                             label: Text(area['name']?.toString() ?? 'Área'),
                             selected: isSelected,
-                            onSelected: (val) => setState(() => _selectedAreaFilter = val ? area['id'] as num? : null),
+                            onSelected: (val) => setState(
+                              () => _selectedAreaFilter = val
+                                  ? area['id'] as num?
+                                  : null,
+                            ),
                           ),
                         );
                       }),
@@ -143,7 +152,10 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF2563EB),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 11,
+                    ),
                   ),
                   onPressed: _openUploadDialog,
                   icon: const Icon(Icons.add_a_photo_rounded, size: 18),
@@ -202,13 +214,19 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(18),
                             side: BorderSide(
-                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0),
                             ),
                           ),
                           child: InkWell(
                             onTap: () {
                               if (path.isNotEmpty) {
-                                showFullScreenImage(context, imageSource: path, title: title);
+                                showFullScreenImage(
+                                  context,
+                                  imageSource: path,
+                                  title: title,
+                                );
                               }
                             },
                             child: Column(
@@ -219,15 +237,22 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
                                     fit: StackFit.expand,
                                     children: [
                                       _buildImageThumbnail(path),
-                                      if (areaName != null && areaName.isNotEmpty)
+                                      if (areaName != null &&
+                                          areaName.isNotEmpty)
                                         Positioned(
                                           top: 8,
                                           left: 8,
                                           child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
                                             decoration: BoxDecoration(
-                                              color: Colors.black.withValues(alpha: 0.65),
-                                              borderRadius: BorderRadius.circular(8),
+                                              color: Colors.black.withValues(
+                                                alpha: 0.65,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                             ),
                                             child: Text(
                                               areaName,
@@ -247,8 +272,13 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
                                             radius: 16,
                                             backgroundColor: Colors.black54,
                                             child: IconButton(
-                                              icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.white),
-                                              onPressed: () => _deleteImage(imgId),
+                                              icon: const Icon(
+                                                Icons.delete_outline_rounded,
+                                                size: 16,
+                                                color: Colors.white,
+                                              ),
+                                              onPressed: () =>
+                                                  _deleteImage(imgId),
                                             ),
                                           ),
                                         ),
@@ -258,7 +288,8 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
                                 Padding(
                                   padding: const EdgeInsets.all(12),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         title,
@@ -274,7 +305,9 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
                                         Text(
                                           desc,
                                           style: TextStyle(
-                                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                            color: isDark
+                                                ? const Color(0xFF94A3B8)
+                                                : const Color(0xFF64748B),
                                             fontSize: 12,
                                           ),
                                           maxLines: 2,
@@ -298,21 +331,12 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
   }
 
   Widget _buildImageThumbnail(String path) {
-    if (path.isEmpty) {
-      return Container(
-        color: const Color(0xFFE2E8F0),
-        child: const Icon(Icons.image_outlined, size: 36, color: Color(0xFF94A3B8)),
-      );
-    }
-    final url = ApiConfig.resolveMediaUrl(path) ?? path;
-
-    return Image.network(
-      url,
+    return SmartImage(
+      source: path,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
-        color: const Color(0xFFF1F5F9),
-        child: const Icon(Icons.broken_image_outlined, size: 36, color: Color(0xFF94A3B8)),
-      ),
+      placeholderIcon: path.isEmpty
+          ? Icons.image_outlined
+          : Icons.broken_image_outlined,
     );
   }
 
@@ -336,9 +360,14 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
         title: const Text('Remover foto da galeria?'),
         content: const Text('Esta imagem será excluída permanentemente.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Excluir'),
           ),
@@ -351,9 +380,9 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
         _load();
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erro ao excluir: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Erro ao excluir: $e')));
         }
       }
     }

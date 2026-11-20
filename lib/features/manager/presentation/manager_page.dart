@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,9 +7,13 @@ import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../core/design_system/saas_design_system.dart';
+import '../../../core/services/realtime_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/enter_search_field.dart';
+import '../../../core/widgets/command_palette.dart';
+import '../../../core/widgets/custom_menus.dart';
+import '../../../core/widgets/emergency_sos_banner.dart';
 import '../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../core/widgets/role_switcher_pill.dart';
 import '../../../core/widgets/user_avatar.dart';
@@ -65,14 +70,33 @@ class _ManagerPageState extends State<ManagerPage> {
   Map<String, dynamic> _profile = {};
   Map<String, dynamic>? _condoDetails;
   int? _selected;
+  int _navIndex = 0;
   Map<String, dynamic>? _dashboard;
   bool _loading = true;
   String? _error;
   String _query = '';
+  StreamSubscription<RealtimeEvent>? _realtimeSub;
 
   @override
   void initState() {
     super.initState();
+    RealtimeService.instance.setToken(widget.token);
+    _realtimeSub = RealtimeService.instance.events.listen((event) {
+      const relevantEvents = {
+        'PACKAGE_UPDATED',
+        'RESERVATION_UPDATED',
+        'ANNOUNCEMENT_CREATED',
+        'INVOICE_UPDATED',
+        'MEMBERSHIP_UPDATED',
+        'MAINTENANCE_UPDATED',
+        'SOS_ALERT_CREATED',
+      };
+      if (relevantEvents.contains(event.type) &&
+          (event.condominiumId == null || event.condominiumId == _selected) &&
+          mounted) {
+        _load(silent: true);
+      }
+    });
     _loadProfile();
     _init();
   }
@@ -81,10 +105,32 @@ class _ManagerPageState extends State<ManagerPage> {
   void didUpdateWidget(covariant ManagerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.token != widget.token) {
+      RealtimeService.instance.setToken(widget.token);
       _api = HomeService(token: widget.token);
       _communityApi = CommunityApi(api: _api);
       _loadProfile();
       _init();
+    }
+  }
+
+  @override
+  void dispose() {
+    _realtimeSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _toggleTheme() async {
+    final wasDark = Theme.of(context).brightness == Brightness.dark;
+    final preference = wasDark ? 'LIGHT' : 'DARK';
+    AppTheme.setThemePreference(preference);
+    try {
+      await _communityApi.updateThemePreference(preference);
+    } catch (error) {
+      if (!mounted) return;
+      AppTheme.setThemePreference(wasDark ? 'DARK' : 'LIGHT');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível salvar o tema: $error')),
+      );
     }
   }
 
@@ -114,14 +160,13 @@ class _ManagerPageState extends State<ManagerPage> {
               widget.reauthenticateWithGoogle ?? () async => '',
           refreshWithCredentials:
               widget.refreshWithCredentials ?? (_, __) async {},
-          refreshGoogleSession:
-              widget.refreshGoogleSession ?? () async {},
+          refreshGoogleSession: widget.refreshGoogleSession ?? () async {},
         ),
       ),
     );
   }
 
-    Future<void> _openMainPhotosManagerDialog() async {
+  Future<void> _openMainPhotosManagerDialog() async {
     if (_selected == null) return;
     await showDialog<void>(
       context: context,
@@ -161,9 +206,11 @@ class _ManagerPageState extends State<ManagerPage> {
       };
       final dataUri = 'data:$mime;base64,${base64Encode(bytes)}';
 
-      await _api.send('PATCH', '/condominiums/$_selected/image', body: {
-        'imageUrl': dataUri,
-      });
+      await _api.send(
+        'PATCH',
+        '/condominiums/$_selected/image',
+        body: {'imageUrl': dataUri},
+      );
 
       if (mounted) {
         setState(() {
@@ -172,14 +219,16 @@ class _ManagerPageState extends State<ManagerPage> {
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Foto do condomínio atualizada com sucesso!')),
+          const SnackBar(
+            content: Text('Foto do condomínio atualizada com sucesso!'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao atualizar foto: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erro ao atualizar foto: $e')));
       }
     }
   }
@@ -211,25 +260,29 @@ class _ManagerPageState extends State<ManagerPage> {
     }
   }
 
-  Future<void> _load() async {
-    if (_selected == null) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (_selected == null || !mounted) return;
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final results = await Future.wait([
         _api.get('/manager/dashboard?condominiumId=$_selected'),
         _api.get('/condominiums/$_selected'),
       ]);
       final result = results[0];
-      final condoData = results[1] is Map<String, dynamic> ? results[1] as Map<String, dynamic> : null;
+      final condoData = results[1] is Map<String, dynamic>
+          ? results[1] as Map<String, dynamic>
+          : null;
 
       if (mounted) {
         setState(() {
           _dashboard = result as Map<String, dynamic>;
           _condoDetails = condoData;
-          _loading = false;
+          if (!silent) _loading = false;
         });
 
         if (condoData != null && condoData['planSelected'] != true) {
@@ -240,7 +293,8 @@ class _ManagerPageState extends State<ManagerPage> {
               barrierDismissible: false,
               builder: (ctx) => PlanSelectionDialog(
                 condominiumId: _selected!,
-                condominiumName: condoData['name']?.toString() ?? 'Seu Condomínio',
+                condominiumName:
+                    condoData['name']?.toString() ?? 'Seu Condomínio',
                 api: _communityApi,
                 onPlanSelected: () {
                   _load();
@@ -252,10 +306,12 @@ class _ManagerPageState extends State<ManagerPage> {
       }
     } catch (error) {
       if (mounted) {
-        setState(() {
-          _error = error.toString();
-          _loading = false;
-        });
+        if (!silent) {
+          setState(() {
+            _error = error.toString();
+            _loading = false;
+          });
+        }
       }
     }
   }
@@ -282,7 +338,9 @@ class _ManagerPageState extends State<ManagerPage> {
     final condoId = _selected;
     if (condoId == null) return;
     final units = (_dashboard?['units'] is List)
-        ? (_dashboard!['units'] as List).whereType<Map<String, dynamic>>().toList()
+        ? (_dashboard!['units'] as List)
+              .whereType<Map<String, dynamic>>()
+              .toList()
         : <Map<String, dynamic>>[];
     await showDialog<void>(
       context: context,
@@ -353,28 +411,43 @@ class _ManagerPageState extends State<ManagerPage> {
             width: 580,
             height: 440,
             child: list.isEmpty
-                ? const Center(child: Text('Nenhum comunicado publicado neste condomínio.'))
+                ? const Center(
+                    child: Text(
+                      'Nenhum comunicado publicado neste condomínio.',
+                    ),
+                  )
                 : ListView.separated(
                     itemCount: list.length,
                     separatorBuilder: (_, __) => const Divider(),
                     itemBuilder: (_, idx) {
                       final a = list[idx];
                       final readCount = a['readCount'] ?? 0;
-                      final targetDesc = a['targetDescription']?.toString() ?? 'Todo o condomínio';
+                      final targetDesc =
+                          a['targetDescription']?.toString() ??
+                          'Todo o condomínio';
                       return ListTile(
                         leading: const CircleAvatar(
                           backgroundColor: Color(0xFFFEF3C7),
-                          child: Icon(Icons.campaign_outlined, color: Color(0xFFD97706)),
+                          child: Icon(
+                            Icons.campaign_outlined,
+                            color: Color(0xFFD97706),
+                          ),
                         ),
-                        title: Text(a['title']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Público: $targetDesc\nLeituras confirmadas: $readCount'),
+                        title: Text(
+                          a['title']?.toString() ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          'Público: $targetDesc\nLeituras confirmadas: $readCount',
+                        ),
                         isThreeLine: true,
                         trailing: OutlinedButton.icon(
                           icon: const Icon(Icons.done_all_rounded, size: 16),
                           label: Text('Ver leitores ($readCount)'),
                           onPressed: () async {
                             try {
-                              final readers = await _communityApi.getAnnouncementReaders(a['id'] as num);
+                              final readers = await _communityApi
+                                  .getAnnouncementReaders(a['id'] as num);
                               if (!ctx.mounted) return;
                               await showDialog<void>(
                                 context: ctx,
@@ -384,28 +457,45 @@ class _ManagerPageState extends State<ManagerPage> {
                                     width: 440,
                                     height: 320,
                                     child: readers.isEmpty
-                                        ? const Center(child: Text('Nenhum usuário confirmou a leitura ainda.'))
+                                        ? const Center(
+                                            child: Text(
+                                              'Nenhum usuário confirmou a leitura ainda.',
+                                            ),
+                                          )
                                         : ListView.builder(
                                             itemCount: readers.length,
                                             itemBuilder: (_, rIdx) {
                                               final r = readers[rIdx];
                                               return ListTile(
                                                 dense: true,
-                                                leading: const Icon(Icons.verified_user_outlined, color: Color(0xFF15803D)),
-                                                title: Text(r['userName']?.toString() ?? 'Morador'),
-                                                subtitle: Text('${r['userEmail'] ?? ''} • ${r['readAt'] ?? ''}'),
+                                                leading: const Icon(
+                                                  Icons.verified_user_outlined,
+                                                  color: Color(0xFF15803D),
+                                                ),
+                                                title: Text(
+                                                  r['userName']?.toString() ??
+                                                      'Morador',
+                                                ),
+                                                subtitle: Text(
+                                                  '${r['userEmail'] ?? ''} • ${r['readAt'] ?? ''}',
+                                                ),
                                               );
                                             },
                                           ),
                                   ),
                                   actions: [
-                                    TextButton(onPressed: () => Navigator.pop(rCtx), child: const Text('Fechar')),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(rCtx),
+                                      child: const Text('Fechar'),
+                                    ),
                                   ],
                                 ),
                               );
                             } catch (e) {
                               if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Erro: $e')),
+                                );
                               }
                             }
                           },
@@ -415,13 +505,18 @@ class _ManagerPageState extends State<ManagerPage> {
                   ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Fechar'),
+            ),
           ],
         ),
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
       }
     }
   }
@@ -444,11 +539,16 @@ class _ManagerPageState extends State<ManagerPage> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Serviços da Comunidade & Operacional')),
+          appBar: AppBar(
+            title: const Text('Serviços da Comunidade & Operacional'),
+          ),
           body: CommunityHubView(
             api: _communityApi,
             condominiumId: condoId,
             canManage: true,
+            enabledFeatures: (_condoDetails?['features'] as List?)
+                ?.whereType<String>()
+                .toList(),
             initialCategoryIndex: initialIndex,
           ),
         ),
@@ -474,7 +574,12 @@ class _ManagerPageState extends State<ManagerPage> {
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.of(context).viewInsets.bottom + 20,
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 650),
             child: Column(
@@ -485,20 +590,41 @@ class _ManagerPageState extends State<ManagerPage> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(10)),
-                      child: const Icon(Icons.auto_awesome, color: Color(0xFFD97706)),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome,
+                        color: Color(0xFFD97706),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Assistente do Condomínio (IA)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                          Text('Respostas sobre regimento, leis e minutas', style: TextStyle(color: Color(0xFF64748B), fontSize: 12.5)),
+                          Text(
+                            'Assistente do Condomínio (IA)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 17,
+                            ),
+                          ),
+                          Text(
+                            'Respostas sobre regimento, leis e minutas',
+                            style: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 12.5,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -508,15 +634,22 @@ class _ManagerPageState extends State<ManagerPage> {
                       child: TextField(
                         controller: questionCtrl,
                         decoration: const InputDecoration(
-                          hintText: 'Ex: Qual a regra para barulho? Ou redigir aviso de obra...',
+                          hintText:
+                              'Ex: Qual a regra para barulho? Ou redigir aviso de obra...',
                           isDense: true,
                         ),
                         onSubmitted: (q) async {
                           if (q.trim().isEmpty) return;
                           setModalState(() => asking = true);
                           try {
-                            final res = await _communityApi.askAssistant(condoId, q.trim());
-                            setModalState(() { assistantResponse = res; asking = false; });
+                            final res = await _communityApi.askAssistant(
+                              condoId,
+                              q.trim(),
+                            );
+                            setModalState(() {
+                              assistantResponse = res;
+                              asking = false;
+                            });
                           } catch (e) {
                             setModalState(() => asking = false);
                           }
@@ -525,20 +658,37 @@ class _ManagerPageState extends State<ManagerPage> {
                     ),
                     const SizedBox(width: 8),
                     FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
-                      onPressed: asking ? null : () async {
-                        final q = questionCtrl.text.trim();
-                        if (q.isEmpty) return;
-                        setModalState(() => asking = true);
-                        try {
-                          final res = await _communityApi.askAssistant(condoId, q);
-                          setModalState(() { assistantResponse = res; asking = false; });
-                        } catch (e) {
-                          setModalState(() => asking = false);
-                        }
-                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                      ),
+                      onPressed: asking
+                          ? null
+                          : () async {
+                              final q = questionCtrl.text.trim();
+                              if (q.isEmpty) return;
+                              setModalState(() => asking = true);
+                              try {
+                                final res = await _communityApi.askAssistant(
+                                  condoId,
+                                  q,
+                                );
+                                setModalState(() {
+                                  assistantResponse = res;
+                                  asking = false;
+                                });
+                              } catch (e) {
+                                setModalState(() => asking = false);
+                              }
+                            },
                       child: asking
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
                           : const Text('Perguntar'),
                     ),
                   ],
@@ -559,44 +709,84 @@ class _ManagerPageState extends State<ManagerPage> {
                           children: [
                             const Row(
                               children: [
-                                Icon(Icons.psychology_outlined, size: 18, color: Color(0xFF2563EB)),
+                                Icon(
+                                  Icons.psychology_outlined,
+                                  size: 18,
+                                  color: Color(0xFF2563EB),
+                                ),
                                 SizedBox(width: 6),
-                                Text('Orientação Especializada:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                Text(
+                                  'Orientação Especializada:',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 8),
                             SelectableText(
                               assistantResponse!['answer'] ?? '',
-                              style: const TextStyle(fontSize: 14, height: 1.45, color: Color(0xFF1E293B)),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                height: 1.45,
+                                color: Color(0xFF1E293B),
+                              ),
                             ),
                             if (assistantResponse!['legalBasis'] != null) ...[
                               const Divider(height: 20),
                               Row(
                                 children: [
-                                  const Icon(Icons.gavel_outlined, size: 16, color: Color(0xFF64748B)),
+                                  const Icon(
+                                    Icons.gavel_outlined,
+                                    size: 16,
+                                    color: Color(0xFF64748B),
+                                  ),
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
                                       'Fundamento: ${assistantResponse!['legalBasis']}',
-                                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontStyle: FontStyle.italic),
+                                      style: const TextStyle(
+                                        color: Color(0xFF64748B),
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
                             ],
-                            if (assistantResponse!['suggestedFollowUps'] is List) ...[
+                            if (assistantResponse!['suggestedFollowUps']
+                                is List) ...[
                               const SizedBox(height: 12),
-                              const Text('Perguntas relacionadas:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                              const Text(
+                                'Perguntas relacionadas:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
                               const SizedBox(height: 6),
                               Wrap(
                                 spacing: 6,
                                 runSpacing: 6,
-                                children: (assistantResponse!['suggestedFollowUps'] as List).map((f) => ActionChip(
-                                  label: Text(f.toString(), style: const TextStyle(fontSize: 11)),
-                                  onPressed: () {
-                                    questionCtrl.text = f.toString();
-                                  },
-                                )).toList(),
+                                children:
+                                    (assistantResponse!['suggestedFollowUps']
+                                            as List)
+                                        .map(
+                                          (f) => ActionChip(
+                                            label: Text(
+                                              f.toString(),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                            onPressed: () {
+                                              questionCtrl.text = f.toString();
+                                            },
+                                          ),
+                                        )
+                                        .toList(),
                               ),
                             ],
                           ],
@@ -612,27 +802,38 @@ class _ManagerPageState extends State<ManagerPage> {
                       ActionChip(
                         avatar: const Icon(Icons.volume_off_outlined, size: 16),
                         label: const Text('Horário de Silêncio'),
-                        onPressed: () => questionCtrl.text = 'Quais os horários de silêncio e multas por barulho?',
+                        onPressed: () => questionCtrl.text =
+                            'Quais os horários de silêncio e multas por barulho?',
                       ),
                       ActionChip(
-                        avatar: const Icon(Icons.local_shipping_outlined, size: 16),
+                        avatar: const Icon(
+                          Icons.local_shipping_outlined,
+                          size: 16,
+                        ),
                         label: const Text('Regras de Mudança'),
-                        onPressed: () => questionCtrl.text = 'Quais os horários permitidos e regras para mudanças?',
+                        onPressed: () => questionCtrl.text =
+                            'Quais os horários permitidos e regras para mudanças?',
                       ),
                       ActionChip(
                         avatar: const Icon(Icons.pets_outlined, size: 16),
                         label: const Text('Regras para Pets'),
-                        onPressed: () => questionCtrl.text = 'Quais as regras e direitos para animais de estimação?',
+                        onPressed: () => questionCtrl.text =
+                            'Quais as regras e direitos para animais de estimação?',
                       ),
                       ActionChip(
-                        avatar: const Icon(Icons.construction_outlined, size: 16),
+                        avatar: const Icon(
+                          Icons.construction_outlined,
+                          size: 16,
+                        ),
                         label: const Text('Reformas & ART'),
-                        onPressed: () => questionCtrl.text = 'O que é exigido para reformas nos apartamentos?',
+                        onPressed: () => questionCtrl.text =
+                            'O que é exigido para reformas nos apartamentos?',
                       ),
                       ActionChip(
                         avatar: const Icon(Icons.campaign_outlined, size: 16),
                         label: const Text('Redigir Comunicado'),
-                        onPressed: () => questionCtrl.text = 'Redigir minuta de comunicado sobre manutenção preventiva na caixa d\'água',
+                        onPressed: () => questionCtrl.text =
+                            'Redigir minuta de comunicado sobre manutenção preventiva na caixa d\'água',
                       ),
                     ],
                   ),
@@ -680,6 +881,33 @@ class _ManagerPageState extends State<ManagerPage> {
     if (mounted) _load();
   }
 
+  Future<void> _selectNavigation(int index) async {
+    if (index == 0) {
+      if (_navIndex != 0) setState(() => _navIndex = 0);
+      return;
+    }
+    if (index < 0 || index > 5) return;
+    setState(() => _navIndex = index);
+    switch (index) {
+      case 1:
+        await _openUnitsMenu();
+        break;
+      case 2:
+        await _openReservationsMenu();
+        break;
+      case 3:
+        await _openCommunityHub();
+        break;
+      case 4:
+        await _openGallery();
+        break;
+      case 5:
+        await _openMemberships();
+        break;
+    }
+    if (mounted) setState(() => _navIndex = 0);
+  }
+
   Future<bool> _editPayment(Map<String, dynamic> unit) async {
     const allowedStatuses = {
       'PAID',
@@ -696,6 +924,9 @@ class _ManagerPageState extends State<ManagerPage> {
     );
     final dueDate = TextEditingController(
       text: unit['dueDate']?.toString() ?? '',
+    );
+    final paymentNote = TextEditingController(
+      text: unit['paymentNote']?.toString() ?? '',
     );
     final save = await showDialog<bool>(
       context: context,
@@ -743,11 +974,47 @@ class _ManagerPageState extends State<ManagerPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.calendar_today_outlined),
+                  title: Text(
+                    dueDate.text.isEmpty
+                        ? 'Data de vencimento não informada'
+                        : 'Vencimento: ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(dueDate.text) ?? DateTime.now())}',
+                  ),
+                  trailing: TextButton(
+                    onPressed: () async {
+                      final initial =
+                          DateTime.tryParse(dueDate.text) ?? DateTime.now();
+                      final selected = await showDatePicker(
+                        context: context,
+                        initialDate: initial,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now().add(
+                          const Duration(days: 1825),
+                        ),
+                        locale: const Locale('pt', 'BR'),
+                      );
+                      if (selected != null) {
+                        setDialogState(() {
+                          dueDate.text = DateFormat(
+                            'yyyy-MM-dd',
+                          ).format(selected);
+                        });
+                      }
+                    },
+                    child: const Text('Alterar'),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 TextField(
-                  controller: dueDate,
+                  controller: paymentNote,
+                  maxLength: 500,
+                  maxLines: 2,
                   decoration: const InputDecoration(
-                    labelText: 'Data de vencimento (AAAA-MM-DD)',
-                    prefixIcon: Icon(Icons.calendar_today_outlined),
+                    labelText: 'Observações do pagamento',
+                    hintText: 'Complemento ou orientação para a unidade',
+                    prefixIcon: Icon(Icons.notes_outlined),
                   ),
                 ),
               ],
@@ -766,17 +1033,31 @@ class _ManagerPageState extends State<ManagerPage> {
         ),
       ),
     );
+    final amountText = amount.text.trim();
+    final amountValue = amountText.isEmpty ? null : parseBrlDouble(amountText);
+    final dueDateValue = dueDate.text.trim();
+    final paymentNoteValue = paymentNote.text.trim();
+    amount.dispose();
+    dueDate.dispose();
+    paymentNote.dispose();
     if (save != true) return false;
+    if (amountText.isNotEmpty && amountValue == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Informe um valor válido para a cota.')),
+        );
+      }
+      return false;
+    }
     try {
       await _api.send(
         'PUT',
         '/manager/condominiums/$_selected/units/${unit['id']}/payment-status',
         body: {
           'status': status,
-          'amount': amount.text.trim().isEmpty
-              ? null
-              : double.tryParse(amount.text.replaceAll(',', '.')),
-          'dueDate': dueDate.text.trim().isEmpty ? null : dueDate.text.trim(),
+          'amount': amountValue,
+          'dueDate': dueDateValue.isEmpty ? null : dueDateValue,
+          if (paymentNoteValue.isNotEmpty) 'paymentNote': paymentNoteValue,
         },
       );
       await _load();
@@ -812,19 +1093,25 @@ class _ManagerPageState extends State<ManagerPage> {
         barrierDismissible: false,
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
-      final report = await _api.get('/condominiums/$_selected/reports/dashboard');
+      final report = await _api.get(
+        '/condominiums/$_selected/reports/dashboard',
+      );
       if (mounted) Navigator.pop(context);
       if (!mounted) return;
 
       final packages = report is Map ? report['packages'] : null;
       final reservations = report is Map ? report['reservations'] : null;
-      final announcements = report is Map ? report['activeAnnouncements'] ?? 0 : 0;
+      final announcements = report is Map
+          ? report['activeAnnouncements'] ?? 0
+          : 0;
 
       if (!mounted) return;
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: const Row(
             children: [
               Icon(Icons.assessment_outlined, color: Color(0xFF2F3FB0)),
@@ -839,15 +1126,36 @@ class _ManagerPageState extends State<ManagerPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Resumo — ${_selectedCondoName()}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    'Resumo — ${_selectedCondoName()}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 12),
-                  _reportRow('📦 Encomendas Registradas', '${packages is Map ? packages['total'] ?? 0 : 0}'),
-                  _reportRow('📬 Encomendas Aguardando', '${packages is Map ? packages['pending'] ?? 0 : 0}'),
-                  _reportRow('✅ Encomendas Entregues', '${packages is Map ? packages['delivered'] ?? 0 : 0}'),
+                  _reportRow(
+                    '📦 Encomendas Registradas',
+                    '${packages is Map ? packages['total'] ?? 0 : 0}',
+                  ),
+                  _reportRow(
+                    '📬 Encomendas Aguardando',
+                    '${packages is Map ? packages['pending'] ?? 0 : 0}',
+                  ),
+                  _reportRow(
+                    '✅ Encomendas Entregues',
+                    '${packages is Map ? packages['delivered'] ?? 0 : 0}',
+                  ),
                   const Divider(height: 20),
-                  _reportRow('📅 Total de Reservas', '${reservations is Map ? reservations['total'] ?? 0 : 0}'),
-                  _reportRow('⏳ Reservas Aguardando', '${reservations is Map ? reservations['pending'] ?? 0 : 0}'),
-                  _reportRow('🎉 Reservas Confirmadas', '${reservations is Map ? reservations['confirmed'] ?? 0 : 0}'),
+                  _reportRow(
+                    '📅 Total de Reservas',
+                    '${reservations is Map ? reservations['total'] ?? 0 : 0}',
+                  ),
+                  _reportRow(
+                    '⏳ Reservas Aguardando',
+                    '${reservations is Map ? reservations['pending'] ?? 0 : 0}',
+                  ),
+                  _reportRow(
+                    '🎉 Reservas Confirmadas',
+                    '${reservations is Map ? reservations['confirmed'] ?? 0 : 0}',
+                  ),
                   const Divider(height: 20),
                   _reportRow('📢 Comunicados Ativos', '$announcements'),
                 ],
@@ -861,7 +1169,8 @@ class _ManagerPageState extends State<ManagerPage> {
             ),
             FilledButton.icon(
               onPressed: () {
-                final text = '''
+                final text =
+                    '''
 ====================================
 RELATÓRIO DE GESTÃO CONDOMINIAL
 Condomínio: ${_selectedCondoName()}
@@ -913,7 +1222,10 @@ Emitido via Âncora Gestão
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(fontSize: 13.5)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
         ],
       ),
     );
@@ -922,51 +1234,225 @@ Emitido via Âncora Gestão
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isDesktop = MediaQuery.of(context).size.width >= 980;
+    final commandActions = <AncoraCommandAction>[
+      AncoraCommandAction(
+        id: 'units',
+        title: 'Abrir unidades e pagamentos',
+        icon: Icons.home_work_outlined,
+        onExecute: () => _selectNavigation(1),
+      ),
+      AncoraCommandAction(
+        id: 'reservations',
+        title: 'Revisar reservas',
+        icon: Icons.event_available_outlined,
+        onExecute: () => _selectNavigation(2),
+      ),
+      AncoraCommandAction(
+        id: 'community',
+        title: 'Abrir hub da comunidade',
+        icon: Icons.diversity_3_outlined,
+        onExecute: () => _selectNavigation(3),
+      ),
+      AncoraCommandAction(
+        id: 'gallery',
+        title: 'Abrir galeria do condomínio',
+        icon: Icons.photo_library_outlined,
+        onExecute: () => _selectNavigation(4),
+      ),
+      AncoraCommandAction(
+        id: 'memberships',
+        title: 'Gerenciar vínculos e moradores',
+        icon: Icons.groups_outlined,
+        onExecute: () => _selectNavigation(5),
+        category: 'Condomínio',
+      ),
+      AncoraCommandAction(
+        id: 'announcement',
+        title: 'Publicar comunicado',
+        icon: Icons.campaign_outlined,
+        onExecute: _sendAnnouncement,
+      ),
+      AncoraCommandAction(
+        id: 'main_photos',
+        title: 'Gerenciar fotos principais',
+        icon: Icons.photo_library_outlined,
+        onExecute: _openMainPhotosManagerDialog,
+        category: 'Condomínio',
+      ),
+      AncoraCommandAction(
+        id: 'reports',
+        title: 'Abrir relatórios do condomínio',
+        icon: Icons.assessment_outlined,
+        onExecute: _openReportsMenu,
+        category: 'Condomínio',
+      ),
+      AncoraCommandAction(
+        id: 'refresh',
+        title: 'Atualizar painel',
+        icon: Icons.refresh_rounded,
+        onExecute: () => _load(),
+      ),
+      AncoraCommandAction(
+        id: 'theme',
+        title: 'Alternar tema claro ou escuro',
+        icon: Icons.dark_mode_outlined,
+        onExecute: _toggleTheme,
+        category: 'Preferências',
+      ),
+      AncoraCommandAction(
+        id: 'logout',
+        title: 'Sair da conta',
+        icon: Icons.logout_rounded,
+        onExecute: widget.onLogout,
+        category: 'Conta',
+      ),
+    ];
 
-    return Scaffold(
-      backgroundColor: SaaSColors.background(isDark),
-      body: SafeArea(
-        child: Column(
+    final dashboardContent = _loading
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: SaaSLoadingState(
+                message: 'Carregando painel de gestão do síndico...',
+              ),
+            ),
+          )
+        : _error != null
+        ? Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SaaSErrorState(message: _error!, onRetry: _load),
+            ),
+          )
+        : _condos.isEmpty
+        ? const SaaSEmptyState(
+            icon: Icons.domain_disabled_rounded,
+            title: 'Nenhum condomínio vinculado',
+            subtitle:
+                'Sua conta ainda não está vinculada como síndico a nenhum condomínio.',
+          )
+        : LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth >= 980) {
+                return _buildDesktopManagerLayout(isDark);
+              }
+              return _buildMobileManagerLayout(isDark);
+            },
+          );
+
+    return AncoraCommandShortcutWrapper(
+      actions: commandActions,
+      child: AncoraNavigationShell(
+        title: 'Âncora Gestão',
+        subtitle: _selectedCondoName(),
+        destinations: const [
+          AncoraNavDestination(
+            id: 'dashboard',
+            label: 'Painel',
+            icon: Icons.dashboard_outlined,
+            activeIcon: Icons.dashboard_rounded,
+            section: 'Gestão',
+            showInBottomNav: true,
+          ),
+          AncoraNavDestination(
+            id: 'units',
+            label: 'Unidades e pagamentos',
+            icon: Icons.home_work_outlined,
+            section: 'Gestão',
+            showInBottomNav: true,
+          ),
+          AncoraNavDestination(
+            id: 'reservations',
+            label: 'Reservas',
+            icon: Icons.event_available_outlined,
+            section: 'Gestão',
+            showInBottomNav: true,
+          ),
+          AncoraNavDestination(
+            id: 'community',
+            label: 'Comunidade',
+            icon: Icons.diversity_3_outlined,
+            section: 'Condomínio',
+            showInBottomNav: true,
+          ),
+          AncoraNavDestination(
+            id: 'gallery',
+            label: 'Galeria',
+            icon: Icons.photo_library_outlined,
+            section: 'Condomínio',
+          ),
+          AncoraNavDestination(
+            id: 'memberships',
+            label: 'Vínculos e moradores',
+            icon: Icons.groups_outlined,
+            section: 'Condomínio',
+          ),
+        ],
+        selectedIndex: _navIndex,
+        onSelect: _selectNavigation,
+        onOpenCommandPalette: () =>
+            AncoraCommandShortcutWrapper.open(context, commandActions),
+        banner: _selected == null
+            ? null
+            : EmergencySosBanner(api: _api, condominiumId: _selected!),
+        headerActions: [
+          IconButton(
+            tooltip: isDark ? 'Modo claro' : 'Modo escuro',
+            onPressed: _toggleTheme,
+            icon: Icon(isDark ? Icons.light_mode_rounded : Icons.dark_mode),
+          ),
+          UserAvatar(
+            imageSource: _profile['profileImage']?.toString(),
+            name: _profile['firstName']?.toString() ?? widget.userName,
+            radius: 17,
+            onTap: _openProfile,
+            tooltip: 'Meu perfil',
+          ),
+        ],
+        sidebarFooterExtra: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            _buildManagerHeader(isDesktop, isDark),
-            Expanded(
-              child: _loading
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: SaaSLoadingState(
-                          message: 'Carregando painel de gestão do síndico...',
-                        ),
+            if (widget.currentRole != null && widget.onSwitchRole != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: RoleSwitcherPill(
+                  currentRole: widget.currentRole!,
+                  availableRoles: widget.availableRoles,
+                  onSwitchRole: widget.onSwitchRole!,
+                  isLight: !isDark,
+                ),
+              ),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                IconButton(
+                  tooltip: 'Notificações',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => NotificationsPage(
+                        api: _api,
+                        condominiumId: _selected,
                       ),
-                    )
-                  : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: SaaSErrorState(
-                              message: _error!,
-                              onRetry: _load,
-                            ),
-                          ),
-                        )
-                      : _condos.isEmpty
-                          ? const SaaSEmptyState(
-                              icon: Icons.domain_disabled_rounded,
-                              title: 'Nenhum condomínio vinculado',
-                              subtitle: 'Sua conta ainda não está vinculada como síndico a nenhum condomínio.',
-                            )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        if (constraints.maxWidth >= 980) {
-                          return _buildDesktopManagerLayout(isDark);
-                        }
-                        return _buildMobileManagerLayout(isDark);
-                      },
                     ),
+                  ),
+                  icon: const Icon(Icons.notifications_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Atualizar painel',
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+                IconButton(
+                  tooltip: 'Sair da conta',
+                  onPressed: widget.onLogout,
+                  icon: const Icon(Icons.logout_rounded),
+                ),
+              ],
             ),
           ],
         ),
+        body: SafeArea(top: false, child: dashboardContent),
       ),
     );
   }
@@ -982,10 +1468,7 @@ Emitido via Âncora Gestão
         height: 120,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          image: DecorationImage(
-            image: imageProvider,
-            fit: BoxFit.cover,
-          ),
+          image: DecorationImage(image: imageProvider, fit: BoxFit.cover),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.12),
@@ -1046,7 +1529,10 @@ Emitido via Âncora Gestão
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.white.withValues(alpha: 0.85),
                         foregroundColor: Colors.black87,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                       ),
                       onPressed: () => showFullScreenImage(
                         context,
@@ -1054,17 +1540,26 @@ Emitido via Âncora Gestão
                         title: condoName,
                       ),
                       icon: const Icon(Icons.fullscreen, size: 16),
-                      label: const Text('Ampliar', style: TextStyle(fontSize: 12.5)),
+                      label: const Text(
+                        'Ampliar',
+                        style: TextStyle(fontSize: 12.5),
+                      ),
                     ),
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: SaaSColors.primary,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
                     onPressed: _changeCondominiumImage,
                     icon: const Icon(Icons.camera_alt_outlined, size: 16),
-                    label: const Text('Alterar Foto', style: TextStyle(fontSize: 12.5)),
+                    label: const Text(
+                      'Alterar Foto',
+                      style: TextStyle(fontSize: 12.5),
+                    ),
                   ),
                 ],
               ),
@@ -1092,7 +1587,11 @@ Emitido via Âncora Gestão
               color: SaaSColors.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.apartment_rounded, color: SaaSColors.primary, size: 24),
+            child: const Icon(
+              Icons.apartment_rounded,
+              color: SaaSColors.primary,
+              size: 24,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -1102,7 +1601,10 @@ Emitido via Âncora Gestão
               children: [
                 Text(
                   condoName,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
                 ),
                 Text(
                   'Personalize a identidade do condomínio adicionando uma foto da fachada.',
@@ -1145,14 +1647,21 @@ Emitido via Âncora Gestão
                   decoration: const InputDecoration(
                     labelText: 'Condomínio em gestão',
                     prefixIcon: Icon(Icons.apartment_rounded),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                   ),
                   items: _condos
                       .map(
                         (membership) => DropdownMenuItem<int>(
                           value: (membership['condominiumId'] as num).toInt(),
                           child: Text(
-                            membership['condominiumName']?.toString().trim().isNotEmpty == true
+                            membership['condominiumName']
+                                        ?.toString()
+                                        .trim()
+                                        .isNotEmpty ==
+                                    true
                                 ? '${membership['condominiumName']}'
                                 : 'Condomínio vinculado',
                             overflow: TextOverflow.ellipsis,
@@ -1174,7 +1683,9 @@ Emitido via Âncora Gestão
                   child: Row(
                     children: [
                       FilledButton.icon(
-                        style: FilledButton.styleFrom(backgroundColor: SaaSColors.primary),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: SaaSColors.primary,
+                        ),
                         onPressed: _openMemberships,
                         icon: const Icon(Icons.group_add_outlined, size: 16),
                         label: const Text('Convidar / Vínculos'),
@@ -1218,13 +1729,19 @@ Emitido via Âncora Gestão
                       const SizedBox(width: 8),
                       OutlinedButton.icon(
                         onPressed: () => _openCommunityHub(initialIndex: 13),
-                        icon: const Icon(Icons.account_balance_wallet_outlined, size: 16),
+                        icon: const Icon(
+                          Icons.account_balance_wallet_outlined,
+                          size: 16,
+                        ),
                         label: const Text('Financeiro'),
                       ),
                       const SizedBox(width: 8),
                       OutlinedButton.icon(
                         onPressed: _openGallery,
-                        icon: const Icon(Icons.photo_library_outlined, size: 16),
+                        icon: const Icon(
+                          Icons.photo_library_outlined,
+                          size: 16,
+                        ),
                         label: const Text('Galeria'),
                       ),
                     ],
@@ -1302,17 +1819,24 @@ Emitido via Âncora Gestão
                           title: 'Situação Financeira das Unidades',
                           action: FilledButton.icon(
                             onPressed: _generateBoleto,
-                            icon: const Icon(Icons.receipt_long_rounded, size: 16),
+                            icon: const Icon(
+                              Icons.receipt_long_rounded,
+                              size: 16,
+                            ),
                             label: const Text('Novo Boleto'),
                             style: FilledButton.styleFrom(
                               backgroundColor: SaaSColors.primary,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
                             ),
                           ),
                         ),
                         EnterSearchField(
                           hintText: 'Pesquisar unidades ou moradores (Enter)',
-                          onSubmitted: (query) => setState(() => _query = query),
+                          onSubmitted: (query) =>
+                              setState(() => _query = query),
                         ),
                         const SizedBox(height: 12),
                         Expanded(
@@ -1320,43 +1844,65 @@ Emitido via Âncora Gestão
                               ? const SaaSEmptyState(
                                   icon: Icons.home_work_outlined,
                                   title: 'Nenhuma unidade encontrada',
-                                  description: 'Verifique a busca ou cadastre novas unidades.',
+                                  description:
+                                      'Verifique a busca ou cadastre novas unidades.',
                                 )
                               : ListView.separated(
                                   itemCount: _dashboardRecords('units').length,
-                                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
-                                    final unit = _dashboardRecords('units')[index];
-                                    final (label, bg, fg) = _statusStyle(unit['paymentStatus']);
+                                    final unit = _dashboardRecords(
+                                      'units',
+                                    )[index];
+                                    final (label, bg, fg) = _statusStyle(
+                                      unit['paymentStatus'],
+                                    );
                                     return Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 10,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: SaaSColors.surfaceSubtle(isDark),
                                         borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: SaaSColors.border(isDark)),
+                                        border: Border.all(
+                                          color: SaaSColors.border(isDark),
+                                        ),
                                       ),
                                       child: Row(
                                         children: [
                                           CircleAvatar(
                                             radius: 18,
                                             backgroundColor: bg,
-                                            child: Icon(Icons.home_outlined, color: fg, size: 18),
+                                            child: Icon(
+                                              Icons.home_outlined,
+                                              color: fg,
+                                              size: 18,
+                                            ),
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
                                                   '${unit['sector']} • Unidade ${unit['identifier']}',
-                                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 13.5,
+                                                  ),
                                                 ),
                                                 const SizedBox(height: 2),
                                                 Text(
                                                   'Status: $label${unit['dueDate'] == null ? '' : ' • Venc: ${_formatDate(unit['dueDate'])}'}${unit['amount'] == null ? '' : ' • R\$ ${unit['amount']}'}',
                                                   style: TextStyle(
                                                     fontSize: 12,
-                                                    color: SaaSColors.textSecondary(isDark),
+                                                    color:
+                                                        SaaSColors.textSecondary(
+                                                          isDark,
+                                                        ),
                                                   ),
                                                 ),
                                               ],
@@ -1364,10 +1910,17 @@ Emitido via Âncora Gestão
                                           ),
                                           OutlinedButton.icon(
                                             onPressed: () => _editPayment(unit),
-                                            icon: const Icon(Icons.edit_outlined, size: 15),
+                                            icon: const Icon(
+                                              Icons.edit_outlined,
+                                              size: 15,
+                                            ),
                                             label: const Text('Atualizar'),
                                             style: OutlinedButton.styleFrom(
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 6,
+                                                  ),
                                             ),
                                           ),
                                         ],
@@ -1393,15 +1946,22 @@ Emitido via Âncora Gestão
                         SaaSSectionHeader(
                           title: 'Agendamentos de Áreas Comuns',
                           badge: SaaSBadge(
-                            label: '${_dashboardRecords('reservations').length}',
+                            label:
+                                '${_dashboardRecords('reservations').length}',
                             variant: SaaSBadgeVariant.warning,
                           ),
                           action: OutlinedButton.icon(
                             onPressed: _openReservationsMenu,
-                            icon: const Icon(Icons.visibility_outlined, size: 16),
+                            icon: const Icon(
+                              Icons.visibility_outlined,
+                              size: 16,
+                            ),
                             label: const Text('Ver todas'),
                             style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
                           ),
                         ),
@@ -1410,46 +1970,69 @@ Emitido via Âncora Gestão
                               ? const SaaSEmptyState(
                                   icon: Icons.event_available_outlined,
                                   title: 'Nenhum agendamento pendente',
-                                  description: 'Não há solicitações de áreas comuns registradas no momento.',
+                                  description:
+                                      'Não há solicitações de áreas comuns registradas no momento.',
                                 )
                               : ListView.separated(
-                                  itemCount: _dashboardRecords('reservations').length,
-                                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                                  itemCount: _dashboardRecords(
+                                    'reservations',
+                                  ).length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
-                                    final reservation = _dashboardRecords('reservations')[index];
+                                    final reservation = _dashboardRecords(
+                                      'reservations',
+                                    )[index];
                                     return Container(
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
                                         color: SaaSColors.surfaceSubtle(isDark),
                                         borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: SaaSColors.border(isDark)),
+                                        border: Border.all(
+                                          color: SaaSColors.border(isDark),
+                                        ),
                                       ),
                                       child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Container(
                                             padding: const EdgeInsets.all(8),
                                             decoration: BoxDecoration(
-                                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                                              borderRadius: BorderRadius.circular(10),
+                                              color: isDark
+                                                  ? const Color(0xFF1E293B)
+                                                  : const Color(0xFFEFF6FF),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
                                             ),
-                                            child: const Icon(Icons.event_available_outlined, color: SaaSColors.primary, size: 20),
+                                            child: const Icon(
+                                              Icons.event_available_outlined,
+                                              color: SaaSColors.primary,
+                                              size: 20,
+                                            ),
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
                                                   '${reservation['commonArea']} • ${reservation['residentName']}',
-                                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 13.5,
+                                                  ),
                                                 ),
                                                 const SizedBox(height: 2),
                                                 Text(
                                                   '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}',
                                                   style: TextStyle(
                                                     fontSize: 12,
-                                                    color: SaaSColors.textSecondary(isDark),
+                                                    color:
+                                                        SaaSColors.textSecondary(
+                                                          isDark,
+                                                        ),
                                                   ),
                                                 ),
                                                 const SizedBox(height: 2),
@@ -1457,7 +2040,10 @@ Emitido via Âncora Gestão
                                                   '${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''} • ${_translateStatus(reservation['status'])}',
                                                   style: TextStyle(
                                                     fontSize: 11.5,
-                                                    color: SaaSColors.textSecondary(isDark),
+                                                    color:
+                                                        SaaSColors.textSecondary(
+                                                          isDark,
+                                                        ),
                                                   ),
                                                 ),
                                               ],
@@ -1531,7 +2117,10 @@ Emitido via Âncora Gestão
                               foregroundColor: const Color(0xFF1E3A8A),
                             ),
                             onPressed: _openMemberships,
-                            icon: const Icon(Icons.group_add_outlined, size: 16),
+                            icon: const Icon(
+                              Icons.group_add_outlined,
+                              size: 16,
+                            ),
                             label: const Text('Vínculos'),
                           ),
                           const SizedBox(width: 8),
@@ -1561,7 +2150,10 @@ Emitido via Âncora Gestão
                               foregroundColor: const Color(0xFF15803D),
                             ),
                             onPressed: _openCommunityHub,
-                            icon: const Icon(Icons.diversity_3_outlined, size: 16),
+                            icon: const Icon(
+                              Icons.diversity_3_outlined,
+                              size: 16,
+                            ),
                             label: const Text('Hub Geral'),
                           ),
                           const SizedBox(width: 8),
@@ -1570,8 +2162,12 @@ Emitido via Âncora Gestão
                               backgroundColor: const Color(0xFFE0E7FF),
                               foregroundColor: const Color(0xFF1D4ED8),
                             ),
-                            onPressed: () => _openCommunityHub(initialIndex: 11),
-                            icon: const Icon(Icons.build_circle_outlined, size: 16),
+                            onPressed: () =>
+                                _openCommunityHub(initialIndex: 11),
+                            icon: const Icon(
+                              Icons.build_circle_outlined,
+                              size: 16,
+                            ),
                             label: const Text('Manutenções'),
                           ),
                           const SizedBox(width: 8),
@@ -1580,7 +2176,8 @@ Emitido via Âncora Gestão
                               backgroundColor: const Color(0xFFF3E8FF),
                               foregroundColor: const Color(0xFF6D28D9),
                             ),
-                            onPressed: () => _openCommunityHub(initialIndex: 12),
+                            onPressed: () =>
+                                _openCommunityHub(initialIndex: 12),
                             icon: const Icon(Icons.groups_outlined, size: 16),
                             label: const Text('Assembleias'),
                           ),
@@ -1602,7 +2199,11 @@ Emitido via Âncora Gestão
                       (membership) => DropdownMenuItem<int>(
                         value: (membership['condominiumId'] as num).toInt(),
                         child: Text(
-                          membership['condominiumName']?.toString().trim().isNotEmpty == true
+                          membership['condominiumName']
+                                      ?.toString()
+                                      .trim()
+                                      .isNotEmpty ==
+                                  true
                               ? '${membership['condominiumName']}'
                               : 'Condomínio vinculado',
                         ),
@@ -1623,7 +2224,9 @@ Emitido via Âncora Gestão
                     'Unidades cadastradas',
                     _dashboard?['totalUnits'],
                     Icons.home_work_outlined,
-                    accentBg: isDark ? const Color(0xFF1E293B) : const Color(0xFFE0E7FF),
+                    accentBg: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFE0E7FF),
                     accentFg: SaaSColors.primary,
                     onTap: _openUnitsMenu,
                   ),
@@ -1631,7 +2234,9 @@ Emitido via Âncora Gestão
                     'Pessoas vinculadas',
                     _dashboard?['totalUsers'],
                     Icons.groups_outlined,
-                    accentBg: isDark ? const Color(0xFF064E3B) : const Color(0xFFCCFBF1),
+                    accentBg: isDark
+                        ? const Color(0xFF064E3B)
+                        : const Color(0xFFCCFBF1),
                     accentFg: const Color(0xFF0F766E),
                     onTap: _openMemberships,
                   ),
@@ -1639,7 +2244,9 @@ Emitido via Âncora Gestão
                     'Reservas registradas',
                     _dashboard?['totalReservations'],
                     Icons.event_available_outlined,
-                    accentBg: isDark ? const Color(0xFF78350F) : const Color(0xFFDCFCE7),
+                    accentBg: isDark
+                        ? const Color(0xFF78350F)
+                        : const Color(0xFFDCFCE7),
                     accentFg: const Color(0xFF15803D),
                     onTap: _openReservationsMenu,
                   ),
@@ -1666,7 +2273,9 @@ Emitido via Âncora Gestão
                     onPressed: _generateBoleto,
                     icon: const Icon(Icons.receipt_long_rounded, size: 16),
                     label: const Text('Gerar Boleto'),
-                    style: FilledButton.styleFrom(backgroundColor: SaaSColors.primary),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: SaaSColors.primary,
+                    ),
                   ),
                 ],
               ),
@@ -1698,7 +2307,9 @@ Emitido via Âncora Gestão
                             children: [
                               Text(
                                 '${unit['sector']} • Unidade ${unit['identifier']}',
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -1748,10 +2359,16 @@ Emitido via Âncora Gestão
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFEFF6FF),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.event_available_outlined, color: SaaSColors.primary, size: 20),
+                          child: const Icon(
+                            Icons.event_available_outlined,
+                            color: SaaSColors.primary,
+                            size: 20,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -1760,7 +2377,9 @@ Emitido via Âncora Gestão
                             children: [
                               Text(
                                 '${reservation['commonArea']} • ${reservation['residentName']}',
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -1809,7 +2428,11 @@ Emitido via Âncora Gestão
   }
 
   (String, Color, Color) _statusStyle(dynamic status) => switch (status) {
-    'PAID' => ('Pago (em dia)', const Color(0xFFDCFCE7), const Color(0xFF15803D)),
+    'PAID' => (
+      'Pago (em dia)',
+      const Color(0xFFDCFCE7),
+      const Color(0xFF15803D),
+    ),
     'CONFIRMATION_REQUESTED' => (
       'Comprovante enviado / Aguardando confirmação',
       const Color(0xFFFEF3C7),
@@ -1879,359 +2502,6 @@ Emitido via Âncora Gestão
       ),
     ),
   );
-
-  Widget _buildManagerHeader(bool isDesktop, bool isDark) {
-    final condoName = _selectedCondoName();
-    final condoImg = _condoDetails?['imageUrl'] as String?;
-
-    if (isDesktop) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0F172A) : Colors.white,
-          border: Border(
-            bottom: BorderSide(
-              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-              width: 1,
-            ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.02),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                width: 40,
-                height: 40,
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                alignment: Alignment.center,
-                child: (condoImg != null && condoImg.isNotEmpty)
-                    ? (condoImg.startsWith('data:')
-                        ? Image.memory(
-                            base64Decode(condoImg.split(',').last),
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.apartment_rounded, color: SaaSColors.primary, size: 22),
-                          )
-                        : Image.network(
-                            condoImg,
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.apartment_rounded, color: SaaSColors.primary, size: 22),
-                          ))
-                    : const Icon(Icons.apartment_rounded, color: SaaSColors.primary, size: 22),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  condoName,
-                  style: TextStyle(
-                    color: SaaSColors.textPrimary(isDark),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                Text(
-                  'Painel do Síndico • Olá, ${firstNameOf(widget.userName, fallback: 'Síndico')}!',
-                  style: TextStyle(
-                    color: SaaSColors.textSecondary(isDark),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 24),
-
-            _managerHeaderTab(
-              icon: Icons.photo_library_outlined,
-              label: 'Fotos Principais',
-              onTap: _openMainPhotosManagerDialog,
-              isDark: isDark,
-            ),
-            _managerHeaderTab(
-              icon: Icons.campaign_outlined,
-              label: 'Comunicado',
-              onTap: _selected == null ? null : _sendAnnouncement,
-              isDark: isDark,
-            ),
-            _managerHeaderTab(
-              icon: Icons.assessment_outlined,
-              label: 'Relatórios',
-              onTap: _selected == null ? null : _openReportsMenu,
-              isDark: isDark,
-            ),
-
-            const Spacer(),
-
-            if (widget.currentRole != null && widget.onSwitchRole != null) ...[
-              RoleSwitcherPill(
-                currentRole: widget.currentRole!,
-                availableRoles: widget.availableRoles,
-                onSwitchRole: widget.onSwitchRole!,
-                isLight: !isDark,
-              ),
-              const SizedBox(width: 8),
-            ],
-
-            IconButton(
-              tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
-              onPressed: () {
-                final nextPref = isDark ? 'LIGHT' : 'DARK';
-                AppTheme.setThemePreference(nextPref);
-                _communityApi.updateThemePreference(nextPref);
-              },
-              icon: Icon(
-                isDark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
-                color: isDark ? Colors.white70 : const Color(0xFF475569),
-                size: 20,
-              ),
-            ),
-
-            IconButton(
-              tooltip: 'Central de Notificações',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => NotificationsPage(api: _api, condominiumId: _selected),
-                ),
-              ),
-              icon: Icon(
-                Icons.notifications_outlined,
-                color: isDark ? Colors.white70 : const Color(0xFF475569),
-                size: 20,
-              ),
-            ),
-
-            IconButton(
-              tooltip: 'Atualizar Painel',
-              onPressed: _load,
-              icon: Icon(
-                Icons.refresh_rounded,
-                color: isDark ? Colors.white70 : const Color(0xFF475569),
-                size: 20,
-              ),
-            ),
-
-            const SizedBox(width: 8),
-
-            UserAvatar(
-              imageSource: _profile['profileImage']?.toString(),
-              name: _profile['firstName']?.toString() ?? widget.userName,
-              radius: 18,
-              onTap: _openProfile,
-              tooltip: 'Meu Perfil',
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Mobile / Tablet Header
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0F172A) : const Color(0xFF1E3A8A),
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFF1D4ED8),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  color: Colors.white24,
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.apartment_rounded, color: Colors.white, size: 20),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      condoName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      'Painel do Síndico • Olá, ${firstNameOf(widget.userName, fallback: 'Síndico')}!',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (widget.currentRole != null && widget.onSwitchRole != null)
-                RoleSwitcherPill(
-                  currentRole: widget.currentRole!,
-                  availableRoles: widget.availableRoles,
-                  onSwitchRole: widget.onSwitchRole!,
-                ),
-              const SizedBox(width: 4),
-              UserAvatar(
-                imageSource: _profile['profileImage']?.toString(),
-                name: _profile['firstName']?.toString() ?? widget.userName,
-                radius: 16,
-                backgroundColor: Colors.white24,
-                foregroundColor: Colors.white,
-                borderColor: Colors.white38,
-                onTap: _openProfile,
-                tooltip: 'Meu Perfil',
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _managerMobileActionButton(
-                  icon: Icons.photo_library_outlined,
-                  label: 'Fotos Principais',
-                  onTap: _openMainPhotosManagerDialog,
-                ),
-                const SizedBox(width: 8),
-                _managerMobileActionButton(
-                  icon: Icons.campaign_outlined,
-                  label: 'Comunicado',
-                  onTap: _selected == null ? null : _sendAnnouncement,
-                ),
-                const SizedBox(width: 8),
-                _managerMobileActionButton(
-                  icon: Icons.assessment_outlined,
-                  label: 'Relatórios',
-                  onTap: _selected == null ? null : _openReportsMenu,
-                ),
-                const SizedBox(width: 8),
-                _managerMobileActionButton(
-                  icon: Icons.notifications_outlined,
-                  label: 'Notificações',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => NotificationsPage(api: _api, condominiumId: _selected),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _managerMobileActionButton(
-                  icon: Icons.refresh_rounded,
-                  label: 'Atualizar',
-                  onTap: _load,
-                ),
-
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _managerHeaderTab({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onTap,
-    required bool isDark,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: isDark ? const Color(0xFF93C5FD) : SaaSColors.primary),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : const Color(0xFF1E293B),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _managerMobileActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onTap,
-    bool isDestructive = false,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: isDestructive ? const Color(0xFFEF4444).withValues(alpha: 0.25) : Colors.white12,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: isDestructive ? const Color(0xFFEF4444) : Colors.white24),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 15, color: Colors.white),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _ManagerUnitsMenuPage extends StatefulWidget {
@@ -2251,7 +2521,11 @@ class _ManagerUnitsMenuPageState extends State<_ManagerUnitsMenuPage> {
   String _query = '';
 
   (String, Color, Color) _statusStyle(dynamic status) => switch (status) {
-    'PAID' => ('Pago (em dia)', const Color(0xFFDCFCE7), const Color(0xFF15803D)),
+    'PAID' => (
+      'Pago (em dia)',
+      const Color(0xFFDCFCE7),
+      const Color(0xFF15803D),
+    ),
     'CONFIRMATION_REQUESTED' => (
       'Comprovante enviado / Aguardando confirmação',
       const Color(0xFFFEF3C7),
@@ -2301,7 +2575,8 @@ class _ManagerUnitsMenuPageState extends State<_ManagerUnitsMenuPage> {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       subtitle: Text('Situação financeira: $label'),
-                      trailing: unit['paymentStatus'] == 'CONFIRMATION_REQUESTED'
+                      trailing:
+                          unit['paymentStatus'] == 'CONFIRMATION_REQUESTED'
                           ? Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -2319,25 +2594,35 @@ class _ManagerUnitsMenuPageState extends State<_ManagerUnitsMenuPage> {
                                       Navigator.pop(context);
                                     }
                                   },
-                                  icon: const Icon(Icons.check_circle_outline, size: 16),
+                                  icon: const Icon(
+                                    Icons.check_circle_outline,
+                                    size: 16,
+                                  ),
                                   label: const Text('Confirmar Pagamento'),
                                 ),
                                 const SizedBox(width: 8),
                                 OutlinedButton.icon(
                                   onPressed: () async {
-                                    final updated = await widget.onEditPayment(unit);
+                                    final updated = await widget.onEditPayment(
+                                      unit,
+                                    );
                                     if (updated && context.mounted) {
                                       Navigator.pop(context);
                                     }
                                   },
-                                  icon: const Icon(Icons.edit_outlined, size: 18),
+                                  icon: const Icon(
+                                    Icons.edit_outlined,
+                                    size: 18,
+                                  ),
                                   label: const Text('Editar'),
                                 ),
                               ],
                             )
                           : OutlinedButton.icon(
                               onPressed: () async {
-                                final updated = await widget.onEditPayment(unit);
+                                final updated = await widget.onEditPayment(
+                                  unit,
+                                );
                                 if (updated && context.mounted) {
                                   Navigator.pop(context);
                                 }
@@ -2443,7 +2728,10 @@ class _ManagerReservationsMenuPageState
                       onSelected: (val) {
                         if (val) setState(() => _selectedTab = 'SCHEDULED');
                       },
-                      avatar: const Icon(Icons.calendar_month_outlined, size: 16),
+                      avatar: const Icon(
+                        Icons.calendar_month_outlined,
+                        size: 16,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     ChoiceChip(
@@ -2499,10 +2787,12 @@ class _ManagerReservationsMenuPageState
                         _selectedTab == 'CANCELLED'
                             ? 'Nenhuma reserva cancelada.'
                             : _selectedTab == 'PAST'
-                                ? 'Nenhuma reserva finalizada.'
-                                : 'Nenhuma reserva agendada no momento.',
+                            ? 'Nenhuma reserva finalizada.'
+                            : 'Nenhuma reserva agendada no momento.',
                         style: TextStyle(
-                          color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                          color: isDark
+                              ? Colors.white60
+                              : const Color(0xFF64748B),
                         ),
                       ),
                     ),
@@ -2516,15 +2806,17 @@ class _ManagerReservationsMenuPageState
                   return Card(
                     color: isItemCancelled
                         ? (isDark
-                            ? const Color(0xFF450A0A).withValues(alpha: 0.35)
-                            : const Color(0xFFFEF2F2))
+                              ? const Color(0xFF450A0A).withValues(alpha: 0.35)
+                              : const Color(0xFFFEF2F2))
                         : null,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                       side: BorderSide(
                         color: isItemCancelled
                             ? const Color(0xFFFCA5A5)
-                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            : (isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0)),
                         width: isItemCancelled ? 1.5 : 1.0,
                       ),
                     ),
@@ -2535,42 +2827,53 @@ class _ManagerReservationsMenuPageState
                         child: SizedBox(
                           width: 44,
                           height: 44,
-                          child: (reservation['imageUrl'] != null && reservation['imageUrl'].toString().isNotEmpty)
-                              ? (reservation['imageUrl'].toString().startsWith('data:')
-                                  ? Image.memory(
-                                      base64Decode(reservation['imageUrl'].toString().split(',').last),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => CircleAvatar(
-                                        backgroundColor: isItemCancelled
-                                            ? const Color(0xFFFEE2E2)
-                                            : const Color(0xFFE0E7FF),
-                                        child: Icon(
-                                          isItemCancelled
-                                              ? Icons.cancel_outlined
-                                              : Icons.event_available_outlined,
-                                          color: isItemCancelled
-                                              ? const Color(0xFFDC2626)
-                                              : const Color(0xFF2F3FB0),
-                                        ),
-                                      ),
+                          child:
+                              (reservation['imageUrl'] != null &&
+                                  reservation['imageUrl'].toString().isNotEmpty)
+                              ? (reservation['imageUrl'].toString().startsWith(
+                                      'data:',
                                     )
-                                  : Image.network(
-                                      reservation['imageUrl'].toString(),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => CircleAvatar(
-                                        backgroundColor: isItemCancelled
-                                            ? const Color(0xFFFEE2E2)
-                                            : const Color(0xFFE0E7FF),
-                                        child: Icon(
-                                          isItemCancelled
-                                              ? Icons.cancel_outlined
-                                              : Icons.event_available_outlined,
-                                          color: isItemCancelled
-                                              ? const Color(0xFFDC2626)
-                                              : const Color(0xFF2F3FB0),
+                                    ? Image.memory(
+                                        base64Decode(
+                                          reservation['imageUrl']
+                                              .toString()
+                                              .split(',')
+                                              .last,
                                         ),
-                                      ),
-                                    ))
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => CircleAvatar(
+                                          backgroundColor: isItemCancelled
+                                              ? const Color(0xFFFEE2E2)
+                                              : const Color(0xFFE0E7FF),
+                                          child: Icon(
+                                            isItemCancelled
+                                                ? Icons.cancel_outlined
+                                                : Icons
+                                                      .event_available_outlined,
+                                            color: isItemCancelled
+                                                ? const Color(0xFFDC2626)
+                                                : const Color(0xFF2F3FB0),
+                                          ),
+                                        ),
+                                      )
+                                    : Image.network(
+                                        reservation['imageUrl'].toString(),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => CircleAvatar(
+                                          backgroundColor: isItemCancelled
+                                              ? const Color(0xFFFEE2E2)
+                                              : const Color(0xFFE0E7FF),
+                                          child: Icon(
+                                            isItemCancelled
+                                                ? Icons.cancel_outlined
+                                                : Icons
+                                                      .event_available_outlined,
+                                            color: isItemCancelled
+                                                ? const Color(0xFFDC2626)
+                                                : const Color(0xFF2F3FB0),
+                                          ),
+                                        ),
+                                      ))
                               : CircleAvatar(
                                   backgroundColor: isItemCancelled
                                       ? const Color(0xFFFEE2E2)
@@ -2590,7 +2893,9 @@ class _ManagerReservationsMenuPageState
                         '${reservation['commonArea']} • ${reservation['residentName']}',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: isItemCancelled ? const Color(0xFFB91C1C) : null,
+                          color: isItemCancelled
+                              ? const Color(0xFFB91C1C)
+                              : null,
                         ),
                       ),
                       subtitle: Column(
@@ -2605,22 +2910,33 @@ class _ManagerReservationsMenuPageState
                             '${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                              color: isDark
+                                  ? Colors.white60
+                                  : const Color(0xFF64748B),
                             ),
                           ),
                           if (isItemCancelled) ...[
                             const SizedBox(height: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFEE2E2),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFF87171)),
+                                border: Border.all(
+                                  color: const Color(0xFFF87171),
+                                ),
                               ),
                               child: const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.cancel_rounded, size: 13, color: Color(0xFFDC2626)),
+                                  Icon(
+                                    Icons.cancel_rounded,
+                                    size: 13,
+                                    color: Color(0xFFDC2626),
+                                  ),
                                   SizedBox(width: 4),
                                   Text(
                                     'CANCELADA / RECUSADA',
@@ -2648,11 +2964,19 @@ class _ManagerReservationsMenuPageState
                                     style: FilledButton.styleFrom(
                                       backgroundColor: const Color(0xFF15803D),
                                       foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
                                     ),
                                     onPressed: () async {
-                                      await widget.api.send('PATCH', '/reservations/${reservation['id']}/approve');
-                                      if (context.mounted) Navigator.pop(context);
+                                      await widget.api.send(
+                                        'PATCH',
+                                        '/reservations/${reservation['id']}/approve',
+                                      );
+                                      if (context.mounted) {
+                                        Navigator.pop(context);
+                                      }
                                     },
                                     icon: const Icon(Icons.check, size: 16),
                                     label: const Text('Aprovar'),
@@ -2662,54 +2986,82 @@ class _ManagerReservationsMenuPageState
                                     style: FilledButton.styleFrom(
                                       backgroundColor: const Color(0xFFFEF3C7),
                                       foregroundColor: const Color(0xFFB45309),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
                                     ),
                                     onPressed: () async {
-                                      final communityApi = CommunityApi(api: widget.api);
+                                      final communityApi = CommunityApi(
+                                        api: widget.api,
+                                      );
                                       await showDialog<void>(
                                         context: context,
                                         builder: (ctx) => CounterProposalDialog(
                                           reservation: reservation,
                                           api: communityApi,
                                           onSubmitted: () {
-                                            if (context.mounted) Navigator.pop(context);
+                                            if (context.mounted) {
+                                              Navigator.pop(context);
+                                            }
                                           },
                                         ),
                                       );
                                     },
-                                    icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                                    icon: const Icon(
+                                      Icons.swap_horiz_rounded,
+                                      size: 16,
+                                    ),
                                     label: const Text('Contraproposta'),
                                   ),
                                   const SizedBox(width: 6),
                                   OutlinedButton.icon(
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: const Color(0xFFDC2626),
-                                      side: const BorderSide(color: Color(0xFFFECACA)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      side: const BorderSide(
+                                        color: Color(0xFFFECACA),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
                                     ),
                                     onPressed: () async {
-                                      final reasonCtrl = TextEditingController();
+                                      final reasonCtrl =
+                                          TextEditingController();
                                       final ok = await showDialog<bool>(
                                         context: context,
                                         builder: (ctx) => AlertDialog(
-                                          title: const Text('Recusar Solicitação de Reserva'),
+                                          title: const Text(
+                                            'Recusar Solicitação de Reserva',
+                                          ),
                                           content: TextField(
                                             controller: reasonCtrl,
                                             decoration: const InputDecoration(
-                                              labelText: 'Motivo da recusa (opcional)',
-                                              hintText: 'Ex: Espaço em manutenção no período.',
+                                              labelText:
+                                                  'Motivo da recusa (opcional)',
+                                              hintText:
+                                                  'Ex: Espaço em manutenção no período.',
                                             ),
                                             maxLines: 2,
                                           ),
                                           actions: [
                                             TextButton(
-                                              onPressed: () => Navigator.pop(ctx, false),
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
                                               child: const Text('Voltar'),
                                             ),
                                             FilledButton(
-                                              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
-                                              onPressed: () => Navigator.pop(ctx, true),
-                                              child: const Text('Confirmar Recusa'),
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor: const Color(
+                                                  0xFFDC2626,
+                                                ),
+                                              ),
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: const Text(
+                                                'Confirmar Recusa',
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -2718,11 +3070,17 @@ class _ManagerReservationsMenuPageState
                                         await widget.api.send(
                                           'PATCH',
                                           '/reservations/${reservation['id']}/reject',
-                                          body: reasonCtrl.text.trim().isNotEmpty
-                                              ? {'reason': reasonCtrl.text.trim()}
+                                          body:
+                                              reasonCtrl.text.trim().isNotEmpty
+                                              ? {
+                                                  'reason': reasonCtrl.text
+                                                      .trim(),
+                                                }
                                               : null,
                                         );
-                                        if (context.mounted) Navigator.pop(context);
+                                        if (context.mounted) {
+                                          Navigator.pop(context);
+                                        }
                                       }
                                     },
                                     icon: const Icon(Icons.close, size: 16),
@@ -2732,22 +3090,25 @@ class _ManagerReservationsMenuPageState
                               ),
                             )
                           : (status == 'COUNTER_PROPOSED'
-                              ? Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFEF3C7),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    'Contraproposta enviada',
-                                    style: TextStyle(
-                                      color: Color(0xFFB45309),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
                                     ),
-                                  ),
-                                )
-                              : null),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEF3C7),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text(
+                                      'Contraproposta enviada',
+                                      style: TextStyle(
+                                        color: Color(0xFFB45309),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  )
+                                : null),
                     ),
                   );
                 }),
@@ -2759,7 +3120,7 @@ class _ManagerReservationsMenuPageState
   }
 }
 
-  class _MainPhotosManagerDialog extends StatefulWidget {
+class _MainPhotosManagerDialog extends StatefulWidget {
   const _MainPhotosManagerDialog({
     required this.api,
     required this.condominiumId,
@@ -2775,7 +3136,8 @@ class _ManagerReservationsMenuPageState
   final ValueChanged<String> onCondoImageUpdated;
 
   @override
-  State<_MainPhotosManagerDialog> createState() => _MainPhotosManagerDialogState();
+  State<_MainPhotosManagerDialog> createState() =>
+      _MainPhotosManagerDialogState();
 }
 
 class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
@@ -2795,10 +3157,14 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
 
   Future<void> _fetchAreas() async {
     try {
-      final res = await widget.api.get('/condominiums/${widget.condominiumId}/common-areas/all');
+      final res = await widget.api.get(
+        '/condominiums/${widget.condominiumId}/common-areas/all',
+      );
       if (mounted) {
         setState(() {
-          _commonAreas = res is List ? res.whereType<Map<String, dynamic>>().toList() : [];
+          _commonAreas = res is List
+              ? res.whereType<Map<String, dynamic>>().toList()
+              : [];
           _loadingAreas = false;
         });
       }
@@ -2809,10 +3175,14 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
 
   Future<void> _fetchSectors() async {
     try {
-      final res = await widget.api.get('/sectors?condominiumId=${widget.condominiumId}');
+      final res = await widget.api.get(
+        '/sectors?condominiumId=${widget.condominiumId}',
+      );
       if (mounted) {
         setState(() {
-          _sectors = res is List ? res.whereType<Map<String, dynamic>>().toList() : [];
+          _sectors = res is List
+              ? res.whereType<Map<String, dynamic>>().toList()
+              : [];
           _loadingSectors = false;
         });
       }
@@ -2844,18 +3214,27 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
     final dataUri = await _pickBase64Image();
     if (dataUri == null) return;
     try {
-      await widget.api.send('PATCH', '/condominiums/${widget.condominiumId}/image', body: {
-        'imageUrl': dataUri,
-      });
+      await widget.api.send(
+        'PATCH',
+        '/condominiums/${widget.condominiumId}/image',
+        body: {'imageUrl': dataUri},
+      );
       if (mounted) {
         setState(() => _condoImg = dataUri);
         widget.onCondoImageUpdated(dataUri);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Foto da fachada do condomínio atualizada!'), backgroundColor: Color(0xFF15803D)),
+          const SnackBar(
+            content: Text('Foto da fachada do condomínio atualizada!'),
+            backgroundColor: Color(0xFF15803D),
+          ),
         );
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
     }
   }
 
@@ -2863,19 +3242,28 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
     final dataUri = await _pickBase64Image();
     if (dataUri == null) return;
     try {
-      await widget.api.send('PATCH', '/common-areas/${area['id']}/image', body: {
-        'imageUrl': dataUri,
-      });
+      await widget.api.send(
+        'PATCH',
+        '/common-areas/${area['id']}/image',
+        body: {'imageUrl': dataUri},
+      );
       if (mounted) {
         setState(() {
           area['imageUrl'] = dataUri;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Foto de "${area['name']}" atualizada com sucesso!'), backgroundColor: const Color(0xFF15803D)),
+          SnackBar(
+            content: Text('Foto de "${area['name']}" atualizada com sucesso!'),
+            backgroundColor: const Color(0xFF15803D),
+          ),
         );
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
     }
   }
 
@@ -2883,19 +3271,30 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
     final dataUri = await _pickBase64Image();
     if (dataUri == null) return;
     try {
-      await widget.api.send('PATCH', '/sectors/${sector['id']}/image', body: {
-        'imageUrl': dataUri,
-      });
+      await widget.api.send(
+        'PATCH',
+        '/sectors/${sector['id']}/image',
+        body: {'imageUrl': dataUri},
+      );
       if (mounted) {
         setState(() {
           sector['imageUrl'] = dataUri;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Foto de "${sector['name']}" atualizada com sucesso!'), backgroundColor: const Color(0xFF15803D)),
+          SnackBar(
+            content: Text(
+              'Foto de "${sector['name']}" atualizada com sucesso!',
+            ),
+            backgroundColor: const Color(0xFF15803D),
+          ),
         );
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      }
     }
   }
 
@@ -2908,7 +3307,8 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
             width: 52,
             height: 52,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Icon(fallbackIcon, color: SaaSColors.primary, size: 26),
+            errorBuilder: (_, __, ___) =>
+                Icon(fallbackIcon, color: SaaSColors.primary, size: 26),
           );
         } catch (_) {}
       } else {
@@ -2917,7 +3317,8 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
           width: 52,
           height: 52,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Icon(fallbackIcon, color: SaaSColors.primary, size: 26),
+          errorBuilder: (_, __, ___) =>
+              Icon(fallbackIcon, color: SaaSColors.primary, size: 26),
         );
       }
     }
@@ -2942,10 +3343,16 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                        color: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFEFF6FF),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.photo_library_outlined, color: SaaSColors.primary, size: 22),
+                      child: const Icon(
+                        Icons.photo_library_outlined,
+                        color: SaaSColors.primary,
+                        size: 22,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -2954,11 +3361,17 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                         children: [
                           const Text(
                             'Fotos Principais do Condomínio',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 17,
+                            ),
                           ),
                           Text(
                             'Personalize as imagens reais de fachada, áreas de lazer e blocos',
-                            style: TextStyle(fontSize: 12, color: SaaSColors.textSecondary(isDark)),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: SaaSColors.textSecondary(isDark),
+                            ),
                           ),
                         ],
                       ),
@@ -2975,9 +3388,18 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                 unselectedLabelColor: SaaSColors.textSecondary(isDark),
                 indicatorColor: SaaSColors.primary,
                 tabs: const [
-                  Tab(icon: Icon(Icons.apartment_rounded, size: 18), text: 'Condomínio'),
-                  Tab(icon: Icon(Icons.deck_rounded, size: 18), text: 'Áreas Comuns'),
-                  Tab(icon: Icon(Icons.business_outlined, size: 18), text: 'Setores / Blocos'),
+                  Tab(
+                    icon: Icon(Icons.apartment_rounded, size: 18),
+                    text: 'Condomínio',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.deck_rounded, size: 18),
+                    text: 'Áreas Comuns',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.business_outlined, size: 18),
+                    text: 'Setores / Blocos',
+                  ),
                 ],
               ),
               const Divider(height: 1),
@@ -2992,12 +3414,18 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                         children: [
                           const Text(
                             'Foto de Fachada do Condomínio',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
                           ),
                           const SizedBox(height: 6),
                           Text(
                             'Esta foto aparece no topo do menu de todos os moradores e na apresentação do condomínio.',
-                            style: TextStyle(fontSize: 12.5, color: SaaSColors.textSecondary(isDark)),
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: SaaSColors.textSecondary(isDark),
+                            ),
                           ),
                           const SizedBox(height: 16),
                           Expanded(
@@ -3005,28 +3433,48 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                               borderRadius: BorderRadius.circular(14),
                               child: Container(
                                 width: double.infinity,
-                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                color: isDark
+                                    ? const Color(0xFF1E293B)
+                                    : const Color(0xFFF1F5F9),
                                 alignment: Alignment.center,
-                                child: _condoImg != null && _condoImg!.isNotEmpty
+                                child:
+                                    _condoImg != null && _condoImg!.isNotEmpty
                                     ? (_condoImg!.startsWith('data:')
-                                        ? Image.memory(
-                                            base64Decode(_condoImg!.split(',').last),
-                                            width: double.infinity,
-                                            height: double.infinity,
-                                            fit: BoxFit.cover,
-                                          )
-                                        : Image.network(
-                                            _condoImg!,
-                                            width: double.infinity,
-                                            height: double.infinity,
-                                            fit: BoxFit.cover,
-                                          ))
+                                          ? Image.memory(
+                                              base64Decode(
+                                                _condoImg!.split(',').last,
+                                              ),
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                              fit: BoxFit.cover,
+                                            )
+                                          : Image.network(
+                                              _condoImg!,
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                              fit: BoxFit.cover,
+                                            ))
                                     : Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
-                                          Icon(Icons.add_photo_alternate_outlined, size: 48, color: SaaSColors.textSecondary(isDark)),
+                                          Icon(
+                                            Icons.add_photo_alternate_outlined,
+                                            size: 48,
+                                            color: SaaSColors.textSecondary(
+                                              isDark,
+                                            ),
+                                          ),
                                           const SizedBox(height: 8),
-                                          Text('Nenhuma foto de fachada definida', style: TextStyle(color: SaaSColors.textSecondary(isDark), fontSize: 13)),
+                                          Text(
+                                            'Nenhuma foto de fachada definida',
+                                            style: TextStyle(
+                                              color: SaaSColors.textSecondary(
+                                                isDark,
+                                              ),
+                                              fontSize: 13,
+                                            ),
+                                          ),
                                         ],
                                       ),
                               ),
@@ -3037,7 +3485,11 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                             child: FilledButton.icon(
                               onPressed: _changeCondoImage,
                               icon: const Icon(Icons.photo_camera_outlined),
-                              label: Text(_condoImg == null ? 'Definir Foto da Fachada' : 'Alterar Foto da Fachada'),
+                              label: Text(
+                                _condoImg == null
+                                    ? 'Definir Foto da Fachada'
+                                    : 'Alterar Foto da Fachada',
+                              ),
                             ),
                           ),
                         ],
@@ -3048,151 +3500,226 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                     _loadingAreas
                         ? const Padding(
                             padding: EdgeInsets.all(24),
-                            child: SaaSLoadingState(message: 'Carregando áreas comuns...'),
+                            child: SaaSLoadingState(
+                              message: 'Carregando áreas comuns...',
+                            ),
                           )
                         : _commonAreas.isEmpty
-                            ? const SaaSEmptyState(
-                                icon: Icons.deck_rounded,
-                                title: 'Nenhuma área comum',
-                                subtitle: 'Nenhuma área comum cadastrada no condomínio.',
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.all(16),
-                                itemCount: _commonAreas.length,
-                                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                                itemBuilder: (context, idx) {
-                                  final area = _commonAreas[idx];
-                                  final img = area['imageUrl']?.toString();
-                                  return Card(
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Row(
-                                        children: [
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(10),
-                                            child: Container(
-                                              width: 52,
-                                              height: 52,
-                                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                                              alignment: Alignment.center,
-                                              child: _buildPhotoThumbnail(img, Icons.deck_rounded),
-                                            ),
+                        ? const SaaSEmptyState(
+                            icon: Icons.deck_rounded,
+                            title: 'Nenhuma área comum',
+                            subtitle:
+                                'Nenhuma área comum cadastrada no condomínio.',
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _commonAreas.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, idx) {
+                              final area = _commonAreas[idx];
+                              final img = area['imageUrl']?.toString();
+                              return Card(
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: isDark
+                                        ? const Color(0xFF334155)
+                                        : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: Container(
+                                          width: 52,
+                                          height: 52,
+                                          color: isDark
+                                              ? const Color(0xFF1E293B)
+                                              : const Color(0xFFEFF6FF),
+                                          alignment: Alignment.center,
+                                          child: _buildPhotoThumbnail(
+                                            img,
+                                            Icons.deck_rounded,
                                           ),
-                                          const SizedBox(width: 14),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  area['name'] ?? 'Área Comum',
-                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  'Capacidade: ${area['capacity'] ?? 'Livre'} pessoas • ${img != null && img.isNotEmpty ? 'Foto definida' : 'Sem foto cadastrada'}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: img != null && img.isNotEmpty ? const Color(0xFF15803D) : SaaSColors.textSecondary(isDark),
-                                                    fontWeight: img != null && img.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          FilledButton.tonalIcon(
-                                            style: FilledButton.styleFrom(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            ),
-                                            onPressed: () => _changeAreaImage(area),
-                                            icon: const Icon(Icons.add_a_photo_outlined, size: 16),
-                                            label: Text(img == null ? 'Definir Foto' : 'Alterar'),
-                                          ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              area['name'] ?? 'Área Comum',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14.5,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Capacidade: ${area['capacity'] ?? 'Livre'} pessoas • ${img != null && img.isNotEmpty ? 'Foto definida' : 'Sem foto cadastrada'}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color:
+                                                    img != null &&
+                                                        img.isNotEmpty
+                                                    ? const Color(0xFF15803D)
+                                                    : SaaSColors.textSecondary(
+                                                        isDark,
+                                                      ),
+                                                fontWeight:
+                                                    img != null &&
+                                                        img.isNotEmpty
+                                                    ? FontWeight.w600
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      FilledButton.tonalIcon(
+                                        style: FilledButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                        ),
+                                        onPressed: () => _changeAreaImage(area),
+                                        icon: const Icon(
+                                          Icons.add_a_photo_outlined,
+                                          size: 16,
+                                        ),
+                                        label: Text(
+                                          img == null
+                                              ? 'Definir Foto'
+                                              : 'Alterar',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
 
                     // Tab 3: Setores / Blocos
                     _loadingSectors
                         ? const Padding(
                             padding: EdgeInsets.all(24),
-                            child: SaaSLoadingState(message: 'Carregando setores e blocos...'),
+                            child: SaaSLoadingState(
+                              message: 'Carregando setores e blocos...',
+                            ),
                           )
                         : _sectors.isEmpty
-                            ? const SaaSEmptyState(
-                                icon: Icons.view_quilt_outlined,
-                                title: 'Nenhum setor ou bloco',
-                                subtitle: 'Nenhum setor ou bloco cadastrado no condomínio.',
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.all(16),
-                                itemCount: _sectors.length,
-                                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                                itemBuilder: (context, idx) {
-                                  final sector = _sectors[idx];
-                                  final img = sector['imageUrl']?.toString();
-                                  return Card(
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Row(
-                                        children: [
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(10),
-                                            child: Container(
-                                              width: 52,
-                                              height: 52,
-                                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                                              alignment: Alignment.center,
-                                              child: _buildPhotoThumbnail(img, Icons.apartment_rounded),
-                                            ),
+                        ? const SaaSEmptyState(
+                            icon: Icons.view_quilt_outlined,
+                            title: 'Nenhum setor ou bloco',
+                            subtitle:
+                                'Nenhum setor ou bloco cadastrado no condomínio.',
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _sectors.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, idx) {
+                              final sector = _sectors[idx];
+                              final img = sector['imageUrl']?.toString();
+                              return Card(
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: isDark
+                                        ? const Color(0xFF334155)
+                                        : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: Container(
+                                          width: 52,
+                                          height: 52,
+                                          color: isDark
+                                              ? const Color(0xFF1E293B)
+                                              : const Color(0xFFEFF6FF),
+                                          alignment: Alignment.center,
+                                          child: _buildPhotoThumbnail(
+                                            img,
+                                            Icons.apartment_rounded,
                                           ),
-                                          const SizedBox(width: 14),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  sector['name'] ?? 'Setor',
-                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  'Tipo: ${sector['structuralType'] ?? 'BLOCO'} • ${img != null && img.isNotEmpty ? 'Foto definida' : 'Sem foto cadastrada'}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: img != null && img.isNotEmpty ? const Color(0xFF15803D) : SaaSColors.textSecondary(isDark),
-                                                    fontWeight: img != null && img.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          FilledButton.tonalIcon(
-                                            style: FilledButton.styleFrom(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            ),
-                                            onPressed: () => _changeSectorImage(sector),
-                                            icon: const Icon(Icons.add_a_photo_outlined, size: 16),
-                                            label: Text(img == null ? 'Definir Foto' : 'Alterar'),
-                                          ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              sector['name'] ?? 'Setor',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14.5,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Tipo: ${sector['structuralType'] ?? 'BLOCO'} • ${img != null && img.isNotEmpty ? 'Foto definida' : 'Sem foto cadastrada'}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color:
+                                                    img != null &&
+                                                        img.isNotEmpty
+                                                    ? const Color(0xFF15803D)
+                                                    : SaaSColors.textSecondary(
+                                                        isDark,
+                                                      ),
+                                                fontWeight:
+                                                    img != null &&
+                                                        img.isNotEmpty
+                                                    ? FontWeight.w600
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      FilledButton.tonalIcon(
+                                        style: FilledButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                        ),
+                                        onPressed: () =>
+                                            _changeSectorImage(sector),
+                                        icon: const Icon(
+                                          Icons.add_a_photo_outlined,
+                                          size: 16,
+                                        ),
+                                        label: Text(
+                                          img == null
+                                              ? 'Definir Foto'
+                                              : 'Alterar',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                   ],
                 ),
               ),

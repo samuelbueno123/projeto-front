@@ -22,6 +22,23 @@ const List<(String, String, IconData)> kAdminCreatableResources = [
   ('Recursos do sistema', 'features', Icons.extension_outlined),
 ];
 
+const Set<String> kAdminEditableResourceKeys = {
+  'users',
+  'condominiums',
+  'memberships',
+  'sectors',
+  'units',
+  'residents',
+  'packages',
+  'announcements',
+  'common-areas',
+  'reservations',
+  'billing-plans',
+};
+
+bool adminResourceSupportsCreate(String resource) =>
+    kAdminCreatableResources.any((entry) => entry.$2 == resource);
+
 const List<(String, String)> kSystemRoles = [
   ('ROLE_RESIDENT', 'Morador'),
   ('ROLE_DOORMAN', 'Porteiro'),
@@ -140,6 +157,7 @@ Future<Map<String, dynamic>?> showCreateAdminResourceDialog({
   required String resource,
   required String title,
 }) async {
+  if (!adminResourceSupportsCreate(resource)) return null;
   // Load parent datasets needed for the selected resource
   final needsUsers = const {
     'condominiums',
@@ -1586,6 +1604,7 @@ Future<Map<String, dynamic>?> showEditAdminResourceDialog({
   required String resource,
   required Map<String, dynamic> item,
 }) async {
+  if (!kAdminEditableResourceKeys.contains(resource)) return null;
   final needsUsers = const {
     'condominiums',
     'memberships',
@@ -2164,7 +2183,10 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
               color: const Color(0xFFDBEAFE),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.edit_note_rounded, color: Color(0xFF1D4ED8)),
+            child: const Icon(
+              Icons.edit_note_rounded,
+              color: Color(0xFF1D4ED8),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -2172,9 +2194,21 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Editar $title', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                Text(
+                  'Editar $title',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
                 if (id != null)
-                  Text('ID do Registro: #$id', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  Text(
+                    'ID do Registro: #$id',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -2197,12 +2231,19 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
+                      const Icon(
+                        Icons.error_outline,
+                        color: Color(0xFFDC2626),
+                        size: 20,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           _errorMessage!,
-                          style: const TextStyle(color: Color(0xFF991B1B), fontSize: 13),
+                          style: const TextStyle(
+                            color: Color(0xFF991B1B),
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -2226,7 +2267,10 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Icon(Icons.save_outlined, size: 18),
           label: Text(_saving ? 'Salvando...' : 'Salvar Alterações'),
@@ -2241,27 +2285,42 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         return [
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Nome (firstName)', prefixIcon: Icon(Icons.person_outline)),
+            decoration: const InputDecoration(
+              labelText: 'Nome (firstName)',
+              prefixIcon: Icon(Icons.person_outline),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text2,
-            decoration: const InputDecoration(labelText: 'Sobrenome (lastName)', prefixIcon: Icon(Icons.badge_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Sobrenome (lastName)',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text3,
             keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(labelText: 'E-mail', prefixIcon: Icon(Icons.email_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'E-mail',
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text4,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(labelText: 'Telefone (phone)', prefixIcon: Icon(Icons.phone_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Telefone (phone)',
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
           ),
           const SizedBox(height: 14),
-          const Text('Perfis de Acesso (roles):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const Text(
+            'Perfis de Acesso (roles):',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -2309,12 +2368,18 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         return [
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Nome do Condomínio', prefixIcon: Icon(Icons.apartment_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Nome do Condomínio',
+              prefixIcon: Icon(Icons.apartment_outlined),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text2,
-            decoration: const InputDecoration(labelText: 'Endereço Completo', prefixIcon: Icon(Icons.pin_drop_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Endereço Completo',
+              prefixIcon: Icon(Icons.pin_drop_outlined),
+            ),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
@@ -2342,7 +2407,11 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
           OutlinedButton.icon(
             onPressed: _pickImage,
             icon: const Icon(Icons.camera_alt_outlined),
-            label: Text(_imageDataUrl != null ? 'Trocar foto da fachada' : 'Adicionar foto da fachada'),
+            label: Text(
+              _imageDataUrl != null
+                  ? 'Trocar foto da fachada'
+                  : 'Adicionar foto da fachada',
+            ),
           ),
         ];
 
@@ -2354,9 +2423,15 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _selectedRole,
-            decoration: const InputDecoration(labelText: 'Papel no Condomínio', prefixIcon: Icon(Icons.badge_outlined)),
-            items: kMembershipRoles.map((r) => DropdownMenuItem(value: r.$1, child: Text(r.$2))).toList(),
-            onChanged: (v) => setState(() => _selectedRole = v ?? _selectedRole),
+            decoration: const InputDecoration(
+              labelText: 'Papel no Condomínio',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
+            items: kMembershipRoles
+                .map((r) => DropdownMenuItem(value: r.$1, child: Text(r.$2)))
+                .toList(),
+            onChanged: (v) =>
+                setState(() => _selectedRole = v ?? _selectedRole),
           ),
         ];
 
@@ -2366,14 +2441,24 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Nome do Setor', prefixIcon: Icon(Icons.domain_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Nome do Setor',
+              prefixIcon: Icon(Icons.domain_outlined),
+            ),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _selectedStructuralType,
-            decoration: const InputDecoration(labelText: 'Tipo Estrutural', prefixIcon: Icon(Icons.layers_outlined)),
-            items: kSectorStructuralTypes.map((t) => DropdownMenuItem(value: t.$1, child: Text(t.$2))).toList(),
-            onChanged: (v) => setState(() => _selectedStructuralType = v ?? _selectedStructuralType),
+            decoration: const InputDecoration(
+              labelText: 'Tipo Estrutural',
+              prefixIcon: Icon(Icons.layers_outlined),
+            ),
+            items: kSectorStructuralTypes
+                .map((t) => DropdownMenuItem(value: t.$1, child: Text(t.$2)))
+                .toList(),
+            onChanged: (v) => setState(
+              () => _selectedStructuralType = v ?? _selectedStructuralType,
+            ),
           ),
         ];
 
@@ -2383,7 +2468,10 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Identificador da Unidade', prefixIcon: Icon(Icons.tag)),
+            decoration: const InputDecoration(
+              labelText: 'Identificador da Unidade',
+              prefixIcon: Icon(Icons.tag),
+            ),
           ),
         ];
 
@@ -2395,9 +2483,16 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _selectedResidentType,
-            decoration: const InputDecoration(labelText: 'Vínculo do Morador', prefixIcon: Icon(Icons.person_pin_outlined)),
-            items: kResidentTypes.map((t) => DropdownMenuItem(value: t.$1, child: Text(t.$2))).toList(),
-            onChanged: (v) => setState(() => _selectedResidentType = v ?? _selectedResidentType),
+            decoration: const InputDecoration(
+              labelText: 'Vínculo do Morador',
+              prefixIcon: Icon(Icons.person_pin_outlined),
+            ),
+            items: kResidentTypes
+                .map((t) => DropdownMenuItem(value: t.$1, child: Text(t.$2)))
+                .toList(),
+            onChanged: (v) => setState(
+              () => _selectedResidentType = v ?? _selectedResidentType,
+            ),
           ),
         ];
 
@@ -2409,7 +2504,10 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Descrição da Encomenda', prefixIcon: Icon(Icons.inventory_2_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Descrição da Encomenda',
+              prefixIcon: Icon(Icons.inventory_2_outlined),
+            ),
           ),
         ];
 
@@ -2417,13 +2515,19 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         return [
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Título do Comunicado', prefixIcon: Icon(Icons.title_rounded)),
+            decoration: const InputDecoration(
+              labelText: 'Título do Comunicado',
+              prefixIcon: Icon(Icons.title_rounded),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text2,
             maxLines: 4,
-            decoration: const InputDecoration(labelText: 'Conteúdo / Mensagem', prefixIcon: Icon(Icons.notes_rounded)),
+            decoration: const InputDecoration(
+              labelText: 'Conteúdo / Mensagem',
+              prefixIcon: Icon(Icons.notes_rounded),
+            ),
           ),
         ];
 
@@ -2431,18 +2535,27 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         return [
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Nome da Área Comum', prefixIcon: Icon(Icons.deck_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Nome da Área Comum',
+              prefixIcon: Icon(Icons.deck_outlined),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text2,
-            decoration: const InputDecoration(labelText: 'Descrição (opcional)', prefixIcon: Icon(Icons.description_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Descrição (opcional)',
+              prefixIcon: Icon(Icons.description_outlined),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text3,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Capacidade Máxima (pessoas)', prefixIcon: Icon(Icons.people_outline)),
+            decoration: const InputDecoration(
+              labelText: 'Capacidade Máxima (pessoas)',
+              prefixIcon: Icon(Icons.people_outline),
+            ),
           ),
         ];
 
@@ -2450,8 +2563,14 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         return [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.play_circle_outline, color: Color(0xFF2563EB)),
-            title: const Text('Início da Reserva', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+            leading: const Icon(
+              Icons.play_circle_outline,
+              color: Color(0xFF2563EB),
+            ),
+            title: const Text(
+              'Início da Reserva',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+            ),
             subtitle: Text(_formatDateTime(_startAt)),
             trailing: FilledButton.tonal(
               onPressed: () async {
@@ -2464,8 +2583,14 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
           const Divider(),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.stop_circle_outlined, color: Color(0xFFDC2626)),
-            title: const Text('Término da Reserva', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+            leading: const Icon(
+              Icons.stop_circle_outlined,
+              color: Color(0xFFDC2626),
+            ),
+            title: const Text(
+              'Término da Reserva',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+            ),
             subtitle: Text(_formatDateTime(_endAt)),
             trailing: FilledButton.tonal(
               onPressed: () async {
@@ -2478,7 +2603,10 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Observações / Instruções da Reserva', prefixIcon: Icon(Icons.notes_rounded)),
+            decoration: const InputDecoration(
+              labelText: 'Observações / Instruções da Reserva',
+              prefixIcon: Icon(Icons.notes_rounded),
+            ),
           ),
         ];
 
@@ -2486,16 +2614,25 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         return [
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Nome do Plano', prefixIcon: Icon(Icons.badge_outlined)),
+            decoration: const InputDecoration(
+              labelText: 'Nome do Plano',
+              prefixIcon: Icon(Icons.badge_outlined),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text2,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Valor Mensal (R\$)', prefixIcon: Icon(Icons.attach_money_rounded)),
+            decoration: const InputDecoration(
+              labelText: 'Valor Mensal (R\$)',
+              prefixIcon: Icon(Icons.attach_money_rounded),
+            ),
           ),
           const SizedBox(height: 14),
-          const Text('Funcionalidades Inclusas:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const Text(
+            'Funcionalidades Inclusas:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -2523,19 +2660,32 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
         return [
           DropdownButtonFormField<String>(
             initialValue: _selectedFeatureCode,
-            decoration: const InputDecoration(labelText: 'Código do Recurso', prefixIcon: Icon(Icons.code_rounded)),
-            items: kFeatureCodes.map((f) => DropdownMenuItem(value: f.$1, child: Text(f.$2))).toList(),
-            onChanged: (v) => setState(() => _selectedFeatureCode = v ?? _selectedFeatureCode),
+            decoration: const InputDecoration(
+              labelText: 'Código do Recurso',
+              prefixIcon: Icon(Icons.code_rounded),
+            ),
+            items: kFeatureCodes
+                .map((f) => DropdownMenuItem(value: f.$1, child: Text(f.$2)))
+                .toList(),
+            onChanged: (v) => setState(
+              () => _selectedFeatureCode = v ?? _selectedFeatureCode,
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text1,
-            decoration: const InputDecoration(labelText: 'Nome do Recurso', prefixIcon: Icon(Icons.title_rounded)),
+            decoration: const InputDecoration(
+              labelText: 'Nome do Recurso',
+              prefixIcon: Icon(Icons.title_rounded),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _text2,
-            decoration: const InputDecoration(labelText: 'Descrição (opcional)', prefixIcon: Icon(Icons.notes_rounded)),
+            decoration: const InputDecoration(
+              labelText: 'Descrição (opcional)',
+              prefixIcon: Icon(Icons.notes_rounded),
+            ),
           ),
         ];
 
@@ -2548,8 +2698,18 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
     return DropdownButtonFormField<int>(
       initialValue: _selectedCondoId,
       isExpanded: true,
-      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.apartment_outlined)),
-      items: widget.condos.map((c) => DropdownMenuItem(value: _asInt(c['id']), child: Text(_condoLabel(c), overflow: TextOverflow.ellipsis))).toList(),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: const Icon(Icons.apartment_outlined),
+      ),
+      items: widget.condos
+          .map(
+            (c) => DropdownMenuItem(
+              value: _asInt(c['id']),
+              child: Text(_condoLabel(c), overflow: TextOverflow.ellipsis),
+            ),
+          )
+          .toList(),
       onChanged: (v) => setState(() => _selectedCondoId = v),
     );
   }
@@ -2558,8 +2718,18 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
     return DropdownButtonFormField<int>(
       initialValue: _selectedUserId,
       isExpanded: true,
-      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.person_outline)),
-      items: widget.users.map((u) => DropdownMenuItem(value: _asInt(u['id']), child: Text(_userLabel(u), overflow: TextOverflow.ellipsis))).toList(),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: const Icon(Icons.person_outline),
+      ),
+      items: widget.users
+          .map(
+            (u) => DropdownMenuItem(
+              value: _asInt(u['id']),
+              child: Text(_userLabel(u), overflow: TextOverflow.ellipsis),
+            ),
+          )
+          .toList(),
       onChanged: (v) => setState(() => _selectedUserId = v),
     );
   }
@@ -2568,8 +2738,21 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
     return DropdownButtonFormField<int>(
       initialValue: _selectedSectorId,
       isExpanded: true,
-      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.domain_outlined)),
-      items: widget.sectors.map((s) => DropdownMenuItem(value: _asInt(s['id']), child: Text(_sectorLabel(s, _condoNames), overflow: TextOverflow.ellipsis))).toList(),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: const Icon(Icons.domain_outlined),
+      ),
+      items: widget.sectors
+          .map(
+            (s) => DropdownMenuItem(
+              value: _asInt(s['id']),
+              child: Text(
+                _sectorLabel(s, _condoNames),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
       onChanged: (v) => setState(() => _selectedSectorId = v),
     );
   }
@@ -2578,8 +2761,21 @@ class _AdminResourceEditDialogState extends State<_AdminResourceEditDialog> {
     return DropdownButtonFormField<int>(
       initialValue: _selectedUnitId,
       isExpanded: true,
-      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.home_work_outlined)),
-      items: widget.units.map((u) => DropdownMenuItem(value: _asInt(u['id']), child: Text(_unitLabel(u, _sectorsById, _condoNames), overflow: TextOverflow.ellipsis))).toList(),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: const Icon(Icons.home_work_outlined),
+      ),
+      items: widget.units
+          .map(
+            (u) => DropdownMenuItem(
+              value: _asInt(u['id']),
+              child: Text(
+                _unitLabel(u, _sectorsById, _condoNames),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
       onChanged: (v) => setState(() => _selectedUnitId = v),
     );
   }

@@ -93,7 +93,11 @@ class _AdminPageState extends State<AdminPage> {
     ('Boletos e Pagamentos', 'unit-payments', Icons.receipt_outlined),
     ('Alertas de Pânico (SOS)', 'emergency-alerts', Icons.emergency_outlined),
     ('Livro de Plantão', 'shift-logs', Icons.menu_book_outlined),
-    ('Reformas (NBR 16.280)', 'renovation-requests', Icons.construction_outlined),
+    (
+      'Reformas (NBR 16.280)',
+      'renovation-requests',
+      Icons.construction_outlined,
+    ),
     ('Livro de Chaves', 'key-registry', Icons.key_outlined),
     ('Leituras de Água/Gás', 'utility-readings', Icons.speed_outlined),
     ('Vagas de Garagem', 'parking-spots', Icons.local_parking_outlined),
@@ -300,11 +304,16 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
-  Widget _buildDesktopAdminLayout(BuildContext context, Map<String, dynamic> data) {
+  Widget _buildDesktopAdminLayout(
+    BuildContext context,
+    Map<String, dynamic> data,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
     final sidebarBg = isDark ? const Color(0xFF0B1120) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+    final borderColor = isDark
+        ? const Color(0xFF1E293B)
+        : const Color(0xFFE2E8F0);
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -334,7 +343,11 @@ class _AdminPageState extends State<AdminPage> {
                           ),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.admin_panel_settings_rounded, color: Colors.white, size: 22),
+                        child: const Icon(
+                          Icons.admin_panel_settings_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -382,7 +395,10 @@ class _AdminPageState extends State<AdminPage> {
                 // Navigation List (Expanded with internal scroll)
                 Expanded(
                   child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
                     children: [
                       Padding(
                         padding: const EdgeInsets.only(left: 12, bottom: 6),
@@ -399,7 +415,9 @@ class _AdminPageState extends State<AdminPage> {
                       _buildSidebarItem(
                         icon: Icons.dashboard_outlined,
                         label: 'Visão Geral',
-                        isSelected: _activeTab == 'overview' && _selectedResourceKey == null,
+                        isSelected:
+                            _activeTab == 'overview' &&
+                            _selectedResourceKey == null,
                         onTap: () => setState(() {
                           _activeTab = 'overview';
                           _selectedResourceKey = null;
@@ -409,7 +427,9 @@ class _AdminPageState extends State<AdminPage> {
                       _buildSidebarItem(
                         icon: Icons.shield_outlined,
                         label: 'Logs e Auditoria',
-                        isSelected: _activeTab == 'auditLogs' && _selectedResourceKey == null,
+                        isSelected:
+                            _activeTab == 'auditLogs' &&
+                            _selectedResourceKey == null,
                         onTap: () => setState(() {
                           _activeTab = 'auditLogs';
                           _selectedResourceKey = null;
@@ -419,7 +439,9 @@ class _AdminPageState extends State<AdminPage> {
                       _buildSidebarItem(
                         icon: Icons.monitor_heart_outlined,
                         label: 'Saúde e Diagnóstico',
-                        isSelected: _activeTab == 'diagnostics' && _selectedResourceKey == null,
+                        isSelected:
+                            _activeTab == 'diagnostics' &&
+                            _selectedResourceKey == null,
                         onTap: () => setState(() {
                           _activeTab = 'diagnostics';
                           _selectedResourceKey = null;
@@ -429,7 +451,9 @@ class _AdminPageState extends State<AdminPage> {
                       _buildSidebarItem(
                         icon: Icons.lock_person_outlined,
                         label: 'Permissões e Papéis',
-                        isSelected: _activeTab == 'permissions' && _selectedResourceKey == null,
+                        isSelected:
+                            _activeTab == 'permissions' &&
+                            _selectedResourceKey == null,
                         onTap: () => setState(() {
                           _activeTab = 'permissions';
                           _selectedResourceKey = null;
@@ -480,10 +504,16 @@ class _AdminPageState extends State<AdminPage> {
                         children: [
                           CircleAvatar(
                             radius: 17,
-                            backgroundColor: SaaSColors.primary.withValues(alpha: 0.15),
+                            backgroundColor: SaaSColors.primary.withValues(
+                              alpha: 0.15,
+                            ),
                             backgroundImage: _profileAvatarImage,
                             child: _profileAvatarImage == null
-                                ? const Icon(Icons.person, size: 20, color: SaaSColors.primary)
+                                ? const Icon(
+                                    Icons.person,
+                                    size: 20,
+                                    color: SaaSColors.primary,
+                                  )
                                 : null,
                           ),
                           const SizedBox(width: 10),
@@ -495,13 +525,19 @@ class _AdminPageState extends State<AdminPage> {
                                   widget.userName ?? 'Administrador',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
                                 ),
                                 Text(
                                   widget.userEmail ?? 'admin@ancora.com',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: SaaSColors.muted(context),
+                                  ),
                                 ),
                               ],
                             ),
@@ -549,24 +585,36 @@ class _AdminPageState extends State<AdminPage> {
                                 label: const Text('Visão Geral'),
                               ),
                               const SizedBox(width: 8),
-                              Text('/', style: TextStyle(color: SaaSColors.muted(context))),
+                              Text(
+                                '/',
+                                style: TextStyle(
+                                  color: SaaSColors.muted(context),
+                                ),
+                              ),
                               const SizedBox(width: 8),
                               Flexible(
                                 child: Text(
                                   _selectedResourceTitle!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ] else ...[
                               Flexible(
                                 child: Text(
                                   switch (_activeTab) {
-                                    'auditLogs' => 'Logs e Auditoria do Sistema',
-                                    'diagnostics' => 'Saúde e Diagnóstico do Cluster',
-                                    'permissions' => 'Matriz de Permissões e Perfis (RBAC)',
-                                    _ => 'Olá, ${firstNameOf(widget.userName, fallback: 'administrador')}! 👋',
+                                    'auditLogs' =>
+                                      'Logs e Auditoria do Sistema',
+                                    'diagnostics' =>
+                                      'Saúde e Diagnóstico do Cluster',
+                                    'permissions' =>
+                                      'Matriz de Permissões e Perfis (RBAC)',
+                                    _ =>
+                                      'Olá, ${firstNameOf(widget.userName, fallback: 'administrador')}! 👋',
                                   },
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -601,7 +649,8 @@ class _AdminPageState extends State<AdminPage> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (widget.currentRole != null && widget.onSwitchRole != null)
+                            if (widget.currentRole != null &&
+                                widget.onSwitchRole != null)
                               Padding(
                                 padding: const EdgeInsets.only(right: 12),
                                 child: RoleSwitcherPill(
@@ -614,19 +663,31 @@ class _AdminPageState extends State<AdminPage> {
                               style: FilledButton.styleFrom(
                                 backgroundColor: SaaSColors.primary,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
                               ),
                               onPressed: _openCreateCondominium,
-                              icon: const Icon(Icons.domain_add_outlined, size: 18),
+                              icon: const Icon(
+                                Icons.domain_add_outlined,
+                                size: 18,
+                              ),
                               label: const Text('Novo condomínio'),
                             ),
                             const SizedBox(width: 8),
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
                               ),
                               onPressed: _openCreateAnyEntityMenu,
-                              icon: const Icon(Icons.add_circle_outline, size: 18),
+                              icon: const Icon(
+                                Icons.add_circle_outline,
+                                size: 18,
+                              ),
                               label: const Text('Criar registro'),
                             ),
                             const SizedBox(width: 8),
@@ -635,7 +696,8 @@ class _AdminPageState extends State<AdminPage> {
                               icon: const Icon(Icons.campaign_outlined),
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(
-                                  builder: (_) => SystemAnnouncementPage(api: _api),
+                                  builder: (_) =>
+                                      SystemAnnouncementPage(api: _api),
                                 ),
                               ),
                             ),
@@ -651,10 +713,15 @@ class _AdminPageState extends State<AdminPage> {
                             ),
                             IconButton(
                               tooltip: isDark ? 'Modo claro' : 'Modo escuro',
-                              icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+                              icon: Icon(
+                                isDark
+                                    ? Icons.light_mode_outlined
+                                    : Icons.dark_mode_outlined,
+                              ),
                               onPressed: () {
-                                AppTheme.themeModeNotifier.value =
-                                    isDark ? ThemeMode.light : ThemeMode.dark;
+                                AppTheme.themeModeNotifier.value = isDark
+                                    ? ThemeMode.light
+                                    : ThemeMode.dark;
                               },
                             ),
                           ],
@@ -682,7 +749,12 @@ class _AdminPageState extends State<AdminPage> {
                           'auditLogs' => AdminAuditLogView(api: _api),
                           'diagnostics' => AdminDiagnosticsView(api: _api),
                           'permissions' => AdminPermissionsView(api: _api),
-                          _ => _buildOverviewContent(context, data, isDark, borderColor),
+                          _ => _buildOverviewContent(
+                            context,
+                            data,
+                            isDark,
+                            borderColor,
+                          ),
                         },
                 ),
               ],
@@ -703,188 +775,203 @@ class _AdminPageState extends State<AdminPage> {
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // 4 Top Metric Cards
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: SaaSMetricCard(
-                                      title: 'Condomínios',
-                                      value: '${data['condominiums'] ?? 0}',
-                                      icon: Icons.apartment_outlined,
-                                      subtitle: 'condomínios no sistema',
-                                      onTap: () => setState(() {
-                                        _selectedResourceKey = 'condominiums';
-                                        _selectedResourceTitle = 'Condomínios';
-                                      }),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: SaaSMetricCard(
-                                      title: 'Usuários',
-                                      value: '${data['users'] ?? 0}',
-                                      icon: Icons.people_alt_outlined,
-                                      subtitle: 'contas ativas',
-                                      onTap: () => setState(() {
-                                        _selectedResourceKey = 'users';
-                                        _selectedResourceTitle = 'Usuários';
-                                      }),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: SaaSMetricCard(
-                                      title: 'Moradores',
-                                      value: '${data['residents'] ?? 0}',
-                                      icon: Icons.groups_outlined,
-                                      subtitle: 'moradores vinculados',
-                                      onTap: () => setState(() {
-                                        _selectedResourceKey = 'residents';
-                                        _selectedResourceTitle = 'Moradores';
-                                      }),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: SaaSMetricCard(
-                                      title: 'Reservas',
-                                      value: '${data['reservations'] ?? 0}',
-                                      icon: Icons.event_available_outlined,
-                                      subtitle: 'reservas registradas',
-                                      onTap: () => setState(() {
-                                        _selectedResourceKey = 'reservations';
-                                        _selectedResourceTitle = 'Reservas';
-                                      }),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
+        children: [
+          // 4 Top Metric Cards
+          Row(
+            children: [
+              Expanded(
+                child: SaaSMetricCard(
+                  title: 'Condomínios',
+                  value: '${data['condominiums'] ?? 0}',
+                  icon: Icons.apartment_outlined,
+                  subtitle: 'condomínios no sistema',
+                  onTap: () => setState(() {
+                    _selectedResourceKey = 'condominiums';
+                    _selectedResourceTitle = 'Condomínios';
+                  }),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: SaaSMetricCard(
+                  title: 'Usuários',
+                  value: '${data['users'] ?? 0}',
+                  icon: Icons.people_alt_outlined,
+                  subtitle: 'contas ativas',
+                  onTap: () => setState(() {
+                    _selectedResourceKey = 'users';
+                    _selectedResourceTitle = 'Usuários';
+                  }),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: SaaSMetricCard(
+                  title: 'Moradores',
+                  value: '${data['residents'] ?? 0}',
+                  icon: Icons.groups_outlined,
+                  subtitle: 'moradores vinculados',
+                  onTap: () => setState(() {
+                    _selectedResourceKey = 'residents';
+                    _selectedResourceTitle = 'Moradores';
+                  }),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: SaaSMetricCard(
+                  title: 'Reservas',
+                  value: '${data['reservations'] ?? 0}',
+                  icon: Icons.event_available_outlined,
+                  subtitle: 'reservas registradas',
+                  onTap: () => setState(() {
+                    _selectedResourceKey = 'reservations';
+                    _selectedResourceTitle = 'Reservas';
+                  }),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
 
-                              // Work Area 2 Columns (Expanded, no outer scroll!)
-                              Expanded(
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    // Left Pane: Search & Quick Actions (Flex 5)
-                                    Expanded(
-                                      flex: 5,
-                                      child: SaaSCard(
-                                        padding: const EdgeInsets.all(16),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                                          children: [
-                                            const SaaSSectionHeader(
-                                              title: 'Pesquisa Global',
-                                              subtitle: 'Localize cadastros por nome ou código',
-                                              action: SaaSBadge(
-                                                label: 'Enter para buscar',
-                                                variant: SaaSBadgeVariant.neutral,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 12),
-                                            Expanded(
-                                              child: SingleChildScrollView(
-                                                child: _AdminSearch(
-                                                  api: _api,
-                                                  onChanged: _refresh,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-
-                                    // Right Pane: Database Explorer Grid (Flex 7)
-                                    Expanded(
-                                      flex: 7,
-                                      child: SaaSCard(
-                                        padding: const EdgeInsets.all(16),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                                          children: [
-                                            const SaaSSectionHeader(
-                                              title: 'Entidades & Tabelas',
-                                              subtitle: 'Selecione uma tabela para gerenciar seus registros',
-                                            ),
-                                            const SizedBox(height: 12),
-                                            Expanded(
-                                              child: GridView.builder(
-                                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                                  crossAxisCount: 3,
-                                                  crossAxisSpacing: 10,
-                                                  mainAxisSpacing: 10,
-                                                  childAspectRatio: 1.6,
-                                                ),
-                                                itemCount: _resources.length,
-                                                itemBuilder: (context, idx) {
-                                                  final res = _resources[idx];
-                                                  final count = data[_countKey(res.$2)] ?? 0;
-                                                  return InkWell(
-                                                    borderRadius: BorderRadius.circular(10),
-                                                    onTap: () => setState(() {
-                                                      _selectedResourceKey = res.$2;
-                                                      _selectedResourceTitle = res.$1;
-                                                    }),
-                                                    child: Container(
-                                                      padding: const EdgeInsets.all(12),
-                                                      decoration: BoxDecoration(
-                                                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                                                        borderRadius: BorderRadius.circular(10),
-                                                        border: Border.all(
-                                                          color: borderColor,
-                                                        ),
-                                                      ),
-                                                      child: Row(
-                                                        children: [
-                                                          CircleAvatar(
-                                                            radius: 18,
-                                                            backgroundColor: SaaSColors.primary.withValues(alpha: 0.12),
-                                                            child: Icon(res.$3, color: SaaSColors.primary, size: 20),
-                                                          ),
-                                                          const SizedBox(width: 10),
-                                                          Expanded(
-                                                            child: Column(
-                                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                                              mainAxisAlignment: MainAxisAlignment.center,
-                                                              children: [
-                                                                Text(
-                                                                  res.$1,
-                                                                  maxLines: 1,
-                                                                  overflow: TextOverflow.ellipsis,
-                                                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                                                ),
-                                                                Text(
-                                                                  '$count registros',
-                                                                  style: TextStyle(
-                                                                    fontSize: 11,
-                                                                    color: SaaSColors.muted(context),
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          ),
-                                                          const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+          // Work Area 2 Columns (Expanded, no outer scroll!)
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Left Pane: Search & Quick Actions (Flex 5)
+                Expanded(
+                  flex: 5,
+                  child: SaaSCard(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SaaSSectionHeader(
+                          title: 'Pesquisa Global',
+                          subtitle: 'Localize cadastros por nome ou código',
+                          action: SaaSBadge(
+                            label: 'Enter para buscar',
+                            variant: SaaSBadgeVariant.neutral,
                           ),
-                        );
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: _AdminSearch(api: _api, onChanged: _refresh),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+
+                // Right Pane: Database Explorer Grid (Flex 7)
+                Expanded(
+                  flex: 7,
+                  child: SaaSCard(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SaaSSectionHeader(
+                          title: 'Entidades & Tabelas',
+                          subtitle:
+                              'Selecione uma tabela para gerenciar seus registros',
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: GridView.builder(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                  childAspectRatio: 1.6,
+                                ),
+                            itemCount: _resources.length,
+                            itemBuilder: (context, idx) {
+                              final res = _resources[idx];
+                              final count = data[_countKey(res.$2)] ?? 0;
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () => setState(() {
+                                  _selectedResourceKey = res.$2;
+                                  _selectedResourceTitle = res.$1;
+                                }),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: isDark
+                                        ? const Color(0xFF1E293B)
+                                        : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: borderColor),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 18,
+                                        backgroundColor: SaaSColors.primary
+                                            .withValues(alpha: 0.12),
+                                        child: Icon(
+                                          res.$3,
+                                          color: SaaSColors.primary,
+                                          size: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              res.$1,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            Text(
+                                              '$count registros',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: SaaSColors.muted(
+                                                  context,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Icon(
+                                        Icons.chevron_right,
+                                        size: 16,
+                                        color: Colors.grey,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSidebarItem({
@@ -909,7 +996,9 @@ class _AdminPageState extends State<AdminPage> {
             borderRadius: BorderRadius.circular(8),
             border: isSelected
                 ? Border.all(
-                    color: isDark ? const Color(0xFF3B82F6) : const Color(0xFFBFDBFE),
+                    color: isDark
+                        ? const Color(0xFF3B82F6)
+                        : const Color(0xFFBFDBFE),
                   )
                 : null,
           ),
@@ -937,7 +1026,10 @@ class _AdminPageState extends State<AdminPage> {
               ),
               if (count != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: isSelected
                         ? SaaSColors.primary.withValues(alpha: 0.15)
@@ -962,7 +1054,10 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
-  Widget _buildMobileAdminLayout(BuildContext context, Map<String, dynamic> data) {
+  Widget _buildMobileAdminLayout(
+    BuildContext context,
+    Map<String, dynamic> data,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: isDark
@@ -970,15 +1065,20 @@ class _AdminPageState extends State<AdminPage> {
           : const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text('Painel administrativo'),
-        backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFF2F3FB0),
+        backgroundColor: isDark
+            ? const Color(0xFF1E293B)
+            : const Color(0xFF2F3FB0),
         foregroundColor: Colors.white,
         actions: [
           IconButton(
             tooltip: isDark ? 'Modo claro' : 'Modo escuro',
-            icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+            icon: Icon(
+              isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+            ),
             onPressed: () {
-              AppTheme.themeModeNotifier.value =
-                  isDark ? ThemeMode.light : ThemeMode.dark;
+              AppTheme.themeModeNotifier.value = isDark
+                  ? ThemeMode.light
+                  : ThemeMode.dark;
             },
           ),
           if (widget.currentRole != null && widget.onSwitchRole != null)
@@ -1078,8 +1178,7 @@ class _AdminPageState extends State<AdminPage> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              widget.userEmail ??
-                                  'Visão global do aplicativo',
+                              widget.userEmail ?? 'Visão global do aplicativo',
                               style: const TextStyle(color: Colors.white70),
                             ),
                           ],
@@ -1112,8 +1211,7 @@ class _AdminPageState extends State<AdminPage> {
                       icon: Icons.add_circle_outline,
                       color: const Color(0xFF059669),
                       title: 'Criar registro',
-                      subtitle:
-                          'Cadastrar qualquer entidade e acoplar ao pai',
+                      subtitle: 'Cadastrar qualquer entidade e acoplar ao pai',
                       onTap: _openCreateAnyEntityMenu,
                     ),
                     _QuickActionCard(
@@ -1130,8 +1228,7 @@ class _AdminPageState extends State<AdminPage> {
                       color: const Color(0xFF0E7490),
                       title: 'Condomínios',
                       subtitle: 'Gerenciar condomínios e síndicos',
-                      onTap: () =>
-                          _openResource('Condomínios', 'condominiums'),
+                      onTap: () => _openResource('Condomínios', 'condominiums'),
                     ),
                     _QuickActionCard(
                       width: cardWidth,
@@ -1162,7 +1259,9 @@ class _AdminPageState extends State<AdminPage> {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => Scaffold(
-                            appBar: AppBar(title: const Text('Logs e Auditoria')),
+                            appBar: AppBar(
+                              title: const Text('Logs e Auditoria'),
+                            ),
                             body: AdminAuditLogView(api: _api),
                           ),
                         ),
@@ -1177,7 +1276,9 @@ class _AdminPageState extends State<AdminPage> {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => Scaffold(
-                            appBar: AppBar(title: const Text('Saúde e Diagnóstico')),
+                            appBar: AppBar(
+                              title: const Text('Saúde e Diagnóstico'),
+                            ),
                             body: AdminDiagnosticsView(api: _api),
                           ),
                         ),
@@ -1192,7 +1293,9 @@ class _AdminPageState extends State<AdminPage> {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => Scaffold(
-                            appBar: AppBar(title: const Text('Permissões e Papéis (RBAC)')),
+                            appBar: AppBar(
+                              title: const Text('Permissões e Papéis (RBAC)'),
+                            ),
                             body: AdminPermissionsView(api: _api),
                           ),
                         ),
@@ -1328,18 +1431,12 @@ class _QuickActionCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: SaaSColors.muted(context),
-            ),
+            style: TextStyle(fontSize: 12, color: SaaSColors.muted(context)),
           ),
         ],
       ),
@@ -1370,10 +1467,7 @@ class _MetricCard extends StatelessWidget {
         const SizedBox(height: 12),
         Text(
           '$value',
-          style: const TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 2),
         Text(
@@ -1685,6 +1779,8 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
   String _query = '';
   late Future<dynamic> _data;
 
+  bool get _supportsCreate => adminResourceSupportsCreate(widget.resource);
+
   @override
   void initState() {
     super.initState();
@@ -1708,6 +1804,7 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
   }
 
   Future<void> _createRecord() async {
+    if (!_supportsCreate) return;
     final created = await showCreateAdminResourceDialog(
       context: context,
       api: widget.api,
@@ -1726,116 +1823,142 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
 
   @override
   Widget build(BuildContext context) {
-    final bodyContent = FutureBuilder<dynamic>(
-      future: _data,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(32),
-              child: SaaSLoadingState(
-                message: 'Carregando registros...',
-              ),
+    final bodyContent = Column(
+      children: [
+        if (!_supportsCreate)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
             ),
-          );
-        }
-        if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: SaaSErrorState(
-                message: snapshot.error.toString(),
-                onRetry: () => setState(_load),
-              ),
+            child: const Row(
+              children: [
+                Icon(Icons.lock_outline_rounded, size: 18),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Somente leitura: este recurso ainda não possui operações de gravação no backend.',
+                  ),
+                ),
+              ],
             ),
-          );
-        }
-        final result = snapshot.data;
-        final rows = result is Map && result['content'] is List
-            ? (result['content'] as List)
-                  .whereType<Map<String, dynamic>>()
-                  .where((item) => recordMatchesQuery(item, _query))
-                  .toList()
-            : <Map<String, dynamic>>[];
-        final totalPages = result is Map
-            ? (result['totalPages'] as num?)?.toInt() ?? 1
-            : 1;
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: EnterSearchField(
+            hintText: 'Pesquisar registros em ${widget.title}',
+            onSubmitted: (query) => setState(() {
+              _query = query;
+              _page = 0;
+              _load();
+            }),
+          ),
+        ),
+        Expanded(
+          child: FutureBuilder<dynamic>(
+            future: _data,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: SaaSLoadingState(message: 'Carregando registros...'),
+                  ),
+                );
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: SaaSErrorState(
+                      message: snapshot.error.toString(),
+                      onRetry: () => setState(_load),
+                    ),
+                  ),
+                );
+              }
+              final result = snapshot.data;
+              final rows = result is Map && result['content'] is List
+                  ? (result['content'] as List)
+                        .whereType<Map<String, dynamic>>()
+                        .where((item) => recordMatchesQuery(item, _query))
+                        .toList()
+                  : <Map<String, dynamic>>[];
+              final totalPages = result is Map
+                  ? (result['totalPages'] as num?)?.toInt() ?? 1
+                  : 1;
 
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: EnterSearchField(
-                hintText: 'Pesquisar registros em ${widget.title}',
-                onSubmitted: (query) => setState(() {
-                  _query = query;
-                  _page = 0;
-                  _load();
-                }),
-              ),
-            ),
-            if (rows.isEmpty)
-              const Expanded(
-                child: SaaSEmptyState(
-                  icon: Icons.search_off_rounded,
-                  title: 'Nenhum registro encontrado',
-                  subtitle: 'Não há registros correspondentes aos critérios de pesquisa.',
-                ),
-              )
-            else
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: rows.length,
-                  itemBuilder: (context, index) {
-                    final item = rows[index];
-                    return _AdminRecordCard(
-                      resource: widget.resource,
-                      item: item,
-                      api: widget.api,
-                      onChanged: () => setState(_load),
-                    );
-                  },
-                ),
-              ),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      tooltip: 'Página anterior',
-                      onPressed: _page > 0
-                          ? () => setState(() {
-                              _page--;
-                              _load();
-                            })
-                          : null,
-                      icon: const Icon(Icons.chevron_left),
+              return Column(
+                children: [
+                  if (rows.isEmpty)
+                    const Expanded(
+                      child: SaaSEmptyState(
+                        icon: Icons.search_off_rounded,
+                        title: 'Nenhum registro encontrado',
+                        subtitle:
+                            'Não há registros correspondentes aos critérios de pesquisa.',
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: rows.length,
+                        itemBuilder: (context, index) {
+                          final item = rows[index];
+                          return _AdminRecordCard(
+                            resource: widget.resource,
+                            item: item,
+                            api: widget.api,
+                            onChanged: () => setState(_load),
+                          );
+                        },
+                      ),
                     ),
-                    Text(
-                      'Página ${_page + 1} de $totalPages',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            tooltip: 'Página anterior',
+                            onPressed: _page > 0
+                                ? () => setState(() {
+                                    _page--;
+                                    _load();
+                                  })
+                                : null,
+                            icon: const Icon(Icons.chevron_left),
+                          ),
+                          Text(
+                            'Página ${_page + 1} de $totalPages',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          IconButton(
+                            tooltip: 'Próxima página',
+                            onPressed: _page + 1 < totalPages
+                                ? () => setState(() {
+                                    _page++;
+                                    _load();
+                                  })
+                                : null,
+                            icon: const Icon(Icons.chevron_right),
+                          ),
+                        ],
+                      ),
                     ),
-                    IconButton(
-                      tooltip: 'Próxima página',
-                      onPressed: _page + 1 < totalPages
-                          ? () => setState(() {
-                              _page++;
-                              _load();
-                            })
-                          : null,
-                      icon: const Icon(Icons.chevron_right),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
 
     if (widget.isEmbedded) {
@@ -1863,15 +1986,16 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
                     ),
                   ),
                   const Spacer(),
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: SaaSColors.primary,
-                      foregroundColor: Colors.white,
+                  if (_supportsCreate)
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: SaaSColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: _createRecord,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: Text('Novo em ${widget.title}'),
                     ),
-                    onPressed: _createRecord,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text('Novo em ${widget.title}'),
-                  ),
                   const SizedBox(width: 8),
                   IconButton(
                     tooltip: 'Atualizar',
@@ -1895,11 +2019,12 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
         backgroundColor: const Color(0xFF2F3FB0),
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            tooltip: 'Novo registro em ${widget.title}',
-            onPressed: _createRecord,
-            icon: const Icon(Icons.add_circle_outline),
-          ),
+          if (_supportsCreate)
+            IconButton(
+              tooltip: 'Novo registro em ${widget.title}',
+              onPressed: _createRecord,
+              icon: const Icon(Icons.add_circle_outline),
+            ),
           IconButton(
             tooltip: 'Atualizar',
             onPressed: () => setState(_load),
@@ -1907,11 +2032,13 @@ class _AdminResourceViewState extends State<_AdminResourceView> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _createRecord,
-        icon: const Icon(Icons.add),
-        label: Text('Novo em ${widget.title}'),
-      ),
+      floatingActionButton: _supportsCreate
+          ? FloatingActionButton.extended(
+              onPressed: _createRecord,
+              icon: const Icon(Icons.add),
+              label: Text('Novo em ${widget.title}'),
+            )
+          : null,
       body: bodyContent,
     );
   }
@@ -1975,26 +2102,29 @@ class _AdminRecordCard extends StatelessWidget {
                       icon: const Icon(Icons.visibility_outlined, size: 18),
                       label: const Text('Ficha completa'),
                     ),
-                    FilledButton.tonalIcon(
-                      onPressed: () async {
-                        final updated = await showEditAdminResourceDialog(
-                          context: context,
-                          api: api,
-                          resource: resource,
-                          item: item,
-                        );
-                        if (updated != null && context.mounted) {
-                          onChanged();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Registro atualizado com sucesso!'),
-                            ),
+                    if (kAdminEditableResourceKeys.contains(resource))
+                      FilledButton.tonalIcon(
+                        onPressed: () async {
+                          final updated = await showEditAdminResourceDialog(
+                            context: context,
+                            api: api,
+                            resource: resource,
+                            item: item,
                           );
-                        }
-                      },
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text('Editar registro'),
-                    ),
+                          if (updated != null && context.mounted) {
+                            onChanged();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Registro atualizado com sucesso!',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Editar registro'),
+                      ),
                     if (resource == 'condominiums' && item['id'] is num)
                       FilledButton.tonalIcon(
                         onPressed: () async {
@@ -2688,7 +2818,9 @@ class _AdminSearchState extends State<_AdminSearch> {
           '/admin/data/$key?page=0&size=25&query=${Uri.encodeQueryComponent(id.toString())}',
         );
         if (pageData is Map && pageData['content'] is List) {
-          for (final e in (pageData['content'] as List).whereType<Map<String, dynamic>>()) {
+          for (final e
+              in (pageData['content'] as List)
+                  .whereType<Map<String, dynamic>>()) {
             if (e['id'] == id) {
               fullItem = e;
               break;
@@ -2722,60 +2854,60 @@ class _AdminSearchState extends State<_AdminSearch> {
   Widget build(BuildContext context) => SaaSCard(
     padding: const EdgeInsets.all(16),
     child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Pesquisar cadastros (pressione Enter)',
-            style: Theme.of(context).textTheme.titleMedium,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Pesquisar cadastros (pressione Enter)',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _controller,
+          maxLength: 100,
+          onSubmitted: _onSubmitted,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Nome de usuário, condomínio ou setor',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Limpar pesquisa',
+                    onPressed: () {
+                      _controller.clear();
+                      _onSubmitted('');
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+            border: const OutlineInputBorder(),
+            counterText: '',
           ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _controller,
-            maxLength: 100,
-            onSubmitted: _onSubmitted,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: 'Nome de usuário, condomínio ou setor',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _query.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Limpar pesquisa',
-                      onPressed: () {
-                        _controller.clear();
-                        _onSubmitted('');
-                      },
-                      icon: const Icon(Icons.close),
-                    ),
-              border: const OutlineInputBorder(),
-              counterText: '',
+        ),
+        if (_loading) ...[
+          const SizedBox(height: 12),
+          const LinearProgressIndicator(),
+        ],
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: Colors.red)),
+        ],
+        if (_results != null && _query.isNotEmpty && !_loading) ...[
+          const SizedBox(height: 12),
+          if (_resultCount == 0)
+            const Text('Nenhum usuário, condomínio ou setor encontrado.')
+          else ...[
+            _resultGroup('Usuários', 'users', Icons.people_outline),
+            _resultGroup(
+              'Condomínios',
+              'condominiums',
+              Icons.apartment_outlined,
             ),
-          ),
-          if (_loading) ...[
-            const SizedBox(height: 12),
-            const LinearProgressIndicator(),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-          ],
-          if (_results != null && _query.isNotEmpty && !_loading) ...[
-            const SizedBox(height: 12),
-            if (_resultCount == 0)
-              const Text('Nenhum usuário, condomínio ou setor encontrado.')
-            else ...[
-              _resultGroup('Usuários', 'users', Icons.people_outline),
-              _resultGroup(
-                'Condomínios',
-                'condominiums',
-                Icons.apartment_outlined,
-              ),
-              _resultGroup('Setores', 'sectors', Icons.domain_outlined),
-            ],
+            _resultGroup('Setores', 'sectors', Icons.domain_outlined),
           ],
         ],
-      ),
-    );
+      ],
+    ),
+  );
 
   Widget _resultGroup(String title, String key, IconData icon) {
     final values = _items(key);

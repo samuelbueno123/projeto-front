@@ -11,11 +11,7 @@ import '../../home/data/home_service.dart';
 // 1. AUDIT LOG VIEW (Logs e Auditoria Imutáveis)
 // ============================================================================
 class AdminAuditLogView extends StatefulWidget {
-  const AdminAuditLogView({
-    super.key,
-    required this.api,
-    this.condominiumId,
-  });
+  const AdminAuditLogView({super.key, required this.api, this.condominiumId});
 
   final HomeService api;
   final int? condominiumId;
@@ -60,11 +56,7 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
     'CRITICAL',
   ];
 
-  static const List<String> _outcomes = [
-    'ALL',
-    'SUCCESS',
-    'FAILURE',
-  ];
+  static const List<String> _outcomes = ['ALL', 'SUCCESS', 'FAILURE'];
 
   @override
   void initState() {
@@ -105,7 +97,10 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
       if (_severity != 'ALL') queryParams['severity'] = _severity;
       if (_outcome != 'ALL') queryParams['outcome'] = _outcome;
       if (_startDate != null) {
-        queryParams['startDate'] = _startDate!.toIso8601String().substring(0, 10);
+        queryParams['startDate'] = _startDate!.toIso8601String().substring(
+          0,
+          10,
+        );
       }
       if (_endDate != null) {
         queryParams['endDate'] = _endDate!.toIso8601String().substring(0, 10);
@@ -117,10 +112,7 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
         queryParams['condominiumId'] = '${widget.condominiumId}';
       }
 
-      final uri = Uri(
-        path: '/admin/audit-logs',
-        queryParameters: queryParams,
-      );
+      final uri = Uri(path: '/admin/audit-logs', queryParameters: queryParams);
 
       final res = await widget.api.get(uri.toString());
 
@@ -129,7 +121,8 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
           setState(() {
             _items = (res['content'] as List<dynamic>?) ?? [];
             _totalPages = (res['totalPages'] as num?)?.toInt() ?? 1;
-            _totalElements = (res['totalElements'] as num?)?.toInt() ?? _items.length;
+            _totalElements =
+                (res['totalElements'] as num?)?.toInt() ?? _items.length;
             _loading = false;
           });
         } else if (res is List<dynamic>) {
@@ -185,7 +178,9 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
         final isSuccess = outcome.toUpperCase() == 'SUCCESS';
 
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
               Container(
@@ -197,8 +192,12 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isSuccess ? Icons.verified_user_outlined : Icons.warning_amber_rounded,
-                  color: isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                  isSuccess
+                      ? Icons.verified_user_outlined
+                      : Icons.warning_amber_rounded,
+                  color: isSuccess
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFFEF4444),
                   size: 22,
                 ),
               ),
@@ -209,11 +208,17 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                   children: [
                     Text(
                       'Registro de Auditoria #${item['id'] ?? ''}',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Text(
                       dt != null ? _dateFormat.format(dt) : timestampStr,
-                      style: TextStyle(fontSize: 12, color: SaaSColors.muted(ctx)),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: SaaSColors.muted(ctx),
+                      ),
                     ),
                   ],
                 ),
@@ -227,12 +232,27 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDetailRow('Ação / Operação', item['action']?.toString() ?? '-'),
-                  _buildDetailRow('Tipo de Evento', item['eventType']?.toString() ?? '-'),
-                  _buildDetailRow('Categoria', item['category']?.toString() ?? '-'),
-                  _buildDetailRow('Usuário (Principal)', item['principal']?.toString() ?? 'SYSTEM'),
+                  _buildDetailRow(
+                    'Ação / Operação',
+                    item['action']?.toString() ?? '-',
+                  ),
+                  _buildDetailRow(
+                    'Tipo de Evento',
+                    item['eventType']?.toString() ?? '-',
+                  ),
+                  _buildDetailRow(
+                    'Categoria',
+                    item['category']?.toString() ?? '-',
+                  ),
+                  _buildDetailRow(
+                    'Usuário (Principal)',
+                    item['principal']?.toString() ?? 'SYSTEM',
+                  ),
                   _buildDetailRow('Desfecho', outcome, isSuccess: isSuccess),
-                  _buildDetailRow('Endereço IP', item['ipAddress']?.toString() ?? '127.0.0.1'),
+                  _buildDetailRow(
+                    'Endereço IP',
+                    item['ipAddress']?.toString() ?? '127.0.0.1',
+                  ),
                   if (item['condominiumId'] != null)
                     _buildDetailRow(
                       'Condomínio',
@@ -259,15 +279,23 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                      color: isDark
+                          ? const Color(0xFF0F172A)
+                          : const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                        color: isDark
+                            ? const Color(0xFF334155)
+                            : const Color(0xFFCBD5E1),
                       ),
                     ),
                     child: SelectableText(
-                      item['details']?.toString() ?? 'Nenhum detalhe adicional fornecido.',
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      item['details']?.toString() ??
+                          'Nenhum detalhe adicional fornecido.',
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ],
@@ -285,7 +313,12 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
     );
   }
 
-  Widget _buildDetailRow(String label, String value, {bool? isSuccess, bool canCopy = false}) {
+  Widget _buildDetailRow(
+    String label,
+    String value, {
+    bool? isSuccess,
+    bool canCopy = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -313,7 +346,9 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                       fontWeight: FontWeight.w500,
                       color: isSuccess == null
                           ? null
-                          : (isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+                          : (isSuccess
+                                ? const Color(0xFF10B981)
+                                : const Color(0xFFEF4444)),
                     ),
                   ),
                 ),
@@ -326,7 +361,9 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: value));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Correlation ID copiado!')),
+                        const SnackBar(
+                          content: Text('Correlation ID copiado!'),
+                        ),
                       );
                     },
                   ),
@@ -382,7 +419,9 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    final borderColor = isDark
+        ? const Color(0xFF334155)
+        : const Color(0xFFE2E8F0);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -395,18 +434,26 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
             decoration: BoxDecoration(
               color: const Color(0xFF4F46E5).withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
+              border: Border.all(
+                color: const Color(0xFF6366F1).withValues(alpha: 0.3),
+              ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.shield_outlined, color: Color(0xFF4F46E5), size: 22),
+                const Icon(
+                  Icons.shield_outlined,
+                  color: Color(0xFF4F46E5),
+                  size: 22,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text.rich(
                     TextSpan(
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B),
+                        color: isDark
+                            ? const Color(0xFFE2E8F0)
+                            : const Color(0xFF1E293B),
                       ),
                       children: const [
                         TextSpan(
@@ -450,7 +497,8 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
               Expanded(
                 child: SaaSMetricCard(
                   title: 'Operações Admin',
-                  value: '${(_stats['byCategory'] as Map?)?['ADMIN_OPERATION'] ?? 0}',
+                  value:
+                      '${(_stats['byCategory'] as Map?)?['ADMIN_OPERATION'] ?? 0}',
                   icon: Icons.manage_accounts_outlined,
                   subtitle: 'ações de governança',
                 ),
@@ -486,7 +534,10 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                     const SizedBox(width: 8),
                     const Text(
                       'Filtros de Auditoria',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                     const Spacer(),
                     TextButton.icon(
@@ -519,11 +570,23 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Categoria',
-                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           border: OutlineInputBorder(),
                         ),
                         items: _categories
-                            .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)))
+                            .map(
+                              (c) => DropdownMenuItem(
+                                value: c,
+                                child: Text(
+                                  c,
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) {
                           if (v != null) setState(() => _category = v);
@@ -538,11 +601,23 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Severidade',
-                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           border: OutlineInputBorder(),
                         ),
                         items: _severities
-                            .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)))
+                            .map(
+                              (s) => DropdownMenuItem(
+                                value: s,
+                                child: Text(
+                                  s,
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) {
                           if (v != null) setState(() => _severity = v);
@@ -557,11 +632,23 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Desfecho',
-                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           border: OutlineInputBorder(),
                         ),
                         items: _outcomes
-                            .map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)))
+                            .map(
+                              (o) => DropdownMenuItem(
+                                value: o,
+                                child: Text(
+                                  o,
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) {
                           if (v != null) setState(() => _outcome = v);
@@ -581,7 +668,9 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                       },
                       icon: const Icon(Icons.date_range, size: 16),
                       label: Text(
-                        _startDate == null ? 'Data Início' : _dayFormat.format(_startDate!),
+                        _startDate == null
+                            ? 'Data Início'
+                            : _dayFormat.format(_startDate!),
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
@@ -598,7 +687,9 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                       },
                       icon: const Icon(Icons.event, size: 16),
                       label: Text(
-                        _endDate == null ? 'Data Fim' : _dayFormat.format(_endDate!),
+                        _endDate == null
+                            ? 'Data Fim'
+                            : _dayFormat.format(_endDate!),
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
@@ -614,10 +705,14 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                           suffixIcon: _searchCtrl.text.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, size: 16),
-                                  onPressed: () => setState(() => _searchCtrl.clear()),
+                                  onPressed: () =>
+                                      setState(() => _searchCtrl.clear()),
                                 )
                               : null,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           border: const OutlineInputBorder(),
                         ),
                         onSubmitted: (_) {
@@ -638,7 +733,9 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
             const Padding(
               padding: EdgeInsets.all(40),
               child: Center(
-                child: SaaSLoadingState(message: 'Carregando registros imutáveis de auditoria...'),
+                child: SaaSLoadingState(
+                  message: 'Carregando registros imutáveis de auditoria...',
+                ),
               ),
             )
           else if (_error != null)
@@ -647,7 +744,8 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
             const SaaSEmptyState(
               icon: Icons.shield_outlined,
               title: 'Nenhum registro de auditoria encontrado',
-              subtitle: 'Ajuste os filtros ou o período para visualizar mais eventos.',
+              subtitle:
+                  'Ajuste os filtros ou o período para visualizar mais eventos.',
             )
           else ...[
             Container(
@@ -663,35 +761,83 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
                       headingRowColor: WidgetStateProperty.all(
-                        isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        isDark
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFF8FAFC),
                       ),
                       columns: const [
-                        DataColumn(label: Text('Data / Hora', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Severidade', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Categoria', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Usuário / Principal', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Ação / Evento', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Desfecho', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('IP / Recurso', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Ações', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(
+                          label: Text(
+                            'Data / Hora',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            'Severidade',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            'Categoria',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            'Usuário / Principal',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            'Ação / Evento',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            'Desfecho',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            'IP / Recurso',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            'Ações',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
                       ],
                       rows: _items.map((log) {
-                        final item = log is Map<String, dynamic> ? log : <String, dynamic>{};
-                        final timestampStr = item['timestamp']?.toString() ?? '';
+                        final item = log is Map<String, dynamic>
+                            ? log
+                            : <String, dynamic>{};
+                        final timestampStr =
+                            item['timestamp']?.toString() ?? '';
                         DateTime? dt;
                         try {
                           dt = DateTime.parse(timestampStr).toLocal();
                         } catch (_) {}
 
                         final severity = item['severity']?.toString() ?? 'INFO';
-                        final outcome = item['outcome']?.toString() ?? 'SUCCESS';
+                        final outcome =
+                            item['outcome']?.toString() ?? 'SUCCESS';
                         final isSuccess = outcome.toUpperCase() == 'SUCCESS';
 
                         return DataRow(
                           cells: [
                             DataCell(
                               Text(
-                                dt != null ? _dateFormat.format(dt) : timestampStr,
+                                dt != null
+                                    ? _dateFormat.format(dt)
+                                    : timestampStr,
                                 style: const TextStyle(fontSize: 12),
                               ),
                             ),
@@ -699,7 +845,10 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                             DataCell(
                               Text(
                                 item['category']?.toString() ?? '-',
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                             DataCell(
@@ -710,9 +859,13 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                             ),
                             DataCell(
                               ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 220),
+                                constraints: const BoxConstraints(
+                                  maxWidth: 220,
+                                ),
                                 child: Text(
-                                  item['action']?.toString() ?? item['eventType']?.toString() ?? '-',
+                                  item['action']?.toString() ??
+                                      item['eventType']?.toString() ??
+                                      '-',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 12),
@@ -724,9 +877,13 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    isSuccess ? Icons.check_circle_outline : Icons.cancel_outlined,
+                                    isSuccess
+                                        ? Icons.check_circle_outline
+                                        : Icons.cancel_outlined,
                                     size: 16,
-                                    color: isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                    color: isSuccess
+                                        ? const Color(0xFF10B981)
+                                        : const Color(0xFFEF4444),
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
@@ -734,7 +891,9 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                      color: isSuccess
+                                          ? const Color(0xFF10B981)
+                                          : const Color(0xFFEF4444),
                                     ),
                                   ),
                                 ],
@@ -742,13 +901,21 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                             ),
                             DataCell(
                               Text(
-                                item['ipAddress']?.toString() ?? item['resourceType']?.toString() ?? '-',
-                                style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                                item['ipAddress']?.toString() ??
+                                    item['resourceType']?.toString() ??
+                                    '-',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: SaaSColors.muted(context),
+                                ),
                               ),
                             ),
                             DataCell(
                               IconButton(
-                                icon: const Icon(Icons.visibility_outlined, size: 18),
+                                icon: const Icon(
+                                  Icons.visibility_outlined,
+                                  size: 18,
+                                ),
                                 tooltip: 'Ver detalhes',
                                 onPressed: () => _showAuditDetailDialog(item),
                               ),
@@ -762,12 +929,18 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                   // Pagination footer
                   const Divider(height: 1),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     child: Row(
                       children: [
                         Text(
                           'Página ${_page + 1} de $_totalPages ($_totalElements registros)',
-                          style: TextStyle(fontSize: 12, color: SaaSColors.muted(context)),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: SaaSColors.muted(context),
+                          ),
                         ),
                         const Spacer(),
                         IconButton(
@@ -823,10 +996,7 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
 // 2. DIAGNOSTICS & SYSTEM HEALTH VIEW (Saúde, Métricas e Diagnóstico)
 // ============================================================================
 class AdminDiagnosticsView extends StatefulWidget {
-  const AdminDiagnosticsView({
-    super.key,
-    required this.api,
-  });
+  const AdminDiagnosticsView({super.key, required this.api});
 
   final HomeService api;
 
@@ -895,16 +1065,25 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(cacheName == null ? 'Limpar Todos os Caches?' : 'Limpar Cache $cacheName?'),
+        title: Text(
+          cacheName == null
+              ? 'Limpar Todos os Caches?'
+              : 'Limpar Cache $cacheName?',
+        ),
         content: Text(
           cacheName == null
               ? 'Esta ação forçará o Spring Cache a invalidar todas as entradas em memória (roles, features, usuários). Uma entrada será registrada na trilha de auditoria.'
               : 'Deseja invalidar o cache "$cacheName"? Uma entrada será registrada na trilha de auditoria.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Limpar'),
           ),
@@ -931,9 +1110,9 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Falha ao limpar cache: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Falha ao limpar cache: $e')));
       }
     }
   }
@@ -969,7 +1148,11 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
               Clipboard.setData(ClipboardData(text: jsonStr));
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Diagnóstico copiado para a área de transferência!')),
+                const SnackBar(
+                  content: Text(
+                    'Diagnóstico copiado para a área de transferência!',
+                  ),
+                ),
               );
             },
           ),
@@ -986,19 +1169,26 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    final borderColor = isDark
+        ? const Color(0xFF334155)
+        : const Color(0xFFE2E8F0);
 
     if (_loading && _data == null) {
       return const Padding(
         padding: EdgeInsets.all(40),
         child: Center(
-          child: SaaSLoadingState(message: 'Consultando telemetria e integridade dos serviços...'),
+          child: SaaSLoadingState(
+            message: 'Consultando telemetria e integridade dos serviços...',
+          ),
         ),
       );
     }
 
     if (_error != null && _data == null) {
-      return SaaSErrorState(message: _error!, onRetry: () => _loadDiagnostics());
+      return SaaSErrorState(
+        message: _error!,
+        onRetry: () => _loadDiagnostics(),
+      );
     }
 
     final data = _data ?? {};
@@ -1012,8 +1202,10 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
     final caches = (data['caches'] as List?) ?? [];
     final metrics = (data['operationalMetrics'] as Map?) ?? {};
 
-    final heapPercent = ((jvm['heapUsagePercent'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 100.0);
-    final diskPercent = ((disk['usagePercent'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 100.0);
+    final heapPercent = ((jvm['heapUsagePercent'] as num?)?.toDouble() ?? 0.0)
+        .clamp(0.0, 100.0);
+    final diskPercent = ((disk['usagePercent'] as num?)?.toDouble() ?? 0.0)
+        .clamp(0.0, 100.0);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -1025,76 +1217,92 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isOverallUp
-                      ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                      : const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isOverallUp ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isOverallUp
+                        ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                        : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isOverallUp
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFF59E0B),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: isOverallUp
+                              ? const Color(0xFF10B981)
+                              : const Color(0xFFF59E0B),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isOverallUp
+                            ? 'SISTEMA OPERACIONAL (STATUS UP)'
+                            : 'STATUS DEGRADADO',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isOverallUp
+                              ? const Color(0xFF047857)
+                              : const Color(0xFFB45309),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Row(
+                const SizedBox(width: 16),
+                Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: isOverallUp ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
-                        shape: BoxShape.circle,
-                      ),
+                    const Text(
+                      'Auto-refresh (15s):',
+                      style: TextStyle(fontSize: 12),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      isOverallUp ? 'SISTEMA OPERACIONAL (STATUS UP)' : 'STATUS DEGRADADO',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: isOverallUp ? const Color(0xFF047857) : const Color(0xFFB45309),
-                      ),
+                    Switch(
+                      value: _autoRefresh,
+                      onChanged: (val) {
+                        setState(() => _autoRefresh = val);
+                        _startTimer();
+                      },
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 16),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Auto-refresh (15s):', style: TextStyle(fontSize: 12)),
-                  Switch(
-                    value: _autoRefresh,
-                    onChanged: (val) {
-                      setState(() => _autoRefresh = val);
-                      _startTimer();
-                    },
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Atualizar'),
+                  onPressed: () => _loadDiagnostics(),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.download_outlined, size: 16),
+                  label: const Text('Exportar Relatório'),
+                  onPressed: _exportDiagnosticsReport,
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF4444),
                   ),
-                ],
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Atualizar'),
-                onPressed: () => _loadDiagnostics(),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.download_outlined, size: 16),
-                label: const Text('Exportar Relatório'),
-                onPressed: _exportDiagnosticsReport,
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
-                icon: const Icon(Icons.cleaning_services_outlined, size: 16),
-                label: const Text('Limpar Caches'),
-                onPressed: () => _evictCaches(),
-              ),
-            ],
+                  icon: const Icon(Icons.cleaning_services_outlined, size: 16),
+                  label: const Text('Limpar Caches'),
+                  onPressed: () => _evictCaches(),
+                ),
+              ],
+            ),
           ),
-        ),
           const SizedBox(height: 16),
 
           // 4 Status Cards
@@ -1115,12 +1323,19 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.dns_outlined, color: Color(0xFF2563EB), size: 18),
+                          const Icon(
+                            Icons.dns_outlined,
+                            color: Color(0xFF2563EB),
+                            size: 18,
+                          ),
                           const SizedBox(width: 6),
                           const Expanded(
                             child: Text(
                               'Banco de Dados',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -1131,12 +1346,18 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                       const SizedBox(height: 14),
                       Text(
                         '${db['latencyMs'] ?? 0} ms',
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         'Latência do ping (${db['validationQuery'] ?? 'SELECT 1'})',
-                        style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: SaaSColors.muted(context),
+                        ),
                       ),
                     ],
                   ),
@@ -1158,35 +1379,58 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.memory_outlined, color: Color(0xFF7C3AED), size: 18),
+                          const Icon(
+                            Icons.memory_outlined,
+                            color: Color(0xFF7C3AED),
+                            size: 18,
+                          ),
                           const SizedBox(width: 6),
                           const Expanded(
                             child: Text(
                               'Memória JVM Heap',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 4),
-                          Text('$heapPercent%', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          Text(
+                            '$heapPercent%',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
                       LinearProgressIndicator(
                         value: heapPercent / 100.0,
-                        backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                        color: heapPercent > 85 ? const Color(0xFFEF4444) : const Color(0xFF7C3AED),
+                        backgroundColor: isDark
+                            ? const Color(0xFF334155)
+                            : const Color(0xFFE2E8F0),
+                        color: heapPercent > 85
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFF7C3AED),
                         borderRadius: BorderRadius.circular(4),
                         minHeight: 8,
                       ),
                       const SizedBox(height: 10),
                       Text(
                         '${jvm['heapUsedMb'] ?? 0} MB usados / ${jvm['heapMaxMb'] ?? 0} MB max',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       Text(
                         'Non-Heap: ${jvm['nonHeapUsedMb'] ?? 0} MB • Uptime: ${(jvm['uptimeSeconds'] ?? 0) ~/ 3600}h ${((jvm['uptimeSeconds'] ?? 0) % 3600) ~/ 60}m',
-                        style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: SaaSColors.muted(context),
+                        ),
                       ),
                     ],
                   ),
@@ -1208,35 +1452,58 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.storage_outlined, color: Color(0xFF059669), size: 18),
+                          const Icon(
+                            Icons.storage_outlined,
+                            color: Color(0xFF059669),
+                            size: 18,
+                          ),
                           const SizedBox(width: 6),
                           const Expanded(
                             child: Text(
                               'Armazenamento',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 4),
-                          Text('$diskPercent%', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          Text(
+                            '$diskPercent%',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
                       LinearProgressIndicator(
                         value: diskPercent / 100.0,
-                        backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                        color: diskPercent > 90 ? const Color(0xFFEF4444) : const Color(0xFF059669),
+                        backgroundColor: isDark
+                            ? const Color(0xFF334155)
+                            : const Color(0xFFE2E8F0),
+                        color: diskPercent > 90
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFF059669),
                         borderRadius: BorderRadius.circular(4),
                         minHeight: 8,
                       ),
                       const SizedBox(height: 10),
                       Text(
                         '${disk['freeMb'] ?? 0} MB livres',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       Text(
                         'Capacidade total: ${disk['totalMb'] ?? 0} MB',
-                        style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: SaaSColors.muted(context),
+                        ),
                       ),
                     ],
                   ),
@@ -1258,28 +1525,43 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.stream, color: Color(0xFFD97706), size: 18),
+                          const Icon(
+                            Icons.stream,
+                            color: Color(0xFFD97706),
+                            size: 18,
+                          ),
                           const SizedBox(width: 6),
                           const Expanded(
                             child: Text(
                               'SSE Realtime',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 4),
-                          _buildStatusPill(realtime['status']?.toString() ?? 'UP'),
+                          _buildStatusPill(
+                            realtime['status']?.toString() ?? 'UP',
+                          ),
                         ],
                       ),
                       const SizedBox(height: 14),
                       Text(
                         '${realtime['activeConnections'] ?? 0}',
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '${realtime['connectedUsers'] ?? 0} usuários • ${realtime['connectedCondominiums'] ?? 0} condomínios',
-                        style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: SaaSColors.muted(context),
+                        ),
                       ),
                     ],
                   ),
@@ -1306,20 +1588,58 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                     SizedBox(width: 8),
                     Text(
                       'Métricas Operacionais em Tempo Real',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    _buildMetricStat('Logins Sucesso', '${metrics['loginSuccess'] ?? 0}', Icons.check_circle_outline, Colors.green),
-                    _buildMetricStat('Logins Falha', '${metrics['loginFailure'] ?? 0}', Icons.highlight_off, Colors.red),
-                    _buildMetricStat('Reservas Feitas', '${metrics['reservationCreated'] ?? 0}', Icons.event_available, Colors.blue),
-                    _buildMetricStat('Conflitos de Reserva', '${metrics['reservationConflict'] ?? 0}', Icons.event_busy, Colors.orange),
-                    _buildMetricStat('Encomendas Recebidas', '${metrics['packageReceived'] ?? 0}', Icons.move_to_inbox, Colors.indigo),
-                    _buildMetricStat('Alertas de Pânico', '${metrics['emergencyTriggered'] ?? 0}', Icons.emergency_outlined, Colors.redAccent),
-                    _buildMetricStat('Check-ins Visitantes', '${metrics['visitorCheckIn'] ?? 0}', Icons.badge_outlined, Colors.teal),
+                    _buildMetricStat(
+                      'Logins Sucesso',
+                      '${metrics['loginSuccess'] ?? 0}',
+                      Icons.check_circle_outline,
+                      Colors.green,
+                    ),
+                    _buildMetricStat(
+                      'Logins Falha',
+                      '${metrics['loginFailure'] ?? 0}',
+                      Icons.highlight_off,
+                      Colors.red,
+                    ),
+                    _buildMetricStat(
+                      'Reservas Feitas',
+                      '${metrics['reservationCreated'] ?? 0}',
+                      Icons.event_available,
+                      Colors.blue,
+                    ),
+                    _buildMetricStat(
+                      'Conflitos de Reserva',
+                      '${metrics['reservationConflict'] ?? 0}',
+                      Icons.event_busy,
+                      Colors.orange,
+                    ),
+                    _buildMetricStat(
+                      'Encomendas Recebidas',
+                      '${metrics['packageReceived'] ?? 0}',
+                      Icons.move_to_inbox,
+                      Colors.indigo,
+                    ),
+                    _buildMetricStat(
+                      'Alertas de Pânico',
+                      '${metrics['emergencyTriggered'] ?? 0}',
+                      Icons.emergency_outlined,
+                      Colors.redAccent,
+                    ),
+                    _buildMetricStat(
+                      'Check-ins Visitantes',
+                      '${metrics['visitorCheckIn'] ?? 0}',
+                      Icons.badge_outlined,
+                      Colors.teal,
+                    ),
                   ],
                 ),
               ],
@@ -1340,16 +1660,26 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.cached, size: 20, color: Color(0xFF7C3AED)),
+                    const Icon(
+                      Icons.cached,
+                      size: 20,
+                      color: Color(0xFF7C3AED),
+                    ),
                     const SizedBox(width: 8),
                     const Text(
                       'Caches do Spring Framework (In-Memory Acceleration)',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                     ),
                     const Spacer(),
                     Text(
                       '${caches.length} caches registrados',
-                      style: TextStyle(fontSize: 12, color: SaaSColors.muted(context)),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: SaaSColors.muted(context),
+                      ),
                     ),
                   ],
                 ),
@@ -1357,7 +1687,10 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                 if (caches.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text('Nenhum cache ativo no momento.', style: TextStyle(color: SaaSColors.muted(context))),
+                    child: Text(
+                      'Nenhum cache ativo no momento.',
+                      style: TextStyle(color: SaaSColors.muted(context)),
+                    ),
                   )
                 else
                   Wrap(
@@ -1371,7 +1704,9 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                         width: 220,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                          color: isDark
+                              ? const Color(0xFF0F172A)
+                              : const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: borderColor),
                         ),
@@ -1383,17 +1718,26 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
                                 children: [
                                   Text(
                                     name,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
                                   ),
                                   Text(
                                     '$count entradas em cache',
-                                    style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: SaaSColors.muted(context),
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                              icon: const Icon(
+                                Icons.delete_sweep_outlined,
+                                size: 18,
+                              ),
                               tooltip: 'Limpar este cache',
                               onPressed: () => _evictCaches(cacheName: name),
                             ),
@@ -1415,7 +1759,9 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: isUp ? const Color(0xFF10B981).withValues(alpha: 0.15) : const Color(0xFFEF4444).withValues(alpha: 0.15),
+        color: isUp
+            ? const Color(0xFF10B981).withValues(alpha: 0.15)
+            : const Color(0xFFEF4444).withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
@@ -1429,13 +1775,21 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
     );
   }
 
-  Widget _buildMetricStat(String label, String value, IconData icon, Color color) {
+  Widget _buildMetricStat(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Expanded(
       child: Column(
         children: [
           Icon(icon, color: color, size: 22),
           const SizedBox(height: 6),
-          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 2),
           Text(
             label,
@@ -1454,10 +1808,7 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
 // 3. PERMISSIONS & ROLES MATRIX VIEW (Permissões, Papéis e Planos Comerciais)
 // ============================================================================
 class AdminPermissionsView extends StatefulWidget {
-  const AdminPermissionsView({
-    super.key,
-    required this.api,
-  });
+  const AdminPermissionsView({super.key, required this.api});
 
   final HomeService api;
 
@@ -1514,13 +1865,17 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    final borderColor = isDark
+        ? const Color(0xFF334155)
+        : const Color(0xFFE2E8F0);
 
     if (_loading && _data == null) {
       return const Padding(
         padding: EdgeInsets.all(40),
         child: Center(
-          child: SaaSLoadingState(message: 'Carregando matriz de papéis e planos comerciais...'),
+          child: SaaSLoadingState(
+            message: 'Carregando matriz de papéis e planos comerciais...',
+          ),
         ),
       );
     }
@@ -1530,7 +1885,7 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
     }
 
     final roles = (_data?['roles'] as List?) ?? [];
-    final plans = (_data?['commercialPlans'] as List?) ?? [];
+    final plans = (_data?['billingPlans'] as List?) ?? [];
     final usersByRole = (_overview?['usersByRole'] as Map?) ?? {};
 
     return SingleChildScrollView(
@@ -1543,9 +1898,13 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
             children: [
               Icon(Icons.admin_panel_settings, color: Color(0xFF2563EB)),
               SizedBox(width: 8),
-              Text(
-                'Matriz de Controle de Acesso Baseado em Papéis (RBAC)',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+              Expanded(
+                child: Text(
+                  'Matriz de Controle de Acesso Baseado em Papéis (RBAC)',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
               ),
             ],
           ),
@@ -1557,8 +1916,9 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
           const SizedBox(height: 16),
 
           // 4 Roles Grid
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
             children: roles.map((r) {
               final roleMap = r is Map ? r : {};
               final roleName = roleMap['role']?.toString() ?? '';
@@ -1589,9 +1949,9 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                   break;
               }
 
-              return Expanded(
+              return SizedBox(
+                width: 248,
                 child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 6),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: cardBg,
@@ -1604,7 +1964,9 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                       Row(
                         children: [
                           CircleAvatar(
-                            backgroundColor: accentColor.withValues(alpha: 0.15),
+                            backgroundColor: accentColor.withValues(
+                              alpha: 0.15,
+                            ),
                             radius: 18,
                             child: Icon(roleIcon, color: accentColor, size: 20),
                           ),
@@ -1623,7 +1985,10 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                                 ),
                                 Text(
                                   '$userCount usuários',
-                                  style: TextStyle(fontSize: 11, color: SaaSColors.muted(context)),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: SaaSColors.muted(context),
+                                  ),
                                 ),
                               ],
                             ),
@@ -1633,18 +1998,29 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                       const SizedBox(height: 10),
                       Text(
                         label,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                          color: isDark
+                              ? const Color(0xFF0F172A)
+                              : const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           'Escopo: $scope',
-                          style: TextStyle(fontSize: 10.5, color: SaaSColors.muted(context)),
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: SaaSColors.muted(context),
+                          ),
                         ),
                       ),
                       const Divider(height: 20),
@@ -1654,12 +2030,19 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.check, size: 14, color: Color(0xFF10B981)),
+                              const Icon(
+                                Icons.check,
+                                size: 14,
+                                color: Color(0xFF10B981),
+                              ),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
                                   p.toString(),
-                                  style: const TextStyle(fontSize: 11.5, height: 1.3),
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    height: 1.3,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1679,9 +2062,13 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
             children: [
               Icon(Icons.workspace_premium_outlined, color: Color(0xFF7C3AED)),
               SizedBox(width: 8),
-              Text(
-                'Planos Comerciais e Catálogo de Recursos de Assinatura',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+              Expanded(
+                child: Text(
+                  'Planos Comerciais e Catálogo de Recursos de Assinatura',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
               ),
             ],
           ),
@@ -1696,7 +2083,10 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
           if (plans.isEmpty)
             Padding(
               padding: const EdgeInsets.all(20),
-              child: Text('Nenhum plano cadastrado.', style: TextStyle(color: SaaSColors.muted(context))),
+              child: Text(
+                'Nenhum plano cadastrado.',
+                style: TextStyle(color: SaaSColors.muted(context)),
+              ),
             )
           else
             Wrap(
@@ -1706,7 +2096,9 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                 final planMap = p is Map ? p : {};
                 final planName = planMap['name']?.toString() ?? 'Plano';
                 final monthlyFee = planMap['monthlyFee'];
-                final feeStr = monthlyFee != null ? 'R\$ $monthlyFee/mês' : 'Sob consulta';
+                final feeStr = monthlyFee != null
+                    ? 'R\$ $monthlyFee/mês'
+                    : 'Sob consulta';
                 final features = (planMap['features'] as List?) ?? [];
 
                 return Container(
@@ -1725,18 +2117,30 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                           Expanded(
                             child: Text(
                               planName,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                              color: const Color(
+                                0xFF10B981,
+                              ).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Text(
                               'ATIVO',
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF047857),
+                              ),
                             ),
                           ),
                         ],
@@ -1744,25 +2148,42 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                       const SizedBox(height: 4),
                       Text(
                         feeStr,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2563EB),
+                        ),
                       ),
                       const Divider(height: 20),
                       Text(
                         'Recursos Incluídos (${features.length}):',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       ...features.map((f) {
                         final fMap = f is Map ? f : {};
-                        final fName = fMap['name']?.toString() ?? fMap['code']?.toString() ?? f.toString();
+                        final fName =
+                            fMap['name']?.toString() ??
+                            fMap['code']?.toString() ??
+                            f.toString();
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 3),
                           child: Row(
                             children: [
-                              const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF10B981)),
+                              const Icon(
+                                Icons.check_circle_outline,
+                                size: 14,
+                                color: Color(0xFF10B981),
+                              ),
                               const SizedBox(width: 6),
                               Expanded(
-                                child: Text(fName, style: const TextStyle(fontSize: 12)),
+                                child: Text(
+                                  fName,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
                               ),
                             ],
                           ),

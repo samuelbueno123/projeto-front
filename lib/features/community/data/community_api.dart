@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../home/data/home_service.dart';
 
 class CommunityApi {
@@ -13,7 +15,9 @@ class CommunityApi {
   }) async {
     final startStr = Uri.encodeComponent(startAt.toIso8601String());
     final endStr = Uri.encodeComponent(endAt.toIso8601String());
-    final res = await api.get('/common-areas/$areaId/check-availability?startAt=$startStr&endAt=$endStr');
+    final res = await api.get(
+      '/common-areas/$areaId/check-availability?startAt=$startStr&endAt=$endStr',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -21,8 +25,11 @@ class CommunityApi {
     required num areaId,
     required DateTime date,
   }) async {
-    final dateStr = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    final res = await api.get('/common-areas/$areaId/availability?date=$dateStr');
+    final dateStr =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final res = await api.get(
+      '/common-areas/$areaId/availability?date=$dateStr',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -33,12 +40,16 @@ class CommunityApi {
     required String contactPhone,
     String? notes,
   }) async {
-    final res = await api.send('POST', '/common-areas/$areaId/reservations', body: {
-      'startAt': startAt.toIso8601String(),
-      'endAt': endAt.toIso8601String(),
-      'contactPhone': contactPhone,
-      if (notes != null && notes.isNotEmpty) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/common-areas/$areaId/reservations',
+      body: {
+        'startAt': startAt.toIso8601String(),
+        'endAt': endAt.toIso8601String(),
+        'contactPhone': contactPhone,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -47,9 +58,15 @@ class CommunityApi {
   }
 
   Future<void> rejectReservation(num reservationId, [String? reason]) async {
-    await api.send('PATCH', '/reservations/$reservationId/reject', body: {
-      if (reason != null && reason.isNotEmpty) 'reason': reason,
-    });
+    await api.send(
+      'PATCH',
+      '/reservations/$reservationId/reject',
+      body: {if (reason != null && reason.isNotEmpty) 'reason': reason},
+    );
+  }
+
+  Future<void> cancelReservation(num reservationId) async {
+    await api.send('PATCH', '/reservations/$reservationId/cancel');
   }
 
   Future<Map<String, dynamic>> joinWaitlist({
@@ -59,12 +76,16 @@ class CommunityApi {
     required String contactPhone,
     String? notes,
   }) async {
-    final res = await api.send('POST', '/common-areas/$areaId/waitlist', body: {
-      'startAt': startAt.toIso8601String(),
-      'endAt': endAt.toIso8601String(),
-      'contactPhone': contactPhone,
-      if (notes != null && notes.isNotEmpty) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/common-areas/$areaId/waitlist',
+      body: {
+        'startAt': startAt.toIso8601String(),
+        'endAt': endAt.toIso8601String(),
+        'contactPhone': contactPhone,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -74,12 +95,16 @@ class CommunityApi {
   }
 
   // 0.05 CONFIRMAÇÃO DE LEITURA DE COMUNICADOS
-  Future<Map<String, dynamic>> markAnnouncementAsRead(num announcementId) async {
+  Future<Map<String, dynamic>> markAnnouncementAsRead(
+    num announcementId,
+  ) async {
     final res = await api.send('POST', '/announcements/$announcementId/read');
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<List<Map<String, dynamic>>> getAnnouncementReaders(num announcementId) async {
+  Future<List<Map<String, dynamic>>> getAnnouncementReaders(
+    num announcementId,
+  ) async {
     final res = await api.get('/announcements/$announcementId/reads');
     return _asList(res);
   }
@@ -95,6 +120,11 @@ class CommunityApi {
     return _asList(res);
   }
 
+  Future<List<Map<String, dynamic>>> getCondominiumUnits(num condoId) async {
+    final res = await api.get('/units?condominiumId=$condoId');
+    return _asList(res);
+  }
+
   Future<List<Map<String, dynamic>>> getMyMembershipRequests() async {
     final res = await api.get('/membership-requests/my');
     return _asList(res);
@@ -107,12 +137,16 @@ class CommunityApi {
     String? residentType,
     String? message,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/membership-requests', body: {
-      'authority': authority,
-      if (unitId != null) 'unitId': unitId,
-      if (residentType != null) 'residentType': residentType,
-      if (message != null && message.isNotEmpty) 'message': message,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/membership-requests',
+      body: {
+        'authority': authority,
+        if (unitId != null) 'unitId': unitId,
+        if (residentType != null) 'residentType': residentType,
+        if (message != null && message.isNotEmpty) 'message': message,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -122,10 +156,14 @@ class CommunityApi {
     num? unitId,
     String? residentType,
   }) async {
-    await api.send('POST', '/manager/condominiums/$condoId/membership-requests/$membershipId/approve', body: {
-      if (unitId != null) 'unitId': unitId,
-      if (residentType != null) 'residentType': residentType,
-    });
+    await api.send(
+      'POST',
+      '/manager/condominiums/$condoId/membership-requests/$membershipId/approve',
+      body: {
+        if (unitId != null) 'unitId': unitId,
+        if (residentType != null) 'residentType': residentType,
+      },
+    );
   }
 
   Future<void> rejectMembershipRequest({
@@ -133,9 +171,11 @@ class CommunityApi {
     required num membershipId,
     String? reason,
   }) async {
-    await api.send('POST', '/manager/condominiums/$condoId/membership-requests/$membershipId/reject', body: {
-      if (reason != null) 'reason': reason,
-    });
+    await api.send(
+      'POST',
+      '/manager/condominiums/$condoId/membership-requests/$membershipId/reject',
+      body: {if (reason != null) 'reason': reason},
+    );
   }
 
   // 0.2 FINANCEIRO DA UNIDADE & CONFIRMAÇÃO DE PAGAMENTO
@@ -149,9 +189,11 @@ class CommunityApi {
     required num unitId,
     required String note,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/units/$unitId/request-payment-confirmation', body: {
-      'note': note,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/units/$unitId/request-payment-confirmation',
+      body: {'note': note},
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -160,10 +202,11 @@ class CommunityApi {
     required String name,
     required String structuralType,
   }) async {
-    await api.send('POST', '/manager/condominiums/$condoId/sectors', body: {
-      'name': name,
-      'structuralType': structuralType,
-    });
+    await api.send(
+      'POST',
+      '/manager/condominiums/$condoId/sectors',
+      body: {'name': name, 'structuralType': structuralType},
+    );
   }
 
   Future<void> createUnit({
@@ -171,10 +214,11 @@ class CommunityApi {
     required num sectorId,
     required String identifier,
   }) async {
-    await api.send('POST', '/manager/condominiums/$condoId/units', body: {
-      'sectorId': sectorId,
-      'identifier': identifier,
-    });
+    await api.send(
+      'POST',
+      '/manager/condominiums/$condoId/units',
+      body: {'sectorId': sectorId, 'identifier': identifier},
+    );
   }
 
   // 0.3 ENCOMENDAS PRÉ-CADASTRADAS & HISTÓRICO
@@ -185,13 +229,17 @@ class CommunityApi {
     String? trackingCode,
     String? sender,
   }) async {
-    final res = await api.send('POST', '/packages/expected', body: {
-      'condominiumId': condoId,
-      'unitId': unitId,
-      'description': description,
-      if (trackingCode != null) 'trackingCode': trackingCode,
-      if (sender != null) 'sender': sender,
-    });
+    final res = await api.send(
+      'POST',
+      '/packages/expected',
+      body: {
+        'condominiumId': condoId,
+        'unitId': unitId,
+        'description': description,
+        if (trackingCode != null) 'trackingCode': trackingCode,
+        if (sender != null) 'sender': sender,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -200,7 +248,10 @@ class CommunityApi {
   }
 
   // 1. OCORRÊNCIAS & CHAMADOS
-  Future<List<Map<String, dynamic>>> listTickets(num condoId, {bool mine = false}) async {
+  Future<List<Map<String, dynamic>>> listTickets(
+    num condoId, {
+    bool mine = false,
+  }) async {
     final res = await api.get('/condominiums/$condoId/tickets?mine=$mine');
     return _asList(res);
   }
@@ -213,13 +264,17 @@ class CommunityApi {
     String? location,
     String? priority,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/tickets', body: {
-      'category': category,
-      'title': title,
-      'description': description,
-      if (location != null) 'location': location,
-      if (priority != null) 'priority': priority,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/tickets',
+      body: {
+        'category': category,
+        'title': title,
+        'description': description,
+        if (location != null) 'location': location,
+        if (priority != null) 'priority': priority,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -228,14 +283,21 @@ class CommunityApi {
     required String status,
     String? adminResponse,
   }) async {
-    await api.send('PATCH', '/tickets/$ticketId/status', body: {
-      'status': status,
-      if (adminResponse != null) 'adminResponse': adminResponse,
-    });
+    await api.send(
+      'PATCH',
+      '/tickets/$ticketId/status',
+      body: {
+        'status': status,
+        if (adminResponse != null) 'adminResponse': adminResponse,
+      },
+    );
   }
 
   // 2. VISITANTES & PRE-AUTORIZAÇÃO
-  Future<List<Map<String, dynamic>>> listVisitors(num condoId, {bool mine = false}) async {
+  Future<List<Map<String, dynamic>>> listVisitors(
+    num condoId, {
+    bool mine = false,
+  }) async {
     final res = await api.get('/condominiums/$condoId/visitors?mine=$mine');
     return _asList(res);
   }
@@ -251,16 +313,20 @@ class CommunityApi {
     String? validUntil,
     String? notes,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/visitors', body: {
-      'visitorName': visitorName,
-      if (documentNumber != null) 'documentNumber': documentNumber,
-      if (visitorType != null) 'visitorType': visitorType,
-      if (vehiclePlate != null) 'vehiclePlate': vehiclePlate,
-      if (expectedDate != null) 'expectedDate': expectedDate,
-      if (validFrom != null) 'validFrom': validFrom,
-      if (validUntil != null) 'validUntil': validUntil,
-      if (notes != null) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/visitors',
+      body: {
+        'visitorName': visitorName,
+        if (documentNumber != null) 'documentNumber': documentNumber,
+        if (visitorType != null) 'visitorType': visitorType,
+        if (vehiclePlate != null) 'vehiclePlate': vehiclePlate,
+        if (expectedDate != null) 'expectedDate': expectedDate,
+        if (validFrom != null) 'validFrom': validFrom,
+        if (validUntil != null) 'validUntil': validUntil,
+        if (notes != null) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -269,10 +335,14 @@ class CommunityApi {
     required String qrCodeOrAccessCode,
     bool autoCheckIn = true,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/visitors/validate-qr', body: {
-      'qrCodeOrAccessCode': qrCodeOrAccessCode.trim(),
-      'autoCheckIn': autoCheckIn,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/visitors/validate-qr',
+      body: {
+        'qrCodeOrAccessCode': qrCodeOrAccessCode.trim(),
+        'autoCheckIn': autoCheckIn,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -301,12 +371,16 @@ class CommunityApi {
     required List<String> options,
     DateTime? endsAt,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/polls', body: {
-      'title': title,
-      'description': description,
-      'options': options,
-      if (endsAt != null) 'endsAt': endsAt.toIso8601String(),
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/polls',
+      body: {
+        'title': title,
+        'description': description,
+        'options': options,
+        if (endsAt != null) 'endsAt': endsAt.toIso8601String(),
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -314,9 +388,11 @@ class CommunityApi {
     required num pollId,
     required num optionId,
   }) async {
-    final res = await api.send('POST', '/polls/$pollId/vote', body: {
-      'optionId': optionId,
-    });
+    final res = await api.send(
+      'POST',
+      '/polls/$pollId/vote',
+      body: {'optionId': optionId},
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -339,14 +415,18 @@ class CommunityApi {
     String? location,
     String? imageUrl,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/lost-found', body: {
-      'type': type,
-      'title': title,
-      'description': description,
-      if (category != null && category.isNotEmpty) 'category': category,
-      if (location != null) 'location': location,
-      if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/lost-found',
+      body: {
+        'type': type,
+        'title': title,
+        'description': description,
+        if (category != null && category.isNotEmpty) 'category': category,
+        if (location != null) 'location': location,
+        if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -358,10 +438,18 @@ class CommunityApi {
     await api.send('PATCH', '/lost-found/$id/return');
   }
 
-  Future<Map<String, dynamic>> closeLostFound(num id, {String? resolutionNotes}) async {
-    final res = await api.send('PATCH', '/lost-found/$id/close', body: {
-      if (resolutionNotes != null && resolutionNotes.isNotEmpty) 'resolutionNotes': resolutionNotes,
-    });
+  Future<Map<String, dynamic>> closeLostFound(
+    num id, {
+    String? resolutionNotes,
+  }) async {
+    final res = await api.send(
+      'PATCH',
+      '/lost-found/$id/close',
+      body: {
+        if (resolutionNotes != null && resolutionNotes.isNotEmpty)
+          'resolutionNotes': resolutionNotes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -375,10 +463,15 @@ class CommunityApi {
     required String message,
     String? contactInfo,
   }) async {
-    final res = await api.send('POST', '/lost-found/$id/messages', body: {
-      'message': message,
-      if (contactInfo != null && contactInfo.isNotEmpty) 'contactInfo': contactInfo,
-    });
+    final res = await api.send(
+      'POST',
+      '/lost-found/$id/messages',
+      body: {
+        'message': message,
+        if (contactInfo != null && contactInfo.isNotEmpty)
+          'contactInfo': contactInfo,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -396,26 +489,34 @@ class CommunityApi {
     String? price,
     String? contactPhone,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/classifieds', body: {
-      'category': category,
-      'title': title,
-      'description': description,
-      if (price != null) 'price': price,
-      if (contactPhone != null) 'contactPhone': contactPhone,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/classifieds',
+      body: {
+        'category': category,
+        'title': title,
+        'description': description,
+        if (price != null) 'price': price,
+        if (contactPhone != null) 'contactPhone': contactPhone,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   Future<void> sendClassifiedInterest(num id, String message) async {
-    await api.send('POST', '/classifieds/$id/interest', body: {
-      'message': message,
-    });
+    await api.send(
+      'POST',
+      '/classifieds/$id/interest',
+      body: {'message': message},
+    );
   }
 
   Future<void> updateClassifiedStatus(num id, String status) async {
-    await api.send('PATCH', '/classifieds/$id/status', body: {
-      'status': status,
-    });
+    await api.send(
+      'PATCH',
+      '/classifieds/$id/status',
+      body: {'status': status},
+    );
   }
 
   // 6. VEÍCULOS, VAGAS DE GARAGEM & CONSULTA DE PLACAS
@@ -431,12 +532,17 @@ class CommunityApi {
     String? description,
     num? unitId,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/parking-spots', body: {
-      'code': code,
-      if (spotType != null) 'spotType': spotType,
-      if (description != null && description.isNotEmpty) 'description': description,
-      if (unitId != null) 'unitId': unitId,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/parking-spots',
+      body: {
+        'code': code,
+        if (spotType != null) 'spotType': spotType,
+        if (description != null && description.isNotEmpty)
+          'description': description,
+        if (unitId != null) 'unitId': unitId,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -448,13 +554,17 @@ class CommunityApi {
     num? unitId,
     String? status,
   }) async {
-    final res = await api.send('PUT', '/parking-spots/$spotId', body: {
-      if (code != null) 'code': code,
-      if (spotType != null) 'spotType': spotType,
-      if (description != null) 'description': description,
-      if (unitId != null) 'unitId': unitId,
-      if (status != null) 'status': status,
-    });
+    final res = await api.send(
+      'PUT',
+      '/parking-spots/$spotId',
+      body: {
+        if (code != null) 'code': code,
+        if (spotType != null) 'spotType': spotType,
+        if (description != null) 'description': description,
+        if (unitId != null) 'unitId': unitId,
+        if (status != null) 'status': status,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -462,7 +572,10 @@ class CommunityApi {
     await api.send('DELETE', '/parking-spots/$spotId');
   }
 
-  Future<List<Map<String, dynamic>>> listVehicles(num condoId, {bool mine = false}) async {
+  Future<List<Map<String, dynamic>>> listVehicles(
+    num condoId, {
+    bool mine = false,
+  }) async {
     final res = await api.get('/condominiums/$condoId/vehicles?mine=$mine');
     return _asList(res);
   }
@@ -477,21 +590,27 @@ class CommunityApi {
     num? parkingSpotId,
     String? notes,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/vehicles', body: {
-      'type': type,
-      'brandModel': brandModel,
-      'color': color,
-      'licensePlate': licensePlate,
-      if (parkingSpot != null) 'parkingSpot': parkingSpot,
-      if (parkingSpotId != null) 'parkingSpotId': parkingSpotId,
-      if (notes != null && notes.isNotEmpty) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/vehicles',
+      body: {
+        'type': type,
+        'brandModel': brandModel,
+        'color': color,
+        'licensePlate': licensePlate,
+        if (parkingSpot != null) 'parkingSpot': parkingSpot,
+        if (parkingSpotId != null) 'parkingSpotId': parkingSpotId,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   Future<Map<String, dynamic>> checkPlate(num condoId, String plate) async {
     final p = Uri.encodeComponent(plate.trim());
-    final res = await api.get('/condominiums/$condoId/vehicles/check-plate?plate=$p');
+    final res = await api.get(
+      '/condominiums/$condoId/vehicles/check-plate?plate=$p',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -500,9 +619,11 @@ class CommunityApi {
   }
 
   Future<void> rejectVehicle(num id, [String? notes]) async {
-    await api.send('PATCH', '/vehicles/$id/reject', body: {
-      if (notes != null && notes.isNotEmpty) 'notes': notes,
-    });
+    await api.send(
+      'PATCH',
+      '/vehicles/$id/reject',
+      body: {if (notes != null && notes.isNotEmpty) 'notes': notes},
+    );
   }
 
   Future<void> deleteVehicle(num id) async {
@@ -510,7 +631,10 @@ class CommunityApi {
   }
 
   // 7. CENSO DE PETS
-  Future<List<Map<String, dynamic>>> listPets(num condoId, {bool mine = false}) async {
+  Future<List<Map<String, dynamic>>> listPets(
+    num condoId, {
+    bool mine = false,
+  }) async {
     final res = await api.get('/condominiums/$condoId/pets?mine=$mine');
     return _asList(res);
   }
@@ -526,17 +650,21 @@ class CommunityApi {
     String? lastVaccinationDate,
     String? notes,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/pets', body: {
-      'name': name,
-      'species': species,
-      if (breed != null) 'breed': breed,
-      if (size != null) 'size': size,
-      if (color != null && color.isNotEmpty) 'color': color,
-      'vaccinated': vaccinated,
-      if (lastVaccinationDate != null && lastVaccinationDate.isNotEmpty)
-        'lastVaccinationDate': lastVaccinationDate,
-      if (notes != null) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/pets',
+      body: {
+        'name': name,
+        'species': species,
+        if (breed != null) 'breed': breed,
+        if (size != null) 'size': size,
+        if (color != null && color.isNotEmpty) 'color': color,
+        'vaccinated': vaccinated,
+        if (lastVaccinationDate != null && lastVaccinationDate.isNotEmpty)
+          'lastVaccinationDate': lastVaccinationDate,
+        if (notes != null) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -552,17 +680,22 @@ class CommunityApi {
     String? notes,
     String? managerNotes,
   }) async {
-    final res = await api.send('PUT', '/pets/$id', body: {
-      if (name != null) 'name': name,
-      if (species != null) 'species': species,
-      if (breed != null) 'breed': breed,
-      if (size != null) 'size': size,
-      if (color != null) 'color': color,
-      if (vaccinated != null) 'vaccinated': vaccinated,
-      if (lastVaccinationDate != null) 'lastVaccinationDate': lastVaccinationDate,
-      if (notes != null) 'notes': notes,
-      if (managerNotes != null) 'managerNotes': managerNotes,
-    });
+    final res = await api.send(
+      'PUT',
+      '/pets/$id',
+      body: {
+        if (name != null) 'name': name,
+        if (species != null) 'species': species,
+        if (breed != null) 'breed': breed,
+        if (size != null) 'size': size,
+        if (color != null) 'color': color,
+        if (vaccinated != null) 'vaccinated': vaccinated,
+        if (lastVaccinationDate != null)
+          'lastVaccinationDate': lastVaccinationDate,
+        if (notes != null) 'notes': notes,
+        if (managerNotes != null) 'managerNotes': managerNotes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -571,14 +704,25 @@ class CommunityApi {
   }
 
   // 8. AGENDAMENTO DE MUDANÇAS E CARGAS PESADAS
-  Future<Map<String, dynamic>> checkMovingAvailability(num condoId, DateTime date) async {
-    final d = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    final res = await api.get('/condominiums/$condoId/moving-requests/check-availability?date=$d');
+  Future<Map<String, dynamic>> checkMovingAvailability(
+    num condoId,
+    DateTime date,
+  ) async {
+    final d =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final res = await api.get(
+      '/condominiums/$condoId/moving-requests/check-availability?date=$d',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<List<Map<String, dynamic>>> listMovingRequests(num condoId, {bool mine = false}) async {
-    final res = await api.get('/condominiums/$condoId/moving-requests?mine=$mine');
+  Future<List<Map<String, dynamic>>> listMovingRequests(
+    num condoId, {
+    bool mine = false,
+  }) async {
+    final res = await api.get(
+      '/condominiums/$condoId/moving-requests?mine=$mine',
+    );
     return _asList(res);
   }
 
@@ -591,14 +735,18 @@ class CommunityApi {
     String? contactPhone,
     String? notes,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/moving-requests', body: {
-      'type': type,
-      'movingDate': movingDate,
-      'period': period,
-      if (companyName != null) 'companyName': companyName,
-      if (contactPhone != null) 'contactPhone': contactPhone,
-      if (notes != null) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/moving-requests',
+      body: {
+        'type': type,
+        'movingDate': movingDate,
+        'period': period,
+        if (companyName != null) 'companyName': companyName,
+        if (contactPhone != null) 'contactPhone': contactPhone,
+        if (notes != null) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -607,9 +755,15 @@ class CommunityApi {
   }
 
   Future<void> rejectMovingRequest(num id, [String? reason]) async {
-    await api.send('PATCH', '/moving-requests/$id/reject', body: {
-      if (reason != null) 'reason': reason,
-    });
+    await api.send(
+      'PATCH',
+      '/moving-requests/$id/reject',
+      body: {if (reason != null) 'reason': reason},
+    );
+  }
+
+  Future<void> cancelMovingRequest(num id) async {
+    await api.send('PATCH', '/moving-requests/$id/cancel');
   }
 
   // 9. REPOSITÓRIO DE DOCUMENTOS, ATAS E CONTATOS
@@ -626,13 +780,17 @@ class CommunityApi {
     String? contentOrUrl,
     bool pinned = false,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/documents', body: {
-      'category': category,
-      'title': title,
-      if (summary != null) 'summary': summary,
-      if (contentOrUrl != null) 'contentOrUrl': contentOrUrl,
-      'pinned': pinned,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/documents',
+      body: {
+        'category': category,
+        'title': title,
+        if (summary != null) 'summary': summary,
+        if (contentOrUrl != null) 'contentOrUrl': contentOrUrl,
+        'pinned': pinned,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -641,7 +799,10 @@ class CommunityApi {
   }
 
   // 10. SMART LOCKERS & ARMÁRIOS INTELIGENTES
-  Future<List<Map<String, dynamic>>> listLockers(num condoId, {bool mine = false}) async {
+  Future<List<Map<String, dynamic>>> listLockers(
+    num condoId, {
+    bool mine = false,
+  }) async {
     final res = await api.get('/condominiums/$condoId/lockers?mine=$mine');
     return _asList(res);
   }
@@ -653,24 +814,33 @@ class CommunityApi {
     String? trackingCode,
     String? courierName,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/lockers', body: {
-      'compartmentNumber': compartmentNumber,
-      'unitId': unitId,
-      if (trackingCode != null) 'trackingCode': trackingCode,
-      if (courierName != null) 'courierName': courierName,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/lockers',
+      body: {
+        'compartmentNumber': compartmentNumber,
+        'unitId': unitId,
+        if (trackingCode != null) 'trackingCode': trackingCode,
+        if (courierName != null) 'courierName': courierName,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   Future<Map<String, dynamic>> retrieveLocker(num id, [String? pinCode]) async {
-    final res = await api.send('PATCH', '/lockers/$id/retrieve', body: {
-      if (pinCode != null && pinCode.isNotEmpty) 'pinCode': pinCode,
-    });
+    final res = await api.send(
+      'PATCH',
+      '/lockers/$id/retrieve',
+      body: {if (pinCode != null && pinCode.isNotEmpty) 'pinCode': pinCode},
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   // 11. LISTAS DE CONVIDADOS DE EVENTOS
-  Future<List<Map<String, dynamic>>> listGuestLists(num condoId, {bool mine = false}) async {
+  Future<List<Map<String, dynamic>>> listGuestLists(
+    num condoId, {
+    bool mine = false,
+  }) async {
     final res = await api.get('/condominiums/$condoId/guest-lists?mine=$mine');
     return _asList(res);
   }
@@ -679,15 +849,21 @@ class CommunityApi {
     required num condoId,
     required String eventTitle,
     required String eventDate,
+    String? notes,
     num? unitId,
     num? reservationId,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/guest-lists', body: {
-      'eventTitle': eventTitle,
-      'eventDate': eventDate,
-      if (unitId != null) 'unitId': unitId,
-      if (reservationId != null) 'reservationId': reservationId,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/guest-lists',
+      body: {
+        'eventTitle': eventTitle,
+        'eventDate': eventDate,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        if (unitId != null) 'unitId': unitId,
+        if (reservationId != null) 'reservationId': reservationId,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -696,10 +872,14 @@ class CommunityApi {
     required String guestName,
     String? documentNumber,
   }) async {
-    final res = await api.send('POST', '/guest-lists/$guestListId/guests', body: {
-      'guestName': guestName,
-      if (documentNumber != null) 'documentNumber': documentNumber,
-    });
+    final res = await api.send(
+      'POST',
+      '/guest-lists/$guestListId/guests',
+      body: {
+        'guestName': guestName,
+        if (documentNumber != null) 'documentNumber': documentNumber,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -712,7 +892,10 @@ class CommunityApi {
   }
 
   // 12. INFRAÇÕES, ADVERTÊNCIAS E DEFESAS
-  Future<List<Map<String, dynamic>>> listInfractions(num condoId, {bool mine = false}) async {
+  Future<List<Map<String, dynamic>>> listInfractions(
+    num condoId, {
+    bool mine = false,
+  }) async {
     final res = await api.get('/condominiums/$condoId/infractions?mine=$mine');
     return _asList(res);
   }
@@ -725,30 +908,40 @@ class CommunityApi {
     required String description,
     String? fineAmount,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/infractions', body: {
-      'unitId': unitId,
-      'type': type,
-      'title': title,
-      'description': description,
-      if (fineAmount != null) 'fineAmount': fineAmount,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/infractions',
+      body: {
+        'unitId': unitId,
+        'type': type,
+        'title': title,
+        'description': description,
+        if (fineAmount != null) 'fineAmount': fineAmount,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   Future<void> submitDefense(num infractionId, String defense) async {
-    await api.send('POST', '/infractions/$infractionId/defense', body: {
-      'defense': defense,
-    });
+    await api.send(
+      'POST',
+      '/infractions/$infractionId/defense',
+      body: {'defense': defense},
+    );
   }
 
-  Future<void> judgeInfraction(num infractionId, String status, String judgment) async {
-    await api.send('PATCH', '/infractions/$infractionId/judge', body: {
-      'status': status,
-      'judgment': judgment,
-    });
+  Future<void> judgeInfraction(
+    num infractionId,
+    String status,
+    String judgment,
+  ) async {
+    await api.send(
+      'PATCH',
+      '/infractions/$infractionId/judge',
+      body: {'status': status, 'judgment': judgment},
+    );
   }
 
-  
   // 13. CONTRAPROPOSTAS DE RESERVAS
   Future<void> counterProposeReservation({
     required num reservationId,
@@ -756,11 +949,15 @@ class CommunityApi {
     required DateTime proposedEndAt,
     String? notes,
   }) async {
-    await api.send('PATCH', '/reservations/$reservationId/counter-propose', body: {
-      'proposedStartAt': proposedStartAt.toIso8601String(),
-      'proposedEndAt': proposedEndAt.toIso8601String(),
-      if (notes != null && notes.isNotEmpty) 'notes': notes,
-    });
+    await api.send(
+      'PATCH',
+      '/reservations/$reservationId/counter-propose',
+      body: {
+        'proposedStartAt': proposedStartAt.toIso8601String(),
+        'proposedEndAt': proposedEndAt.toIso8601String(),
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
   }
 
   Future<void> modifyAndConfirmReservation({
@@ -769,35 +966,54 @@ class CommunityApi {
     required DateTime endAt,
     String? notes,
   }) async {
-    await api.send('PATCH', '/reservations/$reservationId/modify-and-confirm', body: {
-      'startAt': startAt.toIso8601String(),
-      'endAt': endAt.toIso8601String(),
-      if (notes != null && notes.isNotEmpty) 'notes': notes,
-    });
+    await api.send(
+      'PATCH',
+      '/reservations/$reservationId/modify-and-confirm',
+      body: {
+        'startAt': startAt.toIso8601String(),
+        'endAt': endAt.toIso8601String(),
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
   }
 
   Future<void> acceptCounterProposal(num reservationId) async {
-    await api.send('PATCH', '/reservations/$reservationId/accept-counter-proposal');
+    await api.send(
+      'PATCH',
+      '/reservations/$reservationId/accept-counter-proposal',
+    );
   }
 
   Future<void> declineCounterProposal(num reservationId) async {
-    await api.send('PATCH', '/reservations/$reservationId/decline-counter-proposal');
+    await api.send(
+      'PATCH',
+      '/reservations/$reservationId/decline-counter-proposal',
+    );
   }
 
-  Future<List<Map<String, dynamic>>> getCondominiumReservations(num condoId) async {
+  Future<List<Map<String, dynamic>>> getCondominiumReservations(
+    num condoId,
+  ) async {
     final res = await api.get('/condominiums/$condoId/reservations');
     return _asList(res);
   }
 
   // 14. CHAT EM TEMPO REAL COM A PORTARIA
   Future<List<Map<String, dynamic>>> getChatConversations(num condoId) async {
-    final res = await api.get('/condominiums/$condoId/doorman-chat/conversations');
+    final res = await api.get(
+      '/condominiums/$condoId/doorman-chat/conversations',
+    );
     return _asList(res);
   }
 
-  Future<List<Map<String, dynamic>>> getChatMessages(num condoId, {num? targetUserId}) async {
+  Future<List<Map<String, dynamic>>> getChatMessages(
+    num condoId, {
+    num? targetUserId,
+  }) async {
     final query = targetUserId != null ? '?targetUserId=$targetUserId' : '';
-    final res = await api.get('/condominiums/$condoId/doorman-chat/messages$query');
+    final res = await api.get(
+      '/condominiums/$condoId/doorman-chat/messages$query',
+    );
     return _asList(res);
   }
 
@@ -807,16 +1023,23 @@ class CommunityApi {
     num? recipientId,
     num? unitId,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/doorman-chat/messages', body: {
-      'message': message,
-      if (recipientId != null) 'recipientId': recipientId,
-      if (unitId != null) 'unitId': unitId,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/doorman-chat/messages',
+      body: {
+        'message': message,
+        if (recipientId != null) 'recipientId': recipientId,
+        if (unitId != null) 'unitId': unitId,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   Future<void> markChatAsRead(num condoId) async {
-    await api.send('PATCH', '/condominiums/$condoId/doorman-chat/messages/read');
+    await api.send(
+      'PATCH',
+      '/condominiums/$condoId/doorman-chat/messages/read',
+    );
   }
 
   // 15. GALERIA DE IMAGENS DO CONDOMÍNIO
@@ -825,7 +1048,10 @@ class CommunityApi {
     return _asList(res);
   }
 
-  Future<List<Map<String, dynamic>>> getAreaGalleryImages(num condoId, num areaId) async {
+  Future<List<Map<String, dynamic>>> getAreaGalleryImages(
+    num condoId,
+    num areaId,
+  ) async {
     final res = await api.get('/condominiums/$condoId/gallery/area/$areaId');
     return _asList(res);
   }
@@ -837,12 +1063,17 @@ class CommunityApi {
     required String image,
     num? commonAreaId,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/gallery', body: {
-      'title': title,
-      if (description != null && description.isNotEmpty) 'description': description,
-      'image': image,
-      if (commonAreaId != null) 'commonAreaId': commonAreaId,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/gallery',
+      body: {
+        'title': title,
+        if (description != null && description.isNotEmpty)
+          'description': description,
+        'image': image,
+        if (commonAreaId != null) 'commonAreaId': commonAreaId,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -856,8 +1087,13 @@ class CommunityApi {
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> getUnitPaymentStatus(num condoId, num unitId) async {
-    final res = await api.get('/condominiums/$condoId/units/$unitId/payment-status');
+  Future<Map<String, dynamic>> getUnitPaymentStatus(
+    num condoId,
+    num unitId,
+  ) async {
+    final res = await api.get(
+      '/condominiums/$condoId/units/$unitId/payment-status',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -868,17 +1104,21 @@ class CommunityApi {
     required DateTime dueDate,
     required String title,
   }) async {
-    final dateStr = '${dueDate.year.toString().padLeft(4, '0')}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}';
-    final res = await api.send('POST', '/manager/condominiums/$condoId/units/$unitId/generate-boleto', body: {
-      'amount': amount,
-      'dueDate': dateStr,
-      'title': title,
-    });
+    final dateStr =
+        '${dueDate.year.toString().padLeft(4, '0')}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}';
+    final res = await api.send(
+      'POST',
+      '/manager/condominiums/$condoId/units/$unitId/generate-boleto',
+      body: {'amount': amount, 'dueDate': dateStr, 'title': title},
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   Future<Map<String, dynamic>> payBoleto(num condoId, num unitId) async {
-    final res = await api.send('POST', '/condominiums/$condoId/units/$unitId/pay-boleto');
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/units/$unitId/pay-boleto',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -888,10 +1128,15 @@ class CommunityApi {
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> selectCondominiumPlan(num condoId, num planId) async {
-    final res = await api.send('PUT', '/manager/condominiums/$condoId/select-plan', body: {
-      'planId': planId,
-    });
+  Future<Map<String, dynamic>> selectCondominiumPlan(
+    num condoId,
+    num planId,
+  ) async {
+    final res = await api.send(
+      'PUT',
+      '/manager/condominiums/$condoId/select-plan',
+      body: {'planId': planId},
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -925,16 +1170,23 @@ class CommunityApi {
     String? documentNumber,
     String? receiptUrl,
   }) async {
-    final dateStr = '${dueDate.year.toString().padLeft(4, '0')}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}';
-    final res = await api.send('POST', '/condominiums/$condoId/financial/expenses', body: {
-      'category': category,
-      'description': description,
-      'amount': amount,
-      'dueDate': dateStr,
-      if (supplier != null && supplier.isNotEmpty) 'supplier': supplier,
-      if (documentNumber != null && documentNumber.isNotEmpty) 'documentNumber': documentNumber,
-      if (receiptUrl != null && receiptUrl.isNotEmpty) 'receiptUrl': receiptUrl,
-    });
+    final dateStr =
+        '${dueDate.year.toString().padLeft(4, '0')}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}';
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/financial/expenses',
+      body: {
+        'category': category,
+        'description': description,
+        'amount': amount,
+        'dueDate': dateStr,
+        if (supplier != null && supplier.isNotEmpty) 'supplier': supplier,
+        if (documentNumber != null && documentNumber.isNotEmpty)
+          'documentNumber': documentNumber,
+        if (receiptUrl != null && receiptUrl.isNotEmpty)
+          'receiptUrl': receiptUrl,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -944,14 +1196,22 @@ class CommunityApi {
   }
 
   Future<Map<String, dynamic>> cancelExpense(num expenseId) async {
-    final res = await api.send('PATCH', '/financial/expenses/$expenseId/cancel');
+    final res = await api.send(
+      'PATCH',
+      '/financial/expenses/$expenseId/cancel',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   // 20. MANUTENÇÃO PREDIAL E ORDENS DE SERVIÇO
-  Future<List<Map<String, dynamic>>> listMaintenanceOrders(num condoId, [String? status]) async {
+  Future<List<Map<String, dynamic>>> listMaintenanceOrders(
+    num condoId, [
+    String? status,
+  ]) async {
     final query = status != null && status.isNotEmpty ? '?status=$status' : '';
-    final res = await api.get('/condominiums/$condoId/maintenance/orders$query');
+    final res = await api.get(
+      '/condominiums/$condoId/maintenance/orders$query',
+    );
     return _asList(res);
   }
 
@@ -978,20 +1238,24 @@ class CommunityApi {
     final dateStr = scheduledDate != null
         ? '${scheduledDate.year.toString().padLeft(4, '0')}-${scheduledDate.month.toString().padLeft(2, '0')}-${scheduledDate.day.toString().padLeft(2, '0')}'
         : null;
-    final res = await api.send('POST', '/condominiums/$condoId/maintenance/orders', body: {
-      'title': title,
-      'description': description,
-      'category': category,
-      if (type != null) 'type': type,
-      if (priority != null) 'priority': priority,
-      if (contractorName != null) 'contractorName': contractorName,
-      if (contractorContact != null) 'contractorContact': contractorContact,
-      if (equipmentId != null) 'equipmentId': equipmentId,
-      if (supplierId != null) 'supplierId': supplierId,
-      if (dateStr != null) 'scheduledDate': dateStr,
-      if (estimatedCost != null) 'estimatedCost': estimatedCost,
-      if (notes != null) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/maintenance/orders',
+      body: {
+        'title': title,
+        'description': description,
+        'category': category,
+        if (type != null) 'type': type,
+        if (priority != null) 'priority': priority,
+        if (contractorName != null) 'contractorName': contractorName,
+        if (contractorContact != null) 'contractorContact': contractorContact,
+        if (equipmentId != null) 'equipmentId': equipmentId,
+        if (supplierId != null) 'supplierId': supplierId,
+        if (dateStr != null) 'scheduledDate': dateStr,
+        if (estimatedCost != null) 'estimatedCost': estimatedCost,
+        if (notes != null) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1003,17 +1267,24 @@ class CommunityApi {
     int? supplierRating,
     String? supplierFeedback,
   }) async {
-    final res = await api.send('PATCH', '/maintenance/orders/$id/status', body: {
-      'status': status,
-      if (actualCost != null) 'actualCost': actualCost,
-      if (notes != null) 'notes': notes,
-      if (supplierRating != null) 'supplierRating': supplierRating,
-      if (supplierFeedback != null && supplierFeedback.isNotEmpty) 'supplierFeedback': supplierFeedback,
-    });
+    final res = await api.send(
+      'PATCH',
+      '/maintenance/orders/$id/status',
+      body: {
+        'status': status,
+        if (actualCost != null) 'actualCost': actualCost,
+        if (notes != null) 'notes': notes,
+        if (supplierRating != null) 'supplierRating': supplierRating,
+        if (supplierFeedback != null && supplierFeedback.isNotEmpty)
+          'supplierFeedback': supplierFeedback,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<List<Map<String, dynamic>>> listMaintenanceEquipment(num condoId) async {
+  Future<List<Map<String, dynamic>>> listMaintenanceEquipment(
+    num condoId,
+  ) async {
     final res = await api.get('/condominiums/$condoId/maintenance/equipment');
     return _asList(res);
   }
@@ -1030,19 +1301,25 @@ class CommunityApi {
     num? preferredSupplierId,
     String? notes,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/maintenance/equipment', body: {
-      'name': name,
-      'category': category,
-      if (location != null && location.isNotEmpty) 'location': location,
-      if (manufacturer != null && manufacturer.isNotEmpty) 'manufacturer': manufacturer,
-      'recurrenceDays': recurrenceDays,
-      if (nextMaintenanceDate != null && nextMaintenanceDate.isNotEmpty)
-        'nextMaintenanceDate': nextMaintenanceDate,
-      if (responsibleName != null && responsibleName.isNotEmpty)
-        'responsibleName': responsibleName,
-      if (preferredSupplierId != null) 'preferredSupplierId': preferredSupplierId,
-      if (notes != null && notes.isNotEmpty) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/maintenance/equipment',
+      body: {
+        'name': name,
+        'category': category,
+        if (location != null && location.isNotEmpty) 'location': location,
+        if (manufacturer != null && manufacturer.isNotEmpty)
+          'manufacturer': manufacturer,
+        'recurrenceDays': recurrenceDays,
+        if (nextMaintenanceDate != null && nextMaintenanceDate.isNotEmpty)
+          'nextMaintenanceDate': nextMaintenanceDate,
+        if (responsibleName != null && responsibleName.isNotEmpty)
+          'responsibleName': responsibleName,
+        if (preferredSupplierId != null)
+          'preferredSupplierId': preferredSupplierId,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1065,15 +1342,21 @@ class CommunityApi {
     String? documentNumber,
     String? notes,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/suppliers', body: {
-      'companyName': companyName,
-      'serviceCategory': serviceCategory,
-      if (contactName != null && contactName.isNotEmpty) 'contactName': contactName,
-      if (phone != null && phone.isNotEmpty) 'phone': phone,
-      if (email != null && email.isNotEmpty) 'email': email,
-      if (documentNumber != null && documentNumber.isNotEmpty) 'documentNumber': documentNumber,
-      if (notes != null && notes.isNotEmpty) 'notes': notes,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/suppliers',
+      body: {
+        'companyName': companyName,
+        'serviceCategory': serviceCategory,
+        if (contactName != null && contactName.isNotEmpty)
+          'contactName': contactName,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+        if (email != null && email.isNotEmpty) 'email': email,
+        if (documentNumber != null && documentNumber.isNotEmpty)
+          'documentNumber': documentNumber,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1105,29 +1388,43 @@ class CommunityApi {
     bool oneVotePerUnit = true,
     int quorumMinimumPercent = 50,
   }) async {
-    final res = await api.send('POST', '/condominiums/$condoId/assemblies', body: {
-      'title': title,
-      if (description != null) 'description': description,
-      if (type != null) 'type': type,
-      'meetingDate': meetingDate.toIso8601String(),
-      if (secondCallDate != null) 'secondCallDate': secondCallDate.toIso8601String(),
-      if (locationOrLink != null) 'locationOrLink': locationOrLink,
-      if (callNoticeUrl != null) 'callNoticeUrl': callNoticeUrl,
-      'blockDelinquentUnits': blockDelinquentUnits,
-      'oneVotePerUnit': oneVotePerUnit,
-      'quorumMinimumPercent': quorumMinimumPercent,
-    });
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/assemblies',
+      body: {
+        'title': title,
+        if (description != null) 'description': description,
+        if (type != null) 'type': type,
+        'meetingDate': meetingDate.toIso8601String(),
+        if (secondCallDate != null)
+          'secondCallDate': secondCallDate.toIso8601String(),
+        if (locationOrLink != null) 'locationOrLink': locationOrLink,
+        if (callNoticeUrl != null) 'callNoticeUrl': callNoticeUrl,
+        'blockDelinquentUnits': blockDelinquentUnits,
+        'oneVotePerUnit': oneVotePerUnit,
+        'quorumMinimumPercent': quorumMinimumPercent,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<Map<String, dynamic>> checkInAssembly(num assemblyId, {String? proxyInfo}) async {
-    final res = await api.send('POST', '/assemblies/$assemblyId/check-in', body: {
-      if (proxyInfo != null && proxyInfo.isNotEmpty) 'proxyInfo': proxyInfo,
-    });
+  Future<Map<String, dynamic>> checkInAssembly(
+    num assemblyId, {
+    String? proxyInfo,
+  }) async {
+    final res = await api.send(
+      'POST',
+      '/assemblies/$assemblyId/check-in',
+      body: {
+        if (proxyInfo != null && proxyInfo.isNotEmpty) 'proxyInfo': proxyInfo,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<List<Map<String, dynamic>>> listAssemblyParticipants(num assemblyId) async {
+  Future<List<Map<String, dynamic>>> listAssemblyParticipants(
+    num assemblyId,
+  ) async {
     final res = await api.get('/assemblies/$assemblyId/participants');
     return _asList(res);
   }
@@ -1138,23 +1435,38 @@ class CommunityApi {
     String? description,
     int? displayOrder,
   }) async {
-    final res = await api.send('POST', '/assemblies/$assemblyId/topics', body: {
-      'title': title,
-      if (description != null) 'description': description,
-      if (displayOrder != null) 'displayOrder': displayOrder,
-    });
+    final res = await api.send(
+      'POST',
+      '/assemblies/$assemblyId/topics',
+      body: {
+        'title': title,
+        if (description != null) 'description': description,
+        if (displayOrder != null) 'displayOrder': displayOrder,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<Map<String, dynamic>> toggleAssemblyTopicVoting(num topicId, bool open) async {
-    final res = await api.send('PATCH', '/assembly-topics/$topicId/voting?open=$open');
+  Future<Map<String, dynamic>> toggleAssemblyTopicVoting(
+    num topicId,
+    bool open,
+  ) async {
+    final res = await api.send(
+      'PATCH',
+      '/assembly-topics/$topicId/voting?open=$open',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<Map<String, dynamic>> castAssemblyVote(num topicId, String voteChoice) async {
-    final res = await api.send('POST', '/assembly-topics/$topicId/votes', body: {
-      'voteChoice': voteChoice,
-    });
+  Future<Map<String, dynamic>> castAssemblyVote(
+    num topicId,
+    String voteChoice,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/assembly-topics/$topicId/votes',
+      body: {'voteChoice': voteChoice},
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1163,19 +1475,28 @@ class CommunityApi {
     required String status,
     String? minutesUrl,
   }) async {
-    final res = await api.send('PATCH', '/assemblies/$id/status', body: {
-      'status': status,
-      if (minutesUrl != null) 'minutesUrl': minutesUrl,
-    });
+    final res = await api.send(
+      'PATCH',
+      '/assemblies/$id/status',
+      body: {
+        'status': status,
+        if (minutesUrl != null) 'minutesUrl': minutesUrl,
+      },
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   // 22. ASSISTENTE INTELIGENTE CONDOMINIAL & RELATÓRIOS GERENCIAIS
-  Future<Map<String, dynamic>> askAssistant(num condoId, String question, [String? category]) async {
-    final res = await api.send('POST', '/condominiums/$condoId/assistant/query', body: {
-      'question': question,
-      if (category != null) 'category': category,
-    });
+  Future<Map<String, dynamic>> askAssistant(
+    num condoId,
+    String question, [
+    String? category,
+  ]) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/assistant/query',
+      body: {'question': question, if (category != null) 'category': category},
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1185,34 +1506,78 @@ class CommunityApi {
     String? endDate,
   }) async {
     final params = <String>[];
-    if (startDate != null && startDate.isNotEmpty) params.add('startDate=$startDate');
+    if (startDate != null && startDate.isNotEmpty) {
+      params.add('startDate=$startDate');
+    }
     if (endDate != null && endDate.isNotEmpty) params.add('endDate=$endDate');
     final query = params.isEmpty ? '' : '?${params.join('&')}';
     final res = await api.get('/condominiums/$condoId/reports/dashboard$query');
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
+  Future<Uint8List> downloadDashboardReportPdf(
+    num condoId, {
+    String? startDate,
+    String? endDate,
+  }) {
+    return api.getBytes(
+      '/condominiums/$condoId/reports/export/pdf',
+      queryParameters: {
+        if (startDate != null && startDate.isNotEmpty) 'startDate': startDate,
+        if (endDate != null && endDate.isNotEmpty) 'endDate': endDate,
+      },
+    );
+  }
+
+  Future<Uint8List> downloadDashboardReportCsv(
+    num condoId, {
+    String? startDate,
+    String? endDate,
+  }) {
+    return api.getBytes(
+      '/condominiums/$condoId/reports/export/csv',
+      queryParameters: {
+        if (startDate != null && startDate.isNotEmpty) 'startDate': startDate,
+        if (endDate != null && endDate.isNotEmpty) 'endDate': endDate,
+      },
+    );
+  }
+
   // 13. OBRAS E REFORMAS (NBR 16.280)
-  Future<List<Map<String, dynamic>>> getRenovations(num condoId, {bool mine = false}) async {
+  Future<List<Map<String, dynamic>>> getRenovations(
+    num condoId, {
+    bool mine = false,
+  }) async {
     final res = await api.get('/condominiums/$condoId/renovations?mine=$mine');
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> requestRenovation(num condoId, Map<String, dynamic> body) async {
-    final res = await api.send('POST', '/condominiums/$condoId/renovations', body: body);
+  Future<Map<String, dynamic>> requestRenovation(
+    num condoId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/renovations',
+      body: body,
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   Future<void> approveRenovation(num id, {String? decisionNotes}) async {
-    await api.send('PATCH', '/renovations/$id/approve', body: {
-      if (decisionNotes != null) 'decisionNotes': decisionNotes,
-    });
+    await api.send(
+      'PATCH',
+      '/renovations/$id/approve',
+      body: {if (decisionNotes != null) 'decisionNotes': decisionNotes},
+    );
   }
 
   Future<void> rejectRenovation(num id, {String? decisionNotes}) async {
-    await api.send('PATCH', '/renovations/$id/reject', body: {
-      if (decisionNotes != null) 'decisionNotes': decisionNotes,
-    });
+    await api.send(
+      'PATCH',
+      '/renovations/$id/reject',
+      body: {if (decisionNotes != null) 'decisionNotes': decisionNotes},
+    );
   }
 
   Future<void> completeRenovation(num id) async {
@@ -1225,8 +1590,15 @@ class CommunityApi {
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> createShiftLog(num condoId, Map<String, dynamic> body) async {
-    final res = await api.send('POST', '/condominiums/$condoId/shift-logs', body: body);
+  Future<Map<String, dynamic>> createShiftLog(
+    num condoId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/shift-logs',
+      body: body,
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1235,14 +1607,24 @@ class CommunityApi {
   }
 
   // 15. CONTROLE DE CHAVES E TAGS DA PORTARIA
-  Future<List<Map<String, dynamic>>> getKeys(num condoId, {String? status}) async {
+  Future<List<Map<String, dynamic>>> getKeys(
+    num condoId, {
+    String? status,
+  }) async {
     final q = (status != null && status.isNotEmpty) ? '?status=$status' : '';
     final res = await api.get('/condominiums/$condoId/keys$q');
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> createKey(num condoId, Map<String, dynamic> body) async {
-    final res = await api.send('POST', '/condominiums/$condoId/keys', body: body);
+  Future<Map<String, dynamic>> createKey(
+    num condoId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/keys',
+      body: body,
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1251,20 +1633,32 @@ class CommunityApi {
   }
 
   Future<void> checkinKey(num id, {String? notes}) async {
-    await api.send('POST', '/keys/$id/checkin', body: {
-      if (notes != null) 'notes': notes,
-    });
+    await api.send(
+      'POST',
+      '/keys/$id/checkin',
+      body: {if (notes != null) 'notes': notes},
+    );
   }
 
   // 16. BOTÃO DE PÂNICO & ALERTA DE EMERGÊNCIA (SOS)
-  Future<List<Map<String, dynamic>>> getEmergencyAlerts(num condoId, {String? status}) async {
+  Future<List<Map<String, dynamic>>> getEmergencyAlerts(
+    num condoId, {
+    String? status,
+  }) async {
     final q = (status != null && status.isNotEmpty) ? '?status=$status' : '';
     final res = await api.get('/condominiums/$condoId/emergency-alerts$q');
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> triggerEmergencyAlert(num condoId, Map<String, dynamic> body) async {
-    final res = await api.send('POST', '/condominiums/$condoId/emergency-alerts', body: body);
+  Future<Map<String, dynamic>> triggerEmergencyAlert(
+    num condoId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/emergency-alerts',
+      body: body,
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1273,13 +1667,20 @@ class CommunityApi {
   }
 
   Future<void> resolveEmergencyAlert(num id, {String? resolutionNotes}) async {
-    await api.send('PATCH', '/emergency-alerts/$id/resolve', body: {
-      if (resolutionNotes != null) 'resolutionNotes': resolutionNotes,
-    });
+    await api.send(
+      'PATCH',
+      '/emergency-alerts/$id/resolve',
+      body: {if (resolutionNotes != null) 'resolutionNotes': resolutionNotes},
+    );
   }
 
   // 17. MEDIÇÃO INDIVIDUALIZADA DE ÁGUA E GÁS
-  Future<List<Map<String, dynamic>>> getUtilityReadings(num condoId, {int? year, int? month, num? unitId}) async {
+  Future<List<Map<String, dynamic>>> getUtilityReadings(
+    num condoId, {
+    int? year,
+    int? month,
+    num? unitId,
+  }) async {
     final params = <String>[];
     if (year != null) params.add('year=$year');
     if (month != null) params.add('month=$month');
@@ -1289,23 +1690,43 @@ class CommunityApi {
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> createUtilityReading(num condoId, Map<String, dynamic> body) async {
-    final res = await api.send('POST', '/condominiums/$condoId/utility-readings', body: body);
+  Future<Map<String, dynamic>> createUtilityReading(
+    num condoId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/utility-readings',
+      body: body,
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   // 18. PREVISÃO ORÇAMENTÁRIA vs REALIZADO
-  Future<Map<String, dynamic>> getBudgetComparison(num condoId, {int? year, int? month}) async {
+  Future<Map<String, dynamic>> getBudgetComparison(
+    num condoId, {
+    int? year,
+    int? month,
+  }) async {
     final params = <String>[];
     if (year != null) params.add('year=$year');
     if (month != null) params.add('month=$month');
     final q = params.isEmpty ? '' : '?${params.join('&')}';
-    final res = await api.get('/condominiums/$condoId/financial/budget-comparison$q');
+    final res = await api.get(
+      '/condominiums/$condoId/financial/budget-comparison$q',
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
-  Future<Map<String, dynamic>> saveBudgetForecast(num condoId, Map<String, dynamic> body) async {
-    final res = await api.send('POST', '/condominiums/$condoId/financial/budgets', body: body);
+  Future<Map<String, dynamic>> saveBudgetForecast(
+    num condoId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/financial/budgets',
+      body: body,
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1315,26 +1736,45 @@ class CommunityApi {
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> createChecklist(num condoId, Map<String, dynamic> body) async {
-    final res = await api.send('POST', '/condominiums/$condoId/maintenance/checklists', body: body);
+  Future<Map<String, dynamic>> createChecklist(
+    num condoId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/maintenance/checklists',
+      body: body,
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
   Future<void> completeChecklist(num id, {String? generalNotes}) async {
-    await api.send('PATCH', '/maintenance/checklists/$id/complete', body: {
-      if (generalNotes != null) 'generalNotes': generalNotes,
-    });
+    await api.send(
+      'PATCH',
+      '/maintenance/checklists/$id/complete',
+      body: {if (generalNotes != null) 'generalNotes': generalNotes},
+    );
   }
 
   // 20. CONTRATOS E GARANTIAS
-  Future<List<Map<String, dynamic>>> getContracts(num condoId, {String? status}) async {
+  Future<List<Map<String, dynamic>>> getContracts(
+    num condoId, {
+    String? status,
+  }) async {
     final q = (status != null && status.isNotEmpty) ? '?status=$status' : '';
     final res = await api.get('/condominiums/$condoId/contracts$q');
     return _asList(res);
   }
 
-  Future<Map<String, dynamic>> createContract(num condoId, Map<String, dynamic> body) async {
-    final res = await api.send('POST', '/condominiums/$condoId/contracts', body: body);
+  Future<Map<String, dynamic>> createContract(
+    num condoId,
+    Map<String, dynamic> body,
+  ) async {
+    final res = await api.send(
+      'POST',
+      '/condominiums/$condoId/contracts',
+      body: body,
+    );
     return res is Map<String, dynamic> ? res : <String, dynamic>{};
   }
 
@@ -1358,13 +1798,16 @@ class CommunityApi {
       return [];
     }
 
-    return rawList.map((item) {
-      if (item is Map<String, dynamic>) {
-        return item;
-      } else if (item is Map) {
-        return Map<String, dynamic>.from(item);
-      }
-      return null;
-    }).whereType<Map<String, dynamic>>().toList();
+    return rawList
+        .map((item) {
+          if (item is Map<String, dynamic>) {
+            return item;
+          } else if (item is Map) {
+            return Map<String, dynamic>.from(item);
+          }
+          return null;
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList();
   }
 }

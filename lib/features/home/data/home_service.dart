@@ -1,27 +1,53 @@
+import 'dart:typed_data';
+
 import 'package:http/http.dart' as http;
 
-import '../../../core/config/api_config.dart';
-import '../../../core/http/http_client_wrapper.dart';
 import '../../../core/http/api_exception.dart';
+import '../../../core/http/http_client_wrapper.dart';
 
 class HomeService {
-  HomeService({required this.token, http.Client? client})
-    : _wrapper = HttpClientWrapper(httpClient: client, authToken: token);
-
-  final String? token;
-  final HttpClientWrapper _wrapper;
-
-  String get baseUrl => ApiConfig.baseUrl;
-
-  Future<dynamic> get(String path) async {
-    try {
-      final response = await _wrapper.get<dynamic>(
-        path,
-        fromJsonT: (json) => json,
+  HomeService({String? token, http.Client? client, String? baseUrl})
+    : _wrapper = HttpClientWrapper(
+        httpClient: client,
+        authToken: token,
+        baseUrl:
+            baseUrl ??
+            const String.fromEnvironment(
+              'API_BASE_URL',
+              defaultValue: 'http://localhost:8080',
+            ),
       );
-      return response.data;
+
+  final HttpClientWrapper _wrapper;
+  String get baseUrl => _wrapper.baseUrl;
+
+  Future<dynamic> get(
+    String path, {
+    Duration? cacheDuration,
+    bool forceRefresh = false,
+  }) async {
+    try {
+      final res = await _wrapper.get<dynamic>(
+        path,
+        cacheDuration: cacheDuration,
+        forceRefresh: forceRefresh,
+      );
+      return res.data;
     } on ApiException catch (e) {
-      throw HomeApiException(e.message);
+      throw HomeApiException(e.message, correlationId: e.correlationId);
+    } catch (e) {
+      throw HomeApiException(e.toString());
+    }
+  }
+
+  Future<Uint8List> getBytes(
+    String path, {
+    Map<String, String>? queryParameters,
+  }) async {
+    try {
+      return await _wrapper.getBytes(path, queryParameters: queryParameters);
+    } on ApiException catch (e) {
+      throw HomeApiException(e.message, correlationId: e.correlationId);
     } catch (e) {
       throw HomeApiException(e.toString());
     }
@@ -36,8 +62,7 @@ class HomeService {
   Future<dynamic> patch(String path, [Map<String, dynamic>? body]) =>
       send('PATCH', path, body: body);
 
-  Future<dynamic> delete(String path) =>
-      send('DELETE', path);
+  Future<dynamic> delete(String path) => send('DELETE', path);
 
   Future<dynamic> send(
     String method,
@@ -46,44 +71,39 @@ class HomeService {
   }) async {
     try {
       dynamic response;
-      if (method.toUpperCase() == 'POST') {
-        response = await _wrapper.post<dynamic>(
-          path,
-          body: body,
-          fromJsonT: (json) => json,
-        );
-      } else if (method.toUpperCase() == 'PUT') {
-        response = await _wrapper.put<dynamic>(
-          path,
-          body: body,
-          fromJsonT: (json) => json,
-        );
-      } else if (method.toUpperCase() == 'PATCH') {
-        response = await _wrapper.patch<dynamic>(
-          path,
-          body: body,
-          fromJsonT: (json) => json,
-        );
-      } else if (method.toUpperCase() == 'DELETE') {
-        response = await _wrapper.delete<dynamic>(
-          path,
-          fromJsonT: (json) => json,
-        );
+      final upper = method.toUpperCase();
+      if (upper == 'POST') {
+        response = await _wrapper.post<dynamic>(path, body: body);
+      } else if (upper == 'PUT') {
+        response = await _wrapper.put<dynamic>(path, body: body);
+      } else if (upper == 'PATCH') {
+        response = await _wrapper.patch<dynamic>(path, body: body);
+      } else if (upper == 'DELETE') {
+        response = await _wrapper.delete<dynamic>(path);
+      } else if (upper == 'GET') {
+        response = await _wrapper.get<dynamic>(path);
       } else {
-        throw HomeApiException('Método HTTP não suportado: \$method');
+        throw HomeApiException('Método HTTP não suportado: $method');
       }
       return response.data;
+    } on HomeApiException {
+      rethrow;
     } on ApiException catch (e) {
-      throw HomeApiException(e.message);
+      throw HomeApiException(e.message, correlationId: e.correlationId);
     } catch (e) {
       throw HomeApiException(e.toString());
     }
   }
+
+  void dispose() => _wrapper.close();
 }
 
 class HomeApiException implements Exception {
-  const HomeApiException(this.message);
+  const HomeApiException(this.message, {this.correlationId});
+
   final String message;
+  final String? correlationId;
+
   @override
   String toString() => message;
 }

@@ -7,6 +7,9 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/services/realtime_service.dart';
 import '../../../../core/widgets/enter_search_field.dart';
+import '../../../../core/widgets/command_palette.dart';
+import '../../../../core/widgets/custom_menus.dart';
+import '../../../../core/widgets/emergency_sos_banner.dart';
 import '../../../../core/widgets/role_switcher_pill.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../announcements/presentation/announcement_composer.dart';
@@ -61,8 +64,10 @@ class _DoormanPageState extends State<DoormanPage>
   Map<String, dynamic>? _selectedCondominium;
   List<Map<String, dynamic>> _packages = [];
   Map<String, dynamic> _profile = {};
-  bool _isLoading = true;
+  bool _loadingCondominiums = true;
+  bool _loadingPackages = true;
   String? _error;
+  String? _packageError;
   String _query = '';
   StreamSubscription<RealtimeEvent>? _sseSub;
 
@@ -82,8 +87,7 @@ class _DoormanPageState extends State<DoormanPage>
         }
       });
     }
-    _loadProfile();
-    _loadCondominiums();
+    _loadInitialData();
   }
 
   @override
@@ -97,18 +101,19 @@ class _DoormanPageState extends State<DoormanPage>
           ? null
           : DirectoryApi(api: _api, condominiumId: selectedId);
       RealtimeService.instance.setToken(widget.token);
-      if (widget.token != null &&
-          widget.token!.isNotEmpty &&
-          _sseSub == null) {
+      if (widget.token != null && widget.token!.isNotEmpty && _sseSub == null) {
         _sseSub = RealtimeService.instance.events.listen((event) {
           if (event.type == 'PACKAGE_UPDATED') {
             _loadPackages();
           }
         });
       }
-      _loadProfile();
-      _loadCondominiums();
+      _loadInitialData();
     }
+  }
+
+  Future<void> _loadInitialData() async {
+    await Future.wait<void>([_loadProfile(), _loadCondominiums()]);
   }
 
   Future<void> _loadProfile() async {
@@ -137,8 +142,7 @@ class _DoormanPageState extends State<DoormanPage>
               widget.reauthenticateWithGoogle ?? () async => '',
           refreshWithCredentials:
               widget.refreshWithCredentials ?? (_, __) async {},
-          refreshGoogleSession:
-              widget.refreshGoogleSession ?? () async {},
+          refreshGoogleSession: widget.refreshGoogleSession ?? () async {},
         ),
       ),
     );
@@ -157,9 +161,25 @@ class _DoormanPageState extends State<DoormanPage>
     _directory = id == null ? null : DirectoryApi(api: _api, condominiumId: id);
   }
 
+  Future<void> _toggleTheme() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final nextPreference = isDark ? 'LIGHT' : 'DARK';
+    AppTheme.setThemePreference(nextPreference);
+    try {
+      await _communityApi.updateThemePreference(nextPreference);
+    } catch (error) {
+      if (!mounted) return;
+      AppTheme.setThemePreference(isDark ? 'DARK' : 'LIGHT');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível salvar o tema: $error')),
+      );
+    }
+  }
+
   Future<void> _loadCondominiums() async {
+    if (!mounted) return;
     setState(() {
-      _isLoading = true;
+      _loadingCondominiums = true;
       _error = null;
     });
     try {
@@ -168,45 +188,55 @@ class _DoormanPageState extends State<DoormanPage>
           ? memberships.whereType<Map<String, dynamic>>().toList()
           : <Map<String, dynamic>>[];
 
-      final condos = <Map<String, dynamic>>[];
-      for (final m in list) {
-        final condoId = m['condominiumId'];
-        if (condoId != null) {
+      final condos = await Future.wait<Map<String, dynamic>?>(
+        list.where((m) => m['condominiumId'] != null).map((membership) async {
           try {
-            final condo = await _api.get('/condominiums/$condoId');
-            if (condo is Map<String, dynamic>) {
-              condos.add(condo);
-            }
-          } catch (_) {}
-        }
-      }
+            final condo = await _api.get(
+              '/condominiums/${membership['condominiumId']}',
+            );
+            return condo is Map<String, dynamic> ? condo : null;
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
 
       if (mounted) {
         setState(() {
-          _condominiums = condos;
+          _condominiums = condos.whereType<Map<String, dynamic>>().toList();
+          _loadingCondominiums = false;
           if (_condominiums.isNotEmpty) {
             _selectCondominium(_condominiums.first);
-            _loadPackages();
-          } else {
-            _isLoading = false;
           }
         });
+        if (_condominiums.isNotEmpty) {
+          _loadPackages();
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _error = 'Não foi possível carregar os condomínios associados.';
-          _isLoading = false;
+          _loadingCondominiums = false;
         });
       }
     }
   }
 
   Future<void> _loadPackages() async {
-    if (_selectedCondominium == null) return;
+    if (!mounted) return;
+    if (_selectedCondominium == null) {
+      if (mounted) {
+        setState(() {
+          _loadingPackages = false;
+          _packages = [];
+        });
+      }
+      return;
+    }
     setState(() {
-      _isLoading = true;
-      _error = null;
+      _loadingPackages = true;
+      _packageError = null;
     });
     try {
       final condoId = _selectedCondominium!['id'];
@@ -226,14 +256,15 @@ class _DoormanPageState extends State<DoormanPage>
       if (mounted) {
         setState(() {
           _packages = packages;
-          _isLoading = false;
+          _loadingPackages = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Não foi possível carregar as encomendas deste condomínio.';
-          _isLoading = false;
+          _packageError =
+              'Não foi possível carregar as encomendas deste condomínio.';
+          _loadingPackages = false;
         });
       }
     }
@@ -423,62 +454,80 @@ class _DoormanPageState extends State<DoormanPage>
               controller: pinCtrl,
               autofocus: true,
               keyboardType: TextInputType.number,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 4),
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 4,
+              ),
               textAlign: TextAlign.center,
               decoration: InputDecoration(
                 hintText: '000000',
                 hintStyle: const TextStyle(color: Colors.black26),
                 filled: true,
                 fillColor: const Color(0xFFF1F5F9),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0F766E)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0F766E),
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Confirmar Retirada'),
           ),
         ],
       ),
     );
-    if (ok == true && pinCtrl.text.trim().isNotEmpty) {
-      final raw = pinCtrl.text.trim();
+    final raw = pinCtrl.text.trim();
+    pinCtrl.dispose();
+    if (ok == true && raw.isNotEmpty) {
       final upper = raw.toUpperCase();
       final parsedId = int.tryParse(raw);
-      final matching = _packages.firstWhere(
-        (p) {
-          final status = p['status']?.toString();
-          if (status == 'PICKED_UP' ||
-              status == 'RETURNED' ||
-              status == 'CANCELLED') {
-            return false;
-          }
-          final pPin = p['pickupPin']?.toString().trim().toUpperCase();
-          final paddedId = p['id']?.toString().padLeft(6, '0');
-          final tracking = p['trackingCode']?.toString().trim().toUpperCase();
-          return (pPin != null && pPin.isNotEmpty && pPin == upper) ||
-              paddedId == raw ||
-              (parsedId != null && p['id'] == parsedId) ||
-              p['id']?.toString() == raw ||
-              (tracking != null && tracking.isNotEmpty && tracking == upper);
-        },
-        orElse: () => {},
-      );
+      final matching = _packages.firstWhere((p) {
+        final status = p['status']?.toString();
+        if (status == 'PICKED_UP' ||
+            status == 'RETURNED' ||
+            status == 'CANCELLED') {
+          return false;
+        }
+        final pPin = p['pickupPin']?.toString().trim().toUpperCase();
+        final paddedId = p['id']?.toString().padLeft(6, '0');
+        final tracking = p['trackingCode']?.toString().trim().toUpperCase();
+        return (pPin != null && pPin.isNotEmpty && pPin == upper) ||
+            paddedId == raw ||
+            (parsedId != null && p['id'] == parsedId) ||
+            p['id']?.toString() == raw ||
+            (tracking != null && tracking.isNotEmpty && tracking == upper);
+      }, orElse: () => {});
       final targetId = (matching['id'] as num?)?.toInt();
       if (targetId != null) {
         try {
           await _updatePackageStatus(targetId, 'pickup');
         } catch (e) {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+          }
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Código PIN não encontrado para as encomendas pendentes deste condomínio.')),
+            const SnackBar(
+              content: Text(
+                'Código PIN não encontrado para as encomendas pendentes deste condomínio.',
+              ),
+            ),
           );
         }
       }
@@ -616,8 +665,33 @@ class _DoormanPageState extends State<DoormanPage>
     );
   }
 
+  String _tabLabel(int index) => switch (index) {
+    0 => 'Encomendas',
+    1 => 'Visitantes',
+    2 => 'Consulta de Placas',
+    3 => 'Eventos e Convidados',
+    4 => 'Unidades e Achados',
+    5 => 'Reservas e Áreas',
+    6 => 'Smart Lockers',
+    7 => 'Chat com moradores',
+    _ => 'Área',
+  };
+
+  IconData _tabIcon(int index) => switch (index) {
+    0 => Icons.inventory_2_outlined,
+    1 => Icons.badge_outlined,
+    2 => Icons.directions_car_outlined,
+    3 => Icons.people_outline_rounded,
+    4 => Icons.apartment_rounded,
+    5 => Icons.event_available_outlined,
+    6 => Icons.lock_clock_outlined,
+    7 => Icons.chat_bubble_outline_rounded,
+    _ => Icons.dashboard_outlined,
+  };
+
   Widget _buildDoormanHeader(bool isDesktop, bool isDark) {
-    final condoName = _selectedCondominium?['name']?.toString() ?? 'Central da Portaria';
+    final condoName =
+        _selectedCondominium?['name']?.toString() ?? 'Central da Portaria';
     final condoImg = _selectedCondominium?['imageUrl'] as String?;
 
     if (isDesktop) {
@@ -647,25 +721,39 @@ class _DoormanPageState extends State<DoormanPage>
               child: Container(
                 width: 40,
                 height: 40,
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                color: isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFFEFF6FF),
                 alignment: Alignment.center,
                 child: (condoImg != null && condoImg.isNotEmpty)
                     ? (condoImg.startsWith('data:')
-                        ? Image.memory(
-                            base64Decode(condoImg.split(',').last),
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.shield_outlined, color: SaaSColors.primary, size: 22),
-                          )
-                        : Image.network(
-                            condoImg,
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.shield_outlined, color: SaaSColors.primary, size: 22),
-                          ))
-                    : const Icon(Icons.shield_outlined, color: SaaSColors.primary, size: 22),
+                          ? Image.memory(
+                              base64Decode(condoImg.split(',').last),
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.shield_outlined,
+                                color: SaaSColors.primary,
+                                size: 22,
+                              ),
+                            )
+                          : Image.network(
+                              condoImg,
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.shield_outlined,
+                                color: SaaSColors.primary,
+                                size: 22,
+                              ),
+                            ))
+                    : const Icon(
+                        Icons.shield_outlined,
+                        color: SaaSColors.primary,
+                        size: 22,
+                      ),
               ),
             ),
             const SizedBox(width: 12),
@@ -694,35 +782,37 @@ class _DoormanPageState extends State<DoormanPage>
             if (_condominiums.length > 1) ...[
               const SizedBox(width: 16),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 2,
+                ),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                  color: isDark
+                      ? const Color(0xFF1E293B)
+                      : const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFCBD5E1),
                   ),
                 ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<Map<String, dynamic>>(
-                    value: _selectedCondominium,
-                    icon: const Icon(Icons.swap_horiz_rounded, size: 18),
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF1E293B),
-                    ),
-                    dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                    items: _condominiums.map((c) {
-                      return DropdownMenuItem(
-                        value: c,
-                        child: Text(c['name']?.toString() ?? 'Sem nome'),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setState(() => _selectCondominium(val));
-                      _loadPackages();
-                    },
-                  ),
+                child: AncoraDropdown<Map<String, dynamic>>(
+                  value: _selectedCondominium,
+                  compact: true,
+                  prefixIcon: Icons.apartment_rounded,
+                  items: _condominiums
+                      .map(
+                        (c) => AncoraMenuOption<Map<String, dynamic>>(
+                          value: c,
+                          label: c['name']?.toString() ?? 'Sem nome',
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    setState(() => _selectCondominium(value));
+                    _loadPackages();
+                  },
                 ),
               ),
             ],
@@ -755,11 +845,7 @@ class _DoormanPageState extends State<DoormanPage>
 
             IconButton(
               tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
-              onPressed: () {
-                final nextPref = isDark ? 'LIGHT' : 'DARK';
-                AppTheme.setThemePreference(nextPref);
-                _communityApi.updateThemePreference(nextPref);
-              },
+              onPressed: _toggleTheme,
               icon: Icon(
                 isDark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
                 color: isDark ? Colors.white70 : const Color(0xFF475569),
@@ -774,7 +860,8 @@ class _DoormanPageState extends State<DoormanPage>
                   MaterialPageRoute<void>(
                     builder: (_) => NotificationsPage(
                       api: _api,
-                      condominiumId: (_selectedCondominium?['id'] as num?)?.toInt(),
+                      condominiumId: (_selectedCondominium?['id'] as num?)
+                          ?.toInt(),
                       onInvitationChanged: _loadCondominiums,
                     ),
                   ),
@@ -807,6 +894,11 @@ class _DoormanPageState extends State<DoormanPage>
               onTap: _openProfile,
               tooltip: 'Meu Perfil',
             ),
+            IconButton(
+              tooltip: 'Sair da conta',
+              onPressed: widget.onLogout,
+              icon: const Icon(Icons.logout_rounded, color: Colors.red),
+            ),
           ],
         ),
       );
@@ -837,7 +929,11 @@ class _DoormanPageState extends State<DoormanPage>
                   height: 36,
                   color: Colors.white24,
                   alignment: Alignment.center,
-                  child: const Icon(Icons.shield_outlined, color: Colors.white, size: 20),
+                  child: const Icon(
+                    Icons.shield_outlined,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -892,13 +988,17 @@ class _DoormanPageState extends State<DoormanPage>
                 _doormanMobileActionButton(
                   icon: Icons.qr_code_scanner_rounded,
                   label: 'Baixa (PIN)',
-                  onTap: _selectedCondominium == null ? null : _quickPickupByPin,
+                  onTap: _selectedCondominium == null
+                      ? null
+                      : _quickPickupByPin,
                 ),
                 const SizedBox(width: 6),
                 _doormanMobileActionButton(
                   icon: Icons.campaign_outlined,
                   label: 'Comunicado',
-                  onTap: _selectedCondominium == null ? null : _sendAnnouncement,
+                  onTap: _selectedCondominium == null
+                      ? null
+                      : _sendAnnouncement,
                 ),
                 const SizedBox(width: 6),
                 _doormanMobileActionButton(
@@ -915,8 +1015,8 @@ class _DoormanPageState extends State<DoormanPage>
                       MaterialPageRoute<void>(
                         builder: (_) => NotificationsPage(
                           api: _api,
-                          condominiumId:
-                              (_selectedCondominium?['id'] as num?)?.toInt(),
+                          condominiumId: (_selectedCondominium?['id'] as num?)
+                              ?.toInt(),
                           onInvitationChanged: _loadCondominiums,
                         ),
                       ),
@@ -930,11 +1030,7 @@ class _DoormanPageState extends State<DoormanPage>
                       ? Icons.light_mode_rounded
                       : Icons.dark_mode_outlined,
                   label: isDark ? 'Modo Claro' : 'Modo Noturno',
-                  onTap: () {
-                    final nextPref = isDark ? 'LIGHT' : 'DARK';
-                    AppTheme.setThemePreference(nextPref);
-                    _communityApi.updateThemePreference(nextPref);
-                  },
+                  onTap: _toggleTheme,
                 ),
                 const SizedBox(width: 6),
                 _doormanMobileActionButton(
@@ -976,7 +1072,11 @@ class _DoormanPageState extends State<DoormanPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 16, color: isDark ? const Color(0xFF93C5FD) : SaaSColors.primary),
+              Icon(
+                icon,
+                size: 16,
+                color: isDark ? const Color(0xFF93C5FD) : SaaSColors.primary,
+              ),
               const SizedBox(width: 6),
               Text(
                 label,
@@ -1007,9 +1107,13 @@ class _DoormanPageState extends State<DoormanPage>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: isDestructive ? const Color(0xFFEF4444).withValues(alpha: 0.25) : Colors.white12,
+            color: isDestructive
+                ? const Color(0xFFEF4444).withValues(alpha: 0.25)
+                : Colors.white12,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: isDestructive ? const Color(0xFFEF4444) : Colors.white24),
+            border: Border.all(
+              color: isDestructive ? const Color(0xFFEF4444) : Colors.white24,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1018,7 +1122,11 @@ class _DoormanPageState extends State<DoormanPage>
               const SizedBox(width: 5),
               Text(
                 label,
-                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -1042,219 +1150,347 @@ class _DoormanPageState extends State<DoormanPage>
           p['status'] == 'WAITING_PICKUP',
     );
 
-    return Scaffold(
-      backgroundColor: SaaSColors.background(isDark),
-      floatingActionButton: (_selectedCondominium != null && _tabs.index == 0)
-          ? FloatingActionButton.extended(
-              backgroundColor: SaaSColors.primary,
-              foregroundColor: Colors.white,
-              onPressed: () => _registerReceivedPackage(),
-              icon: const Icon(Icons.add_box_outlined),
-              label: const Text('Registrar encomenda'),
-            )
-          : null,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildDoormanHeader(isDesktop, isDark),
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF0F172A) : Colors.white,
-                border: Border(
-                  bottom: BorderSide(
-                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-                    width: 1,
+    final commandActions = <AncoraCommandAction>[
+      for (var index = 0; index < 8; index++)
+        AncoraCommandAction(
+          id: 'tab-$index',
+          title: 'Abrir ${_tabLabel(index)}',
+          icon: _tabIcon(index),
+          onExecute: () => _tabs.animateTo(index),
+          category: 'Navegação',
+        ),
+      AncoraCommandAction(
+        id: 'pickup',
+        title: 'Dar baixa em encomenda por PIN',
+        icon: Icons.qr_code_scanner_rounded,
+        onExecute: _quickPickupByPin,
+        category: 'Ações rápidas',
+      ),
+      AncoraCommandAction(
+        id: 'theme',
+        title: 'Alternar tema claro ou escuro',
+        icon: Icons.dark_mode_outlined,
+        onExecute: _toggleTheme,
+        category: 'Preferências',
+      ),
+      AncoraCommandAction(
+        id: 'logout',
+        title: 'Sair da conta',
+        icon: Icons.logout_rounded,
+        onExecute: widget.onLogout,
+        category: 'Conta',
+      ),
+    ];
+
+    return AncoraCommandShortcutWrapper(
+      actions: commandActions,
+      child: Scaffold(
+        backgroundColor: SaaSColors.background(isDark),
+        floatingActionButton: (_selectedCondominium != null && _tabs.index == 0)
+            ? FloatingActionButton.extended(
+                backgroundColor: SaaSColors.primary,
+                foregroundColor: Colors.white,
+                onPressed: () => _registerReceivedPackage(),
+                icon: const Icon(Icons.add_box_outlined),
+                label: const Text('Registrar encomenda'),
+              )
+            : null,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildDoormanHeader(isDesktop, isDark),
+              if (_selectedCondominium?['id'] is num)
+                EmergencySosBanner(
+                  api: _api,
+                  condominiumId: _selectedCondominium!['id'] as num,
+                ),
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFE2E8F0),
+                      width: 1,
+                    ),
                   ),
                 ),
+                child: TabBar(
+                  controller: _tabs,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.center,
+                  labelColor: isDark
+                      ? const Color(0xFF60A5FA)
+                      : SaaSColors.primary,
+                  unselectedLabelColor: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
+                  indicatorColor: isDark
+                      ? const Color(0xFF60A5FA)
+                      : SaaSColors.primary,
+                  indicatorWeight: 3,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  labelStyle: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  tabs: [
+                    _buildTabItem(
+                      'Encomendas',
+                      Icons.inventory_2_outlined,
+                      hasPendingPackages,
+                    ),
+                    _buildTabItem('Visitantes', Icons.badge_outlined, false),
+                    _buildTabItem(
+                      'Consulta de Placas',
+                      Icons.directions_car_outlined,
+                      false,
+                    ),
+                    _buildTabItem(
+                      'Eventos & Convidados',
+                      Icons.people_outline_rounded,
+                      false,
+                    ),
+                    _buildTabItem(
+                      'Unidades & Achados',
+                      Icons.apartment_rounded,
+                      false,
+                    ),
+                    _buildTabItem(
+                      'Reservas & Áreas',
+                      Icons.event_available_outlined,
+                      false,
+                    ),
+                    _buildTabItem(
+                      'Smart Lockers',
+                      Icons.lock_clock_outlined,
+                      false,
+                    ),
+                    _buildTabItem(
+                      'Chat Moradores',
+                      Icons.chat_bubble_outline_rounded,
+                      false,
+                    ),
+                  ],
+                ),
               ),
-              child: TabBar(
-                controller: _tabs,
-                isScrollable: true,
-                tabAlignment: TabAlignment.center,
-                labelColor: isDark ? const Color(0xFF60A5FA) : SaaSColors.primary,
-                unselectedLabelColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                indicatorColor: isDark ? const Color(0xFF60A5FA) : SaaSColors.primary,
-                indicatorWeight: 3,
-                indicatorSize: TabBarIndicatorSize.label,
-                labelStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-                unselectedLabelStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
-                tabs: [
-                  _buildTabItem('Encomendas', Icons.inventory_2_outlined, hasPendingPackages),
-                  _buildTabItem('Visitantes', Icons.badge_outlined, false),
-                  _buildTabItem('Consulta de Placas', Icons.directions_car_outlined, false),
-                  _buildTabItem('Eventos & Convidados', Icons.people_outline_rounded, false),
-                  _buildTabItem('Unidades & Achados', Icons.apartment_rounded, false),
-                  _buildTabItem('Reservas & Áreas', Icons.event_available_outlined, false),
-                  _buildTabItem('Smart Lockers', Icons.lock_clock_outlined, false),
-                  _buildTabItem('Chat Moradores', Icons.chat_bubble_outline_rounded, false),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1300),
-                  child: Column(
-                    children: [
-                      if (_condominiums.isNotEmpty && (!isDesktop || _tabs.index == 0)) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
-                          child: Row(
-                            children: [
-                              if (!isDesktop && _condominiums.length > 1)
-                                Expanded(
-                                  child: DropdownButtonFormField<Map<String, dynamic>>(
-                                    initialValue: _selectedCondominium,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Condomínio em operação',
-                                      prefixIcon: Icon(Icons.apartment_rounded),
-                                      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1300),
+                    child: Column(
+                      children: [
+                        if (_condominiums.isNotEmpty &&
+                            (!isDesktop || _tabs.index == 0)) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
+                            child: Row(
+                              children: [
+                                if (!isDesktop && _condominiums.length > 1)
+                                  Expanded(
+                                    child: AncoraDropdown<Map<String, dynamic>>(
+                                      value: _selectedCondominium,
+                                      hint: 'Condomínio em operação',
+                                      prefixIcon: Icons.apartment_rounded,
+                                      items: _condominiums
+                                          .map(
+                                            (c) =>
+                                                AncoraMenuOption<
+                                                  Map<String, dynamic>
+                                                >(
+                                                  value: c,
+                                                  label:
+                                                      c['name']?.toString() ??
+                                                      'Sem nome',
+                                                ),
+                                          )
+                                          .toList(),
+                                      onChanged: (value) {
+                                        setState(
+                                          () => _selectCondominium(value),
+                                        );
+                                        _loadPackages();
+                                      },
                                     ),
-                                    items: _condominiums.map((c) {
-                                      return DropdownMenuItem(
-                                        value: c,
-                                        child: Text(c['name']?.toString() ?? 'Sem nome'),
-                                      );
-                                    }).toList(),
-                                    onChanged: (val) {
-                                      setState(() => _selectCondominium(val));
-                                      _loadPackages();
-                                    },
+                                  )
+                                else
+                                  const Spacer(),
+                                const SizedBox(width: 12),
+                                OutlinedButton.icon(
+                                  onPressed: _selectedCondominium == null
+                                      ? null
+                                      : () => _registerReceivedPackage(),
+                                  icon: const Icon(
+                                    Icons.add_box_outlined,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Nova Encomenda'),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton.icon(
+                                  onPressed: _selectedCondominium == null
+                                      ? null
+                                      : _quickPickupByPin,
+                                  icon: const Icon(
+                                    Icons.qr_code_scanner_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Baixa (PIN)'),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        Expanded(
+                          child: _loadingCondominiums
+                              ? const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(32),
+                                    child: SaaSLoadingState(
+                                      message:
+                                          'Carregando painel da portaria...',
+                                    ),
                                   ),
                                 )
-                              else
-                                const Spacer(),
-                              const SizedBox(width: 12),
-                              OutlinedButton.icon(
-                                onPressed: _selectedCondominium == null
-                                    ? null
-                                    : () => _registerReceivedPackage(),
-                                icon: const Icon(Icons.add_box_outlined, size: 16),
-                                label: const Text('Nova Encomenda'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              : _error != null
+                              ? Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: SaaSErrorState(
+                                      message: _error!,
+                                      onRetry: _loadCondominiums,
+                                    ),
+                                  ),
+                                )
+                              : _condominiums.isEmpty
+                              ? const SaaSEmptyState(
+                                  icon: Icons.meeting_room_outlined,
+                                  title: 'Nenhum condomínio associado',
+                                  subtitle:
+                                      'Nenhum condomínio associado no momento. Verifique suas notificações para aceitar convites de portaria.',
+                                )
+                              : TabBarView(
+                                  controller: _tabs,
+                                  children: [
+                                    _packagesTab(visiblePackages),
+                                    DoormanVisitorsView(
+                                      key: ValueKey(
+                                        'visitors_${_selectedCondominium!['id']}',
+                                      ),
+                                      api: _communityApi,
+                                      condominiumId:
+                                          _selectedCondominium!['id'],
+                                    ),
+                                    DoormanPlateCheckView(
+                                      key: ValueKey(
+                                        'plate_${_selectedCondominium!['id']}',
+                                      ),
+                                      api: _communityApi,
+                                      condominiumId:
+                                          _selectedCondominium!['id'],
+                                    ),
+                                    DoormanGuestListsView(
+                                      key: ValueKey(
+                                        'guests_${_selectedCondominium!['id']}',
+                                      ),
+                                      api: _communityApi,
+                                      condominiumId:
+                                          _selectedCondominium!['id'],
+                                    ),
+                                    Column(
+                                      children: [
+                                        Expanded(
+                                          flex: 3,
+                                          child: _directory != null
+                                              ? UnitDirectoryView(
+                                                  key: ValueKey(
+                                                    _directory!.condominiumId,
+                                                  ),
+                                                  directory: _directory!,
+                                                  onRegisterPackage:
+                                                      (unit, resident) =>
+                                                          _registerReceivedPackage(
+                                                            unit: unit,
+                                                            resident: resident,
+                                                          ),
+                                                  onAnnounce: (unit) =>
+                                                      _sendAnnouncement(
+                                                        unit: unit,
+                                                      ),
+                                                )
+                                              : const SizedBox.shrink(),
+                                        ),
+                                        const Divider(height: 1),
+                                        Expanded(
+                                          flex: 2,
+                                          child: DoormanLostFoundView(
+                                            key: ValueKey(
+                                              'lost_found_${_selectedCondominium!['id']}',
+                                            ),
+                                            api: _communityApi,
+                                            condominiumId:
+                                                _selectedCondominium!['id'],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    DoormanReservationsView(
+                                      key: ValueKey(
+                                        'reservations_${_selectedCondominium!['id']}',
+                                      ),
+                                      api: _communityApi,
+                                      condominiumId:
+                                          _selectedCondominium!['id'],
+                                    ),
+                                    DoormanSmartLockersView(
+                                      key: ValueKey(
+                                        'lockers_${_selectedCondominium!['id']}',
+                                      ),
+                                      api: _communityApi,
+                                      condominiumId:
+                                          _selectedCondominium!['id'],
+                                    ),
+                                    DoormanChatView(
+                                      key: ValueKey(
+                                        'doorman_chat_${_selectedCondominium!['id']}',
+                                      ),
+                                      api: _communityApi,
+                                      condominiumId:
+                                          _selectedCondominium!['id'],
+                                      isDoormanMode: true,
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
-                                onPressed: _selectedCondominium == null
-                                    ? null
-                                    : _quickPickupByPin,
-                                icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
-                                label: const Text('Baixa (PIN)'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
                       ],
-                      Expanded(
-                        child: _isLoading
-                            ? const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(32),
-                                  child: SaaSLoadingState(
-                                    message: 'Carregando painel da portaria...',
-                                  ),
-                                ),
-                              )
-                            : _error != null
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: SaaSErrorState(
-                                    message: _error!,
-                                    onRetry: _loadCondominiums,
-                                  ),
-                                ),
-                              )
-                            : _condominiums.isEmpty
-                            ? const SaaSEmptyState(
-                                icon: Icons.meeting_room_outlined,
-                                title: 'Nenhum condomínio associado',
-                                subtitle: 'Nenhum condomínio associado no momento. Verifique suas notificações para aceitar convites de portaria.',
-                              )
-                            : TabBarView(
-                                controller: _tabs,
-                                children: [
-                                  _packagesTab(visiblePackages),
-                                  DoormanVisitorsView(
-                                    key: ValueKey('visitors_${_selectedCondominium!['id']}'),
-                                    api: _communityApi,
-                                    condominiumId: _selectedCondominium!['id'],
-                                  ),
-                                  DoormanPlateCheckView(
-                                    key: ValueKey('plate_${_selectedCondominium!['id']}'),
-                                    api: _communityApi,
-                                    condominiumId: _selectedCondominium!['id'],
-                                  ),
-                                  DoormanGuestListsView(
-                                    key: ValueKey('guests_${_selectedCondominium!['id']}'),
-                                    api: _communityApi,
-                                    condominiumId: _selectedCondominium!['id'],
-                                  ),
-                                  Column(
-                                    children: [
-                                      Expanded(
-                                        flex: 3,
-                                        child: _directory != null
-                                            ? UnitDirectoryView(
-                                                key: ValueKey(_directory!.condominiumId),
-                                                directory: _directory!,
-                                                onRegisterPackage: (unit, resident) =>
-                                                    _registerReceivedPackage(
-                                                      unit: unit,
-                                                      resident: resident,
-                                                    ),
-                                                onAnnounce: (unit) =>
-                                                    _sendAnnouncement(unit: unit),
-                                              )
-                                            : const SizedBox.shrink(),
-                                      ),
-                                      const Divider(height: 1),
-                                      Expanded(
-                                        flex: 2,
-                                        child: DoormanLostFoundView(
-                                          key: ValueKey('lost_found_${_selectedCondominium!['id']}'),
-                                          api: _communityApi,
-                                          condominiumId: _selectedCondominium!['id'],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  DoormanReservationsView(
-                                    key: ValueKey('reservations_${_selectedCondominium!['id']}'),
-                                    api: _communityApi,
-                                    condominiumId: _selectedCondominium!['id'],
-                                  ),
-                                  DoormanSmartLockersView(
-                                    key: ValueKey('lockers_${_selectedCondominium!['id']}'),
-                                    api: _communityApi,
-                                    condominiumId: _selectedCondominium!['id'],
-                                  ),
-                                  DoormanChatView(
-                                    key: ValueKey('doorman_chat_${_selectedCondominium!['id']}'),
-                                    api: _communityApi,
-                                    condominiumId: _selectedCondominium!['id'],
-                                    isDoormanMode: true,
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
-
 
   Widget _packagesTab(List<Map<String, dynamic>> visiblePackages) => Column(
     children: [
@@ -1267,7 +1503,24 @@ class _DoormanPageState extends State<DoormanPage>
         ),
       ),
       Expanded(
-        child: visiblePackages.isEmpty
+        child: _loadingPackages
+            ? const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: SaaSLoadingState(message: 'Atualizando encomendas...'),
+                ),
+              )
+            : _packageError != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: SaaSErrorState(
+                    message: _packageError!,
+                    onRetry: _loadPackages,
+                  ),
+                ),
+              )
+            : visiblePackages.isEmpty
             ? const SaaSEmptyState(
                 icon: Icons.inventory_2_outlined,
                 title: 'Nenhuma encomenda encontrada',

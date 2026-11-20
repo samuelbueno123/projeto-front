@@ -12,7 +12,7 @@ class DirectoryApi {
   final int condominiumId;
 
   List<Map<String, dynamic>>? _units;
-  final Map<int, List<Map<String, dynamic>>> _residents = {};
+  final Map<int, Future<List<Map<String, dynamic>>>> _residentFutures = {};
 
   static List<Map<String, dynamic>> _asList(dynamic value) => value is List
       ? value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
@@ -30,15 +30,23 @@ class DirectoryApi {
   Future<List<Map<String, dynamic>>> residents(
     int unitId, {
     bool refresh = false,
-  }) async {
-    if (!_residents.containsKey(unitId) || refresh) {
-      _residents[unitId] = _asList(
-        await api.get(
-          '/condominiums/$condominiumId/directory/units/$unitId/residents',
-        ),
-      );
+  }) {
+    if (!refresh && _residentFutures.containsKey(unitId)) {
+      return _residentFutures[unitId]!;
     }
-    return _residents[unitId]!;
+
+    late final Future<List<Map<String, dynamic>>> request;
+    request = api
+        .get('/condominiums/$condominiumId/directory/units/$unitId/residents')
+        .then(_asList)
+        .catchError((Object error) {
+          if (identical(_residentFutures[unitId], request)) {
+            _residentFutures.remove(unitId);
+          }
+          throw error;
+        });
+    _residentFutures[unitId] = request;
+    return request;
   }
 }
 
@@ -190,7 +198,12 @@ class _UnitResidentPickerState extends State<_UnitResidentPicker> {
           future: _units,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: Padding(padding: EdgeInsets.all(24), child: SaaSLoadingState(message: 'Carregando unidades...')));
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: SaaSLoadingState(message: 'Carregando unidades...'),
+                ),
+              );
             }
             if (snapshot.hasError) {
               return _ErrorRetry(
@@ -267,7 +280,12 @@ class _UnitResidentPickerState extends State<_UnitResidentPicker> {
           future: _residents,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: Padding(padding: EdgeInsets.all(24), child: SaaSLoadingState(message: 'Carregando moradores...')));
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: SaaSLoadingState(message: 'Carregando moradores...'),
+                ),
+              );
             }
             if (snapshot.hasError) {
               return _ErrorRetry(
@@ -352,10 +370,7 @@ class _ErrorRetry extends StatelessWidget {
   Widget build(BuildContext context) => Center(
     child: Padding(
       padding: const EdgeInsets.all(24),
-      child: SaaSErrorState(
-        message: message,
-        onRetry: onRetry,
-      ),
+      child: SaaSErrorState(message: message, onRetry: onRetry),
     ),
   );
 }
@@ -427,7 +442,12 @@ class _UnitDirectoryViewState extends State<UnitDirectoryView> {
           future: _units,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: Padding(padding: EdgeInsets.all(24), child: SaaSLoadingState(message: 'Carregando estrutura...')));
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: SaaSLoadingState(message: 'Carregando estrutura...'),
+                ),
+              );
             }
             if (snapshot.hasError) {
               return _ErrorRetry(
@@ -510,7 +530,7 @@ class _UnitDirectoryViewState extends State<UnitDirectoryView> {
   );
 }
 
-class _UnitTile extends StatelessWidget {
+class _UnitTile extends StatefulWidget {
   const _UnitTile({
     required this.unit,
     required this.directory,
@@ -525,18 +545,46 @@ class _UnitTile extends StatelessWidget {
   final void Function(Map<String, dynamic> unit)? onAnnounce;
 
   @override
+  State<_UnitTile> createState() => _UnitTileState();
+}
+
+class _UnitTileState extends State<_UnitTile> {
+  late Future<List<Map<String, dynamic>>> _residentsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadResidents();
+  }
+
+  @override
+  void didUpdateWidget(covariant _UnitTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.directory != widget.directory ||
+        oldWidget.unit['id'] != widget.unit['id']) {
+      _loadResidents();
+    }
+  }
+
+  void _loadResidents() {
+    _residentsFuture = widget.directory.residents(
+      _asInt(widget.unit['id']) ?? 0,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) => ExpansionTile(
-    key: PageStorageKey('unit-${unit['id']}'),
+    key: PageStorageKey('unit-${widget.unit['id']}'),
     tilePadding: const EdgeInsets.only(left: 28, right: 8),
     leading: const Icon(Icons.home_outlined, color: Color(0xFF475569)),
     title: Text(
-      'Unidade ${unit['identifier']}',
+      'Unidade ${widget.unit['identifier']}',
       style: const TextStyle(fontWeight: FontWeight.w700),
     ),
     subtitle: const Text('Toque para ver os moradores'),
     children: [
       FutureBuilder<List<Map<String, dynamic>>>(
-        future: directory.residents(_asInt(unit['id']) ?? 0),
+        future: _residentsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Padding(
@@ -572,16 +620,17 @@ class _UnitTile extends StatelessWidget {
                   trailing: IconButton.filledTonal(
                     tooltip: 'Registrar encomenda para este morador',
                     icon: const Icon(Icons.add_rounded),
-                    onPressed: () => onRegisterPackage(unit, resident),
+                    onPressed: () =>
+                        widget.onRegisterPackage(widget.unit, resident),
                   ),
                 ),
-              if (onAnnounce != null)
+              if (widget.onAnnounce != null)
                 Align(
                   alignment: Alignment.centerRight,
                   child: Padding(
                     padding: const EdgeInsets.only(right: 12, bottom: 8),
                     child: TextButton.icon(
-                      onPressed: () => onAnnounce!(unit),
+                      onPressed: () => widget.onAnnounce!(widget.unit),
                       icon: const Icon(Icons.campaign_outlined, size: 18),
                       label: const Text('Enviar comunicado à unidade'),
                     ),

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:google_sign_in_web/web_only.dart' as google_web;
 
-import '../../../../core/config/api_config.dart';
+import '../../data/services/google_auth_service.dart';
 
 Widget buildGoogleLoginButton({required VoidCallback onPressed}) =>
     _GoogleLoginButton(onPressed: onPressed);
@@ -18,19 +18,22 @@ class _GoogleLoginButton extends StatefulWidget {
 }
 
 class _GoogleLoginButtonState extends State<_GoogleLoginButton> {
-  late final GoogleSignIn _googleSignIn = GoogleSignIn(
-    clientId: ApiConfig.googleWebClientId,
-    scopes: const ['email', 'profile'],
-  );
   StreamSubscription<GoogleSignInAccount?>? _subscription;
+  bool _triggered = false;
 
   @override
   void initState() {
     super.initState();
-    _subscription = _googleSignIn.onCurrentUserChanged.listen((account) {
-      if (account != null) widget.onPressed();
+    _subscription = AuthService.sharedGoogleSignIn.onCurrentUserChanged.listen((
+      account,
+    ) {
+      if (account != null && !_triggered) {
+        _triggered = true;
+        widget.onPressed();
+      } else if (account == null) {
+        _triggered = false;
+      }
     });
-    unawaited(_googleSignIn.signInSilently());
   }
 
   @override

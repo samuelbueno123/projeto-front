@@ -46,6 +46,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
   String _searchQuery = '';
   Map<String, dynamic>? _selectedResident;
   num? _currentUserId;
+  final List<Map<String, dynamic>> _pendingIncomingMessages = [];
+  int _messageRequestId = 0;
+  int _messageMutationVersion = 0;
 
   static const _residentPresets = [
     'Minha encomenda já chegou?',
@@ -83,7 +86,8 @@ class _DoormanChatViewState extends State<DoormanChatView> {
     // Sincronização em tempo real via Server-Sent Events (SSE)
     _sseSub = RealtimeService.instance.events.listen((event) {
       if (event.type == 'CHAT_MESSAGE') {
-        if (event.condominiumId == null || event.condominiumId == widget.condominiumId) {
+        if (event.condominiumId == null ||
+            event.condominiumId == widget.condominiumId) {
           _handleIncomingChatMessage(event.data);
           if (widget.isDoormanMode) {
             _loadConversations(silent: true);
@@ -121,12 +125,15 @@ class _DoormanChatViewState extends State<DoormanChatView> {
 
   String get _activeTargetUserName {
     if (!widget.isDoormanMode) return 'Portaria & Guarita';
-    return _selectedResident?['userName']?.toString() ?? widget.targetUserName ?? 'Conversa com Morador';
+    return _selectedResident?['userName']?.toString() ??
+        widget.targetUserName ??
+        'Conversa com Morador';
   }
 
   String? get _activeTargetUnitLabel {
     if (!widget.isDoormanMode) return null;
-    return _selectedResident?['unitLabel']?.toString() ?? widget.targetUnitLabel;
+    return _selectedResident?['unitLabel']?.toString() ??
+        widget.targetUnitLabel;
   }
 
   Future<void> _loadCurrentUser() async {
@@ -136,14 +143,20 @@ class _DoormanChatViewState extends State<DoormanChatView> {
         setState(() {
           _currentUserId = res['id'] as num?;
         });
+        final pending = List<Map<String, dynamic>>.of(_pendingIncomingMessages);
+        _pendingIncomingMessages.clear();
+        for (final message in pending) {
+          _handleIncomingChatMessage(message);
+        }
       }
     } catch (_) {}
   }
 
   void _handleIncomingChatMessage(dynamic data) {
     if (!mounted || data == null) return;
-    final Map<String, dynamic> msg =
-        data is Map<String, dynamic> ? data : <String, dynamic>{};
+    final Map<String, dynamic> msg = data is Map<String, dynamic>
+        ? data
+        : <String, dynamic>{};
     if (msg.isEmpty) return;
 
     if (widget.isDoormanMode) {
@@ -157,12 +170,18 @@ class _DoormanChatViewState extends State<DoormanChatView> {
     } else {
       // RESIDENT MODE: only accept messages between this resident and portaria
       final myId = _currentUserId;
-      if (myId != null) {
-        final senderId = msg['senderId'];
-        final recipientId = msg['recipientId'];
-        if (senderId != myId && recipientId != myId) {
-          return;
+      if (myId == null) {
+        if (!_pendingIncomingMessages.any(
+          (pending) => pending['id'] != null && pending['id'] == msg['id'],
+        )) {
+          _pendingIncomingMessages.add(msg);
         }
+        return;
+      }
+      final senderId = msg['senderId'];
+      final recipientId = msg['recipientId'];
+      if (senderId != myId && recipientId != myId) {
+        return;
       }
     }
 
@@ -174,8 +193,14 @@ class _DoormanChatViewState extends State<DoormanChatView> {
     setState(() {
       _messages.add(msg);
     });
+    _messageMutationVersion++;
     _scrollToBottom();
-    widget.api.markChatAsRead(widget.condominiumId).catchError((_) {});
+    final isIncoming = widget.isDoormanMode
+        ? msg['senderId'] == _activeTargetUserId
+        : msg['senderId'] != _currentUserId;
+    if (isIncoming) {
+      widget.api.markChatAsRead(widget.condominiumId).catchError((_) {});
+    }
   }
 
   Future<void> _loadConversations({bool silent = false}) async {
@@ -214,22 +239,79 @@ class _DoormanChatViewState extends State<DoormanChatView> {
       return;
     }
 
+    final requestId = ++_messageRequestId;
+    final mutationVersion = _messageMutationVersion;
     try {
       final list = await widget.api.getChatMessages(
         widget.condominiumId,
         targetUserId: targetId,
       );
-      if (!mounted) return;
-      if (list.length != _messages.length || _messages.isEmpty) {
-        setState(() => _messages = list);
+      if (!mounted ||
+          requestId != _messageRequestId ||
+          targetId != _activeTargetUserId) {
+        return;
+      }
+      final updated = mutationVersion == _messageMutationVersion
+          ? list
+          : _mergeMessages(list, _messages);
+      if (!_sameMessages(_messages, updated)) {
+        setState(() => _messages = updated);
+        _messageMutationVersion++;
         _scrollToBottom();
-        await widget.api.markChatAsRead(widget.condominiumId);
+        if (updated.isNotEmpty) {
+          await widget.api.markChatAsRead(widget.condominiumId);
+        }
       }
     } catch (e) {
       if (!silent && _loading && mounted) {
         setState(() => _error = e.toString());
       }
     }
+  }
+
+  List<Map<String, dynamic>> _mergeMessages(
+    List<Map<String, dynamic>> serverMessages,
+    List<Map<String, dynamic>> currentMessages,
+  ) {
+    final merged = <Map<String, dynamic>>[...serverMessages];
+    for (final message in currentMessages) {
+      final id = message['id'];
+      if (id != null && merged.any((candidate) => candidate['id'] == id)) {
+        continue;
+      }
+      if (id == null &&
+          merged.any(
+            (candidate) =>
+                candidate['senderId'] == message['senderId'] &&
+                candidate['sentAt'] == message['sentAt'] &&
+                candidate['message'] == message['message'],
+          )) {
+        continue;
+      }
+      merged.add(message);
+    }
+    merged.sort((a, b) {
+      final aTime = DateTime.tryParse(a['sentAt']?.toString() ?? '');
+      final bTime = DateTime.tryParse(b['sentAt']?.toString() ?? '');
+      if (aTime == null || bTime == null) return 0;
+      return aTime.compareTo(bTime);
+    });
+    return merged;
+  }
+
+  bool _sameMessages(
+    List<Map<String, dynamic>> first,
+    List<Map<String, dynamic>> second,
+  ) {
+    if (first.length != second.length) return false;
+    for (var i = 0; i < first.length; i++) {
+      if (first[i]['id'] != second[i]['id'] ||
+          first[i]['sentAt'] != second[i]['sentAt'] ||
+          first[i]['message'] != second[i]['message']) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _scrollToBottom() {
@@ -245,6 +327,8 @@ class _DoormanChatViewState extends State<DoormanChatView> {
   }
 
   void _selectResident(Map<String, dynamic> resident) {
+    _messageRequestId++;
+    _messageMutationVersion++;
     setState(() {
       _selectedResident = resident;
       _messages = [];
@@ -271,7 +355,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                 color: isDark ? const Color(0xFF0F172A) : Colors.white,
                 border: Border(
                   right: BorderSide(
-                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                    color: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFE2E8F0),
                   ),
                 ),
               ),
@@ -320,7 +406,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
             color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
             border: Border(
               bottom: BorderSide(
-                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                color: isDark
+                    ? const Color(0xFF334155)
+                    : const Color(0xFFE2E8F0),
               ),
             ),
           ),
@@ -329,11 +417,18 @@ class _DoormanChatViewState extends State<DoormanChatView> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.forum_outlined, size: 20, color: Color(0xFF2563EB)),
+                  const Icon(
+                    Icons.forum_outlined,
+                    size: 20,
+                    color: Color(0xFF2563EB),
+                  ),
                   const SizedBox(width: 8),
                   const Text(
                     'Conversas com Moradores',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14.5,
+                    ),
                   ),
                   const Spacer(),
                   IconButton(
@@ -362,11 +457,16 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                       : null,
                   filled: true,
                   fillColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide(
-                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFCBD5E1),
                     ),
                   ),
                 ),
@@ -381,147 +481,175 @@ class _DoormanChatViewState extends State<DoormanChatView> {
               ? const Center(
                   child: Padding(
                     padding: EdgeInsets.all(32),
-                    child: SaaSLoadingState(
-                      message: 'Carregando conversas...',
-                    ),
+                    child: SaaSLoadingState(message: 'Carregando conversas...'),
                   ),
                 )
               : filtered.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search_off_rounded,
+                          size: 40,
+                          color: isDark
+                              ? const Color(0xFF475569)
+                              : const Color(0xFF94A3B8),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _searchQuery.isEmpty
+                              ? 'Nenhum morador cadastrado neste condomínio.'
+                              : 'Nenhum morador encontrado para "$_searchQuery".',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 1,
+                    color: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFF1F5F9),
+                  ),
+                  itemBuilder: (context, index) {
+                    final item = filtered[index];
+                    final isSelected =
+                        _selectedResident != null &&
+                        _selectedResident!['userId'] == item['userId'];
+                    final unread = (item['unreadCount'] as num?)?.toInt() ?? 0;
+                    final lastMsg = item['lastMessage']?.toString();
+                    final name = item['userName']?.toString() ?? 'Morador';
+                    final unit = item['unitLabel']?.toString() ?? '';
+
+                    return InkWell(
+                      onTap: () => _selectResident(item),
+                      child: Container(
+                        color: isSelected
+                            ? (isDark
+                                  ? const Color(
+                                      0xFF1E3A8A,
+                                    ).withValues(alpha: 0.3)
+                                  : const Color(0xFFEFF6FF))
+                            : null,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
                           children: [
-                            Icon(
-                              Icons.search_off_rounded,
-                              size: 40,
-                              color: isDark ? const Color(0xFF475569) : const Color(0xFF94A3B8),
+                            CircleAvatar(
+                              radius: 20,
+                              backgroundColor: isSelected
+                                  ? const Color(0xFF2563EB)
+                                  : (isDark
+                                        ? const Color(0xFF1E293B)
+                                        : const Color(0xFFE2E8F0)),
+                              child: Text(
+                                name.isNotEmpty ? name[0].toUpperCase() : 'M',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : (isDark
+                                            ? Colors.white70
+                                            : const Color(0xFF334155)),
+                                ),
+                              ),
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _searchQuery.isEmpty
-                                  ? 'Nenhum morador cadastrado neste condomínio.'
-                                  : 'Nenhum morador encontrado para "$_searchQuery".',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: isSelected
+                                                ? FontWeight.w800
+                                                : FontWeight.w600,
+                                            fontSize: 13.5,
+                                            color: isDark
+                                                ? Colors.white
+                                                : const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                      ),
+                                      if (unread > 0)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFEF4444),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '$unread',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  if (unit.isNotEmpty)
+                                    Text(
+                                      unit,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        color: Color(0xFF2563EB),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  if (lastMsg != null &&
+                                      lastMsg.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      lastMsg,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: isDark
+                                            ? const Color(0xFF94A3B8)
+                                            : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                    )
-                  : ListView.separated(
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) => Divider(
-                        height: 1,
-                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                      ),
-                      itemBuilder: (context, index) {
-                        final item = filtered[index];
-                        final isSelected = _selectedResident != null &&
-                            _selectedResident!['userId'] == item['userId'];
-                        final unread = (item['unreadCount'] as num?)?.toInt() ?? 0;
-                        final lastMsg = item['lastMessage']?.toString();
-                        final name = item['userName']?.toString() ?? 'Morador';
-                        final unit = item['unitLabel']?.toString() ?? '';
-
-                        return InkWell(
-                          onTap: () => _selectResident(item),
-                          child: Container(
-                            color: isSelected
-                                ? (isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF))
-                                : null,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor: isSelected
-                                      ? const Color(0xFF2563EB)
-                                      : (isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0)),
-                                  child: Text(
-                                    name.isNotEmpty ? name[0].toUpperCase() : 'M',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: isSelected
-                                          ? Colors.white
-                                          : (isDark ? Colors.white70 : const Color(0xFF334155)),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              name,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                                fontSize: 13.5,
-                                                color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                              ),
-                                            ),
-                                          ),
-                                          if (unread > 0)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFEF4444),
-                                                borderRadius: BorderRadius.circular(10),
-                                              ),
-                                              child: Text(
-                                                '$unread',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 10.5,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 2),
-                                      if (unit.isNotEmpty)
-                                        Text(
-                                          unit,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 11.5,
-                                            color: Color(0xFF2563EB),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      if (lastMsg != null && lastMsg.isNotEmpty) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          lastMsg,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 11.5,
-                                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -537,7 +665,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                color: isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFFEFF6FF),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -561,7 +691,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                color: isDark
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFF64748B),
               ),
             ),
           ],
@@ -570,7 +702,11 @@ class _DoormanChatViewState extends State<DoormanChatView> {
     );
   }
 
-  Widget _buildChatConversationView(bool isDark, ThemeData theme, {required bool showBack}) {
+  Widget _buildChatConversationView(
+    bool isDark,
+    ThemeData theme, {
+    required bool showBack,
+  }) {
     return Column(
       children: [
         // Top chat bar
@@ -578,7 +714,11 @@ class _DoormanChatViewState extends State<DoormanChatView> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            border: Border(bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.1))),
+            border: Border(
+              bottom: BorderSide(
+                color: theme.dividerColor.withValues(alpha: 0.1),
+              ),
+            ),
           ),
           child: Row(
             children: [
@@ -594,8 +734,12 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                     ? const Color(0xFFEFF6FF)
                     : const Color(0xFFDCFCE7),
                 child: Icon(
-                  widget.isDoormanMode ? Icons.person_rounded : Icons.security_rounded,
-                  color: widget.isDoormanMode ? const Color(0xFF2563EB) : const Color(0xFF15803D),
+                  widget.isDoormanMode
+                      ? Icons.person_rounded
+                      : Icons.security_rounded,
+                  color: widget.isDoormanMode
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFF15803D),
                   size: 22,
                 ),
               ),
@@ -606,7 +750,10 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                   children: [
                     Text(
                       _activeTargetUserName,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14.5,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Row(
@@ -615,12 +762,16 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                           stream: RealtimeService.instance.connectionState,
                           initialData: RealtimeService.instance.state,
                           builder: (context, snapshot) {
-                            final connected = snapshot.data == RealtimeConnectionState.connected;
+                            final connected =
+                                snapshot.data ==
+                                RealtimeConnectionState.connected;
                             return Container(
                               width: 8,
                               height: 8,
                               decoration: BoxDecoration(
-                                color: connected ? const Color(0xFF22C55E) : Colors.orange,
+                                color: connected
+                                    ? const Color(0xFF22C55E)
+                                    : Colors.orange,
                                 shape: BoxShape.circle,
                               ),
                             );
@@ -631,7 +782,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                           _activeTargetUnitLabel ?? 'Conectado em tempo real',
                           style: TextStyle(
                             fontSize: 12,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
                           ),
                         ),
                       ],
@@ -660,135 +813,155 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                   ),
                 )
               : _error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: SaaSErrorState(
-                          message: 'Erro ao carregar mensagens: $_error',
-                          onRetry: _loadMessages,
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: SaaSErrorState(
+                      message: 'Erro ao carregar mensagens: $_error',
+                      onRetry: _loadMessages,
+                    ),
+                  ),
+                )
+              : _messages.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 52,
+                        color: isDark
+                            ? const Color(0xFF475569)
+                            : const Color(0xFF94A3B8),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Nenhuma mensagem trocada ainda.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
                         ),
                       ),
-                    )
-                  : _messages.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.chat_bubble_outline_rounded,
-                                size: 52,
-                                color: isDark ? const Color(0xFF475569) : const Color(0xFF94A3B8),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Nenhuma mensagem trocada ainda.',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.isDoormanMode
-                                    ? 'Inicie uma conversa privada com o morador abaixo.'
-                                    : 'Envie um aviso ou tire dúvidas direto com os porteiros de plantão.',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scrollCtrl,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          itemCount: _messages.length,
-                          itemBuilder: (ctx, i) {
-                            final m = _messages[i];
-                            final role = m['senderRole']?.toString() ?? 'RESIDENT';
-                            final isMe = widget.isDoormanMode
-                                ? (role == 'DOORMAN' || role == 'MANAGER')
-                                : (role == 'RESIDENT');
-
-                            final sender = m['senderName']?.toString() ?? (isMe ? 'Eu' : 'Portaria');
-                            final text = m['message']?.toString() ?? '';
-                            final timeRaw = m['sentAt']?.toString() ?? '';
-                            final time = timeRaw.isNotEmpty ? formatTime(timeRaw) : '';
-
-                            return Align(
-                              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                constraints: BoxConstraints(
-                                  maxWidth: MediaQuery.of(context).size.width * 0.76,
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: isMe
-                                      ? const Color(0xFF2563EB)
-                                      : isDark
-                                          ? const Color(0xFF1E293B)
-                                          : const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.only(
-                                    topLeft: const Radius.circular(16),
-                                    topRight: const Radius.circular(16),
-                                    bottomLeft: Radius.circular(isMe ? 16 : 4),
-                                    bottomRight: Radius.circular(isMe ? 4 : 16),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.04),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                                  children: [
-                                    if (!isMe)
-                                      Padding(
-                                        padding: const EdgeInsets.only(bottom: 3),
-                                        child: Text(
-                                          sender,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                            color: Color(0xFF2563EB),
-                                          ),
-                                        ),
-                                      ),
-                                    Text(
-                                      text,
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: isMe
-                                            ? Colors.white
-                                            : isDark
-                                                ? Colors.white
-                                                : const Color(0xFF1E293B),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      time,
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: isMe
-                                            ? Colors.white.withValues(alpha: 0.7)
-                                            : isDark
-                                                ? const Color(0xFF94A3B8)
-                                                : const Color(0xFF64748B),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.isDoormanMode
+                            ? 'Inicie uma conversa privada com o morador abaixo.'
+                            : 'Envie um aviso ou tire dúvidas direto com os porteiros de plantão.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: isDark
+                              ? const Color(0xFF64748B)
+                              : const Color(0xFF94A3B8),
                         ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  controller: _scrollCtrl,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  itemCount: _messages.length,
+                  itemBuilder: (ctx, i) {
+                    final m = _messages[i];
+                    final role = m['senderRole']?.toString() ?? 'RESIDENT';
+                    final senderId = m['senderId'];
+                    final isMe = _currentUserId != null
+                        ? senderId == _currentUserId
+                        : widget.isDoormanMode
+                        ? (role == 'DOORMAN' || role == 'MANAGER')
+                        : role == 'RESIDENT';
+
+                    final sender =
+                        m['senderName']?.toString() ??
+                        (isMe ? 'Eu' : 'Portaria');
+                    final text = m['message']?.toString() ?? '';
+                    final timeRaw = m['sentAt']?.toString() ?? '';
+                    final time = timeRaw.isNotEmpty ? formatTime(timeRaw) : '';
+
+                    return Align(
+                      alignment: isMe
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.76,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isMe
+                              ? const Color(0xFF2563EB)
+                              : isDark
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(16),
+                            topRight: const Radius.circular(16),
+                            bottomLeft: Radius.circular(isMe ? 16 : 4),
+                            bottomRight: Radius.circular(isMe ? 4 : 16),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: isMe
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
+                          children: [
+                            if (!isMe)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 3),
+                                child: Text(
+                                  sender,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF2563EB),
+                                  ),
+                                ),
+                              ),
+                            Text(
+                              text,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isMe
+                                    ? Colors.white
+                                    : isDark
+                                    ? Colors.white
+                                    : const Color(0xFF1E293B),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              time,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: isMe
+                                    ? Colors.white.withValues(alpha: 0.7)
+                                    : isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
         ),
 
         // Respostas Rápidas
@@ -800,23 +973,33 @@ class _DoormanChatViewState extends State<DoormanChatView> {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(
               children: [
-                const Icon(Icons.bolt_rounded, size: 16, color: Color(0xFFD97706)),
-                const SizedBox(width: 6),
-                ...(widget.isDoormanMode ? _doormanPresets : _residentPresets).map(
-                  (preset) => Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ActionChip(
-                      label: Text(preset, style: const TextStyle(fontSize: 11.5)),
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                      side: const BorderSide(color: Color(0xFFBFDBFE)),
-                      onPressed: () {
-                        _msgCtrl.text = preset;
-                        _send();
-                      },
-                    ),
-                  ),
+                const Icon(
+                  Icons.bolt_rounded,
+                  size: 16,
+                  color: Color(0xFFD97706),
                 ),
+                const SizedBox(width: 6),
+                ...(widget.isDoormanMode ? _doormanPresets : _residentPresets)
+                    .map(
+                      (preset) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          label: Text(
+                            preset,
+                            style: const TextStyle(fontSize: 11.5),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          backgroundColor: isDark
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFFEFF6FF),
+                          side: const BorderSide(color: Color(0xFFBFDBFE)),
+                          onPressed: () {
+                            _msgCtrl.text = preset;
+                            _send();
+                          },
+                        ),
+                      ),
+                    ),
               ],
             ),
           ),
@@ -827,7 +1010,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: 0.1))),
+            border: Border(
+              top: BorderSide(color: theme.dividerColor.withValues(alpha: 0.1)),
+            ),
           ),
           child: Row(
             children: [
@@ -840,13 +1025,18 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                     hintText: widget.isDoormanMode
                         ? 'Enviar mensagem privada para $_activeTargetUserName...'
                         : 'Escreva uma mensagem para a portaria...',
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide.none,
                     ),
                     filled: true,
-                    fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                    fillColor: isDark
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFFF1F5F9),
                   ),
                   onSubmitted: (_) => _send(),
                 ),
@@ -860,9 +1050,16 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
-                      : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                      : const Icon(
+                          Icons.send_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                   onPressed: _sending ? null : _send,
                 ),
               ),
@@ -880,7 +1077,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
     final targetId = _activeTargetUserId;
     if (widget.isDoormanMode && targetId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecione um morador para conversar.')),
+        const SnackBar(
+          content: Text('Por favor, selecione um morador para conversar.'),
+        ),
       );
       return;
     }
@@ -900,9 +1099,9 @@ class _DoormanChatViewState extends State<DoormanChatView> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao enviar mensagem: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erro ao enviar mensagem: $e')));
       }
     } finally {
       if (mounted) setState(() => _sending = false);

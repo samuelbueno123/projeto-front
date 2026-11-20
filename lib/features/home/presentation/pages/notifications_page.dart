@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../core/design_system/saas_design_system.dart';
+import '../../../../core/design_system/motion_system.dart';
 import '../../../../core/services/realtime_service.dart';
 import '../../../../core/widgets/enter_search_field.dart';
 import '../../../../core/widgets/full_screen_image_viewer.dart';
@@ -51,6 +52,30 @@ class _NotificationsPageState extends State<NotificationsPage> {
     super.dispose();
   }
 
+  Future<void> _confirmMarkAllAsRead() async {
+    final confirmed = await showAncoraDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Marcar todas como lidas?'),
+        content: const Text(
+          'Todas as notificações pendentes serão marcadas como lidas.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Marcar como lidas'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await _markAllAsRead();
+  }
+
   Future<void> _markAllAsRead() async {
     try {
       await widget.api.send('PATCH', '/notifications/read-all');
@@ -62,7 +87,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
           ),
         );
       }
-    } catch (_) {}
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Não foi possível atualizar notificações: $error'),
+        ),
+      );
+    }
   }
 
   Future<
@@ -238,7 +270,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         actions: [
           IconButton(
             tooltip: 'Marcar todas como lidas',
-            onPressed: _markAllAsRead,
+            onPressed: _confirmMarkAllAsRead,
             icon: const Icon(Icons.done_all_rounded),
           ),
           IconButton(
@@ -248,170 +280,184 @@ class _NotificationsPageState extends State<NotificationsPage> {
           ),
         ],
       ),
-      body: FutureBuilder<
-        ({
-          List<Map<String, dynamic>> notices,
-          List<Map<String, dynamic>> announcements,
-        })
-      >(
-        future: _load,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: SaaSLoadingState(
-                  message: 'Carregando notificações e avisos...',
-                ),
-              ),
-            );
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.error_outline_rounded,
-                      size: 40,
-                      color: Color(0xFFEF4444),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Não foi possível carregar as notificações.',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: SaaSColors.textPrimary(isDark),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    ShadButton.outline(
-                      onPressed: _refresh,
-                      child: const Text('Tentar novamente'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          final data = snapshot.data!;
-          final filteredAnnouncements = data.announcements
-              .where((item) => _matches(item, announcement: true))
-              .toList();
-          final filteredNotices = data.notices
-              .where((item) => _matches(item))
-              .toList();
-
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 860),
-              child: Column(
-                children: [
-                  // Search & Filter header
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                    decoration: BoxDecoration(
-                      color: SaaSColors.surface(isDark),
-                      border: Border(
-                        bottom: BorderSide(color: SaaSColors.border(isDark)),
-                      ),
-                    ),
+      body:
+          FutureBuilder<
+            ({
+              List<Map<String, dynamic>> notices,
+              List<Map<String, dynamic>> announcements,
+            })
+          >(
+            future: _load,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SingleChildScrollView(
+                  padding: EdgeInsets.all(20),
+                  child: AncoraListSkeleton(itemCount: 6),
+                );
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        EnterSearchField(
-                          hintText: 'Pesquisar avisos e notificações (Enter)',
-                          onSubmitted: (value) => setState(() => _query = value),
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          size: 40,
+                          color: Color(0xFFEF4444),
                         ),
                         const SizedBox(height: 12),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: _originLabels.entries.map((entry) {
-                              final isSelected = _originFilter == entry.key;
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(entry.value),
-                                  selected: isSelected,
-                                  onSelected: (_) => setState(
-                                    () => _originFilter = entry.key,
-                                  ),
-                                  labelStyle: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: isSelected
-                                        ? Colors.white
-                                        : SaaSColors.textSecondary(isDark),
-                                  ),
-                                  selectedColor: SaaSColors.primary,
-                                  backgroundColor: SaaSColors.surfaceSubtle(isDark),
-                                  side: BorderSide(
-                                    color: isSelected
-                                        ? SaaSColors.primary
-                                        : SaaSColors.border(isDark),
-                                  ),
-                                ),
-                              );
-                            }).toList(),
+                        Text(
+                          'Não foi possível carregar as notificações.',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: SaaSColors.textPrimary(isDark),
                           ),
+                        ),
+                        const SizedBox(height: 14),
+                        ShadButton.outline(
+                          onPressed: _refresh,
+                          child: const Text('Tentar novamente'),
                         ),
                       ],
                     ),
                   ),
+                );
+              }
 
-                  // Notifications & Announcements Stream
-                  Expanded(
-                    child: (filteredAnnouncements.isEmpty && filteredNotices.isEmpty)
-                        ? const SaaSEmptyState(
-                            icon: Icons.notifications_off_outlined,
-                            title: 'Nenhuma notificação encontrada',
-                            description:
-                                'Você está em dia com todos os avisos e comunicados do seu condomínio.',
-                          )
-                        : ListView(
-                            padding: const EdgeInsets.all(20),
-                            children: [
-                              if (filteredAnnouncements.isNotEmpty) ...[
-                                SaaSSectionHeader(
-                                  title: 'Comunicados do Condomínio',
-                                  badge: SaaSBadge(
-                                    label: '${filteredAnnouncements.length}',
-                                    variant: SaaSBadgeVariant.warning,
-                                  ),
-                                ),
-                                ...filteredAnnouncements.map(
-                                  (item) => _buildAnnouncementCard(item, isDark),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                              if (filteredNotices.isNotEmpty) ...[
-                                SaaSSectionHeader(
-                                  title: 'Notificações Pessoais & Sistema',
-                                  badge: SaaSBadge(
-                                    label: '${filteredNotices.length}',
-                                    variant: SaaSBadgeVariant.primary,
-                                  ),
-                                ),
-                                ...filteredNotices.map(
-                                  (item) => _buildNoticeCard(item, isDark),
-                                ),
-                              ],
-                            ],
+              final data = snapshot.data!;
+              final filteredAnnouncements = data.announcements
+                  .where((item) => _matches(item, announcement: true))
+                  .toList();
+              final filteredNotices = data.notices
+                  .where((item) => _matches(item))
+                  .toList();
+
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 860),
+                  child: Column(
+                    children: [
+                      // Search & Filter header
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                        decoration: BoxDecoration(
+                          color: SaaSColors.surface(isDark),
+                          border: Border(
+                            bottom: BorderSide(
+                              color: SaaSColors.border(isDark),
+                            ),
                           ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            EnterSearchField(
+                              hintText:
+                                  'Pesquisar avisos e notificações (Enter)',
+                              onSubmitted: (value) =>
+                                  setState(() => _query = value),
+                            ),
+                            const SizedBox(height: 12),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: _originLabels.entries.map((entry) {
+                                  final isSelected = _originFilter == entry.key;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: ChoiceChip(
+                                      label: Text(entry.value),
+                                      selected: isSelected,
+                                      onSelected: (_) => setState(
+                                        () => _originFilter = entry.key,
+                                      ),
+                                      labelStyle: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                        color: isSelected
+                                            ? Colors.white
+                                            : SaaSColors.textSecondary(isDark),
+                                      ),
+                                      selectedColor: SaaSColors.primary,
+                                      backgroundColor: SaaSColors.surfaceSubtle(
+                                        isDark,
+                                      ),
+                                      side: BorderSide(
+                                        color: isSelected
+                                            ? SaaSColors.primary
+                                            : SaaSColors.border(isDark),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Notifications & Announcements Stream
+                      Expanded(
+                        child:
+                            (filteredAnnouncements.isEmpty &&
+                                filteredNotices.isEmpty)
+                            ? const SaaSEmptyState(
+                                icon: Icons.notifications_off_outlined,
+                                title: 'Nenhuma notificação encontrada',
+                                description:
+                                    'Você está em dia com todos os avisos e comunicados do seu condomínio.',
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _refresh,
+                                child: ListView(
+                                  padding: const EdgeInsets.all(20),
+                                  children: [
+                                    if (filteredAnnouncements.isNotEmpty) ...[
+                                      SaaSSectionHeader(
+                                        title: 'Comunicados do Condomínio',
+                                        badge: SaaSBadge(
+                                          label:
+                                              '${filteredAnnouncements.length}',
+                                          variant: SaaSBadgeVariant.warning,
+                                        ),
+                                      ),
+                                      ...filteredAnnouncements.map(
+                                        (item) => _buildAnnouncementCard(
+                                          item,
+                                          isDark,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+                                    if (filteredNotices.isNotEmpty) ...[
+                                      SaaSSectionHeader(
+                                        title:
+                                            'Notificações Pessoais & Sistema',
+                                        badge: SaaSBadge(
+                                          label: '${filteredNotices.length}',
+                                          variant: SaaSBadgeVariant.primary,
+                                        ),
+                                      ),
+                                      ...filteredNotices.map(
+                                        (item) =>
+                                            _buildNoticeCard(item, isDark),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+                ),
+              );
+            },
+          ),
     );
   }
 
@@ -487,8 +533,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       backgroundColor: isRead
           ? null
           : (isDark
-              ? SaaSColors.primary.withValues(alpha: 0.08)
-              : const Color(0xFFF0F7FF)),
+                ? SaaSColors.primary.withValues(alpha: 0.08)
+                : const Color(0xFFF0F7FF)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

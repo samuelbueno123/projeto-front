@@ -3,10 +3,7 @@ import '../../../../core/design_system/saas_design_system.dart';
 import '../../data/community_api.dart';
 
 class JoinCondominiumDialog extends StatefulWidget {
-  const JoinCondominiumDialog({
-    super.key,
-    required this.api,
-  });
+  const JoinCondominiumDialog({super.key, required this.api});
 
   final CommunityApi api;
 
@@ -89,7 +86,9 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
         authority: 'ROLE_RESIDENT',
         unitId: _selectedUnit?['id'],
         residentType: _residentType,
-        message: _messageController.text.trim().isEmpty ? null : _messageController.text.trim(),
+        message: _messageController.text.trim().isEmpty
+            ? null
+            : _messageController.text.trim(),
       );
 
       if (!mounted) return;
@@ -101,10 +100,7 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      SaaSFeedback.showError(
-        context,
-        'Falha ao enviar solicitação: $e',
-      );
+      SaaSFeedback.showError(context, 'Falha ao enviar solicitação: $e');
     }
   }
 
@@ -126,130 +122,174 @@ class _JoinCondominiumDialogState extends State<JoinCondominiumDialog> {
         child: _loading
             ? const Padding(
                 padding: EdgeInsets.all(24),
-                child: SaaSLoadingState(message: 'Buscando condomínios abertos...'),
+                child: SaaSLoadingState(
+                  message: 'Buscando condomínios abertos...',
+                ),
               )
             : _condos.isEmpty
-                ? const SaaSEmptyState(
-                    icon: Icons.domain_disabled_rounded,
-                    title: 'Nenhum condomínio disponível',
-                    subtitle: 'No momento não há condomínios abertos para novas solicitações.',
-                  )
-                : SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Envie uma solicitação para a administração do condomínio para liberar seu acesso às áreas, portaria e comunicados.',
-                          style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
-                        ),
-                        const SizedBox(height: 16),
+            ? const SaaSEmptyState(
+                icon: Icons.domain_disabled_rounded,
+                title: 'Nenhum condomínio disponível',
+                subtitle:
+                    'No momento não há condomínios abertos para novas solicitações.',
+              )
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Envie uma solicitação para a administração do condomínio para liberar seu acesso às áreas, portaria e comunicados.',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+                    ),
+                    const SizedBox(height: 16),
 
-                        // Seleção do condomínio
-                        DropdownButtonFormField<Map<String, dynamic>>(
-                          value: _selectedCondo,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Selecione o Condomínio',
-                            prefixIcon: Icon(Icons.apartment_rounded),
+                    // Seleção do condomínio
+                    DropdownButtonFormField<Map<String, dynamic>>(
+                      value: _selectedCondo,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Selecione o Condomínio',
+                        prefixIcon: Icon(Icons.apartment_rounded),
+                      ),
+                      items: _condos.map((c) {
+                        return DropdownMenuItem(
+                          value: c,
+                          child: Text(
+                            c['name']?.toString() ?? 'Condomínio',
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          items: _condos.map((c) {
-                            return DropdownMenuItem(
-                              value: c,
-                              child: Text(c['name']?.toString() ?? 'Condomínio', overflow: TextOverflow.ellipsis),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() => _selectedCondo = val);
-                              _loadUnits(val['id']);
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 14),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _selectedCondo = val);
+                          _loadUnits(val['id']);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 14),
 
-                        // Seleção da unidade
-                        if (_loadingUnits)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Row(
-                              children: [
-                                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                                SizedBox(width: 10),
-                                Text('Buscando unidades cadastradas...', style: TextStyle(fontSize: 12)),
-                              ],
+                    // Seleção da unidade
+                    if (_loadingUnits)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                          )
-                        else if (_units.isNotEmpty)
-                          DropdownButtonFormField<Map<String, dynamic>>(
-                            value: _selectedUnit,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Sua Unidade / Apartamento',
-                              prefixIcon: Icon(Icons.home_outlined),
+                            SizedBox(width: 10),
+                            Text(
+                              'Buscando unidades cadastradas...',
+                              style: TextStyle(fontSize: 12),
                             ),
-                            items: _units.map((u) {
-                              final sector = u['sector']?['name'] ?? u['sectorName'] ?? '';
-                              return DropdownMenuItem(
-                                value: u,
-                                child: Text('Unidade ${u['identifier']} ${sector.isNotEmpty ? "($sector)" : ""}'),
-                              );
-                            }).toList(),
-                            onChanged: (val) => setState(() => _selectedUnit = val),
-                          )
-                        else
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'Não há unidades disponíveis para auto-seleção. O síndico poderá alocar sua unidade na aprovação.',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
-                            ),
-                          ),
-                        const SizedBox(height: 14),
-
-                        // Tipo de vínculo (Proprietário ou Inquilino)
-                        DropdownButtonFormField<String>(
-                          value: _residentType,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Tipo de Residência',
-                            prefixIcon: Icon(Icons.badge_outlined),
-                          ),
-                          items: const [
-                            DropdownMenuItem(value: 'OWNER', child: Text('Proprietário')),
-                            DropdownMenuItem(value: 'TENANT', child: Text('Inquilino / Locatário')),
                           ],
-                          onChanged: (val) => setState(() => _residentType = val ?? 'OWNER'),
                         ),
-                        const SizedBox(height: 14),
-
-                        // Mensagem de apresentação
-                        TextField(
-                          controller: _messageController,
-                          maxLines: 2,
-                          decoration: const InputDecoration(
-                            labelText: 'Mensagem para o síndico (opcional)',
-                            hintText: 'Ex: Olá, aluguei recentemente a unidade 101 Bloco A.',
-                            prefixIcon: Icon(Icons.message_outlined),
+                      )
+                    else if (_units.isNotEmpty)
+                      DropdownButtonFormField<Map<String, dynamic>>(
+                        value: _selectedUnit,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Sua Unidade / Apartamento',
+                          prefixIcon: Icon(Icons.home_outlined),
+                        ),
+                        items: _units.map((u) {
+                          final rawSector = u['sector'];
+                          final sector = rawSector is Map
+                              ? (rawSector['name'] ??
+                                        rawSector['sectorName'] ??
+                                        '')
+                                    .toString()
+                              : (rawSector?.toString().trim().isNotEmpty == true
+                                    ? rawSector.toString()
+                                    : u['sectorName']?.toString() ?? '');
+                          return DropdownMenuItem(
+                            value: u,
+                            child: Text(
+                              'Unidade ${u['identifier']} ${sector.isNotEmpty ? '($sector)' : ''}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setState(() => _selectedUnit = val),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Não há unidades disponíveis para auto-seleção. O síndico poderá alocar sua unidade na aprovação.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF92400E),
                           ),
+                        ),
+                      ),
+                    const SizedBox(height: 14),
+
+                    // Tipo de vínculo (Proprietário ou Inquilino)
+                    DropdownButtonFormField<String>(
+                      value: _residentType,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de Residência',
+                        prefixIcon: Icon(Icons.badge_outlined),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'OWNER',
+                          child: Text('Proprietário'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'TENANT',
+                          child: Text('Inquilino / Locatário'),
                         ),
                       ],
+                      onChanged: (val) =>
+                          setState(() => _residentType = val ?? 'OWNER'),
                     ),
-                  ),
+                    const SizedBox(height: 14),
+
+                    // Mensagem de apresentação
+                    TextField(
+                      controller: _messageController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Mensagem para o síndico (opcional)',
+                        hintText:
+                            'Ex: Olá, aluguei recentemente a unidade 101 Bloco A.',
+                        prefixIcon: Icon(Icons.message_outlined),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
       ),
       actions: [
         TextButton(
-          onPressed: _submitting ? null : () => Navigator.of(context).pop(false),
+          onPressed: _submitting
+              ? null
+              : () => Navigator.of(context).pop(false),
           child: const Text('Cancelar'),
         ),
         FilledButton.icon(
           onPressed: (_selectedCondo != null && !_submitting) ? _submit : null,
           icon: _submitting
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
               : const Icon(Icons.send_rounded, size: 18),
           label: const Text('Enviar Solicitação'),
         ),

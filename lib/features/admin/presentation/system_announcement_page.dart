@@ -48,10 +48,12 @@ class _SystemAnnouncementPageState extends State<SystemAnnouncementPage> {
         : name.endsWith('.webp')
         ? 'image/webp'
         : 'image/jpeg';
+    if (!mounted) return;
     setState(() => _image = 'data:$mime;base64,${base64Encode(bytes)}');
   }
 
   Future<void> _send() async {
+    if (_sending) return;
     if (_title.text.trim().isEmpty || _message.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -60,6 +62,27 @@ class _SystemAnnouncementPageState extends State<SystemAnnouncementPage> {
       );
       return;
     }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Publicar comunicado geral?'),
+        content: const Text(
+          'Este aviso será enviado para todos os moradores, porteiros e síndicos. Confirme se o conteúdo está pronto para publicação.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Revisar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.send_rounded),
+            label: const Text('Publicar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     setState(() => _sending = true);
     try {
       final count = await widget.api.send(

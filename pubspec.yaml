@@ -10,15 +10,17 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.8
   http: ^1.1.0
+  web: ^1.1.1
   google_sign_in: ^6.2.1
   google_sign_in_web: ^0.12.4+4
   flutter_secure_storage: ^9.2.4
   image_picker: ^1.2.0
   intl: ^0.20.3
   shadcn_ui: ^0.57.4
-  velocity_x: ^4.3.1
   flutter_animate: ^4.5.2
 
 dev_dependencies:

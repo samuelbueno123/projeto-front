@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../core/design_system/motion_system.dart';
 import '../core/design_system/saas_design_system.dart';
+import '../core/services/realtime_service.dart';
 import '../core/theme/app_theme.dart';
 import '../features/auth/presentation/controllers/auth_controller.dart';
 import '../features/auth/presentation/pages/login_page.dart';
@@ -12,6 +16,7 @@ import '../features/home/presentation/pages/home_page.dart';
 import '../features/manager/presentation/manager_page.dart';
 import '../features/doorman/presentation/pages/doorman_page.dart';
 import '../core/http/http_client_wrapper.dart';
+import '../features/home/data/home_service.dart';
 
 class AppWidget extends StatefulWidget {
   const AppWidget({super.key});
@@ -24,6 +29,10 @@ class _AppWidgetState extends State<AppWidget> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   late final AuthController _authController;
   String? _overrideRoleView;
+  String? _cachedClaimsToken;
+  Map<String, dynamic> _cachedClaims = const {};
+  String? _syncedSessionToken;
+  int _profileRequestGeneration = 0;
 
   void _resetNavigationStack() {
     _navigatorKey.currentState?.popUntil((route) => route.isFirst);
@@ -45,14 +54,43 @@ class _AppWidgetState extends State<AppWidget> {
   @override
   void dispose() {
     _authController.removeListener(_handleControllerChange);
+    _authController.dispose();
+    HttpClientWrapper.onUnauthorized = null;
+    RealtimeService.instance.setToken(null);
     super.dispose();
   }
 
   void _handleControllerChange() {
+    final token = _authController.session?.token;
+    if (token != _syncedSessionToken) {
+      _syncedSessionToken = token;
+      RealtimeService.instance.setToken(token);
+      AppTheme.setThemePreference('SYSTEM');
+      if (token != null && token.isNotEmpty) {
+        unawaited(_loadThemePreference(token));
+      }
+    }
     if (!mounted) {
       return;
     }
     setState(() {});
+  }
+
+  Future<void> _loadThemePreference(String token) async {
+    final generation = ++_profileRequestGeneration;
+    try {
+      final profile = await HomeService(token: token).get('/users/me');
+      if (!mounted ||
+          generation != _profileRequestGeneration ||
+          token != _authController.session?.token) {
+        return;
+      }
+      if (profile is Map) {
+        AppTheme.setThemePreference(profile['themePreference']?.toString());
+      }
+    } catch (_) {
+      // Theme sync is best-effort; keep the current account usable if it fails.
+    }
   }
 
   void _switchRole(String role) {
@@ -79,6 +117,12 @@ class _AppWidgetState extends State<AppWidget> {
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           themeMode: themeMode,
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('pt', 'BR'), Locale('en', 'US')],
           builder: (context, child) {
             final isDark = Theme.of(context).brightness == Brightness.dark;
             return ShadTheme(
@@ -86,7 +130,7 @@ class _AppWidgetState extends State<AppWidget> {
               child: child ?? const SizedBox.shrink(),
             );
           },
-          home: _buildHome(),
+          home: AncoraAnimatedSwitcher(child: _buildHome()),
         );
       },
     );
@@ -98,9 +142,7 @@ class _AppWidgetState extends State<AppWidget> {
         body: Center(
           child: Padding(
             padding: EdgeInsets.all(32),
-            child: SaaSLoadingState(
-              message: 'Inicializando o sistema...',
-            ),
+            child: SaaSLoadingState(message: 'Inicializando o sistema...'),
           ),
         ),
       );
@@ -187,32 +229,38 @@ class _AppWidgetState extends State<AppWidget> {
       onSignUp: _authController.signUp,
       isLoading: _authController.isLoading,
       errorMessage: _authController.errorMessage,
+      onAuthModeChanged: _authController.clearError,
     );
   }
 
   List<String> _getAvailableRoles(String? token) {
-    if (token == null) return const ['RESIDENT'];
+    final authorities = _claimsFor(token)['authorities'];
+    if (authorities is List) {
+      if (authorities.contains('ROLE_ADMIN')) {
+        return const ['ADMIN', 'MANAGER', 'DOORMAN', 'RESIDENT'];
+      }
+      final roles = <String>[];
+      if (authorities.contains('ROLE_MANAGER')) roles.add('MANAGER');
+      if (authorities.contains('ROLE_DOORMAN')) roles.add('DOORMAN');
+      roles.add('RESIDENT');
+      return roles;
+    }
+    return const ['RESIDENT'];
+  }
+
+  Map<String, dynamic> _claimsFor(String? token) {
+    if (token == null || token.isEmpty) return const {};
+    if (_cachedClaimsToken == token) return _cachedClaims;
+    _cachedClaimsToken = token;
     try {
-      final claims = jsonDecode(
+      final decoded = jsonDecode(
         utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))),
       );
-      final authorities = claims is Map ? claims['authorities'] : null;
-      if (authorities is List) {
-        if (authorities.contains('ROLE_ADMIN')) {
-          return const ['ADMIN', 'MANAGER', 'DOORMAN', 'RESIDENT'];
-        }
-        final roles = <String>[];
-        if (authorities.contains('ROLE_MANAGER')) {
-          roles.add('MANAGER');
-        }
-        if (authorities.contains('ROLE_DOORMAN')) {
-          roles.add('DOORMAN');
-        }
-        roles.add('RESIDENT');
-        return roles.isNotEmpty ? roles : const ['RESIDENT'];
-      }
-    } catch (_) {}
-    return const ['RESIDENT'];
+      _cachedClaims = decoded is Map<String, dynamic> ? decoded : const {};
+    } catch (_) {
+      _cachedClaims = const {};
+    }
+    return _cachedClaims;
   }
 
   String _determineEffectiveRole(String? token) {
@@ -227,41 +275,17 @@ class _AppWidgetState extends State<AppWidget> {
   }
 
   bool _isAdministrator(String? token) {
-    if (token == null) return false;
-    try {
-      final claims = jsonDecode(
-        utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))),
-      );
-      final authorities = claims is Map ? claims['authorities'] : null;
-      return authorities is List && authorities.contains('ROLE_ADMIN');
-    } catch (_) {
-      return false;
-    }
+    final authorities = _claimsFor(token)['authorities'];
+    return authorities is List && authorities.contains('ROLE_ADMIN');
   }
 
   bool _isManager(String? token) {
-    if (token == null) return false;
-    try {
-      final claims = jsonDecode(
-        utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))),
-      );
-      final authorities = claims is Map ? claims['authorities'] : null;
-      return authorities is List && authorities.contains('ROLE_MANAGER');
-    } catch (_) {
-      return false;
-    }
+    final authorities = _claimsFor(token)['authorities'];
+    return authorities is List && authorities.contains('ROLE_MANAGER');
   }
 
   bool _isDoorman(String? token) {
-    if (token == null) return false;
-    try {
-      final claims = jsonDecode(
-        utf8.decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))),
-      );
-      final authorities = claims is Map ? claims['authorities'] : null;
-      return authorities is List && authorities.contains('ROLE_DOORMAN');
-    } catch (_) {
-      return false;
-    }
+    final authorities = _claimsFor(token)['authorities'];
+    return authorities is List && authorities.contains('ROLE_DOORMAN');
   }
 }
