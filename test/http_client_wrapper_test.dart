@@ -244,5 +244,43 @@ void main() {
     expect(networkCalls, 2);
     expect(res3.data, {'items': [1, 2, 3]});
   });
+
+  test('transparently refreshes expired access token once on 401 and replays request', () async {
+    int apiCalls = 0;
+    int refreshCalls = 0;
+    final client = MockClient((request) async {
+      apiCalls++;
+      if (request.headers['Authorization'] == 'Bearer expired-token') {
+        return http.Response(jsonEncode({'message': 'Expired'}), 401);
+      }
+      expect(request.headers['Authorization'], 'Bearer fresh-token');
+      return http.Response(jsonEncode({'ok': true}), 200);
+    });
+
+    HttpClientWrapper.onRefreshToken = () async {
+      refreshCalls++;
+      return 'fresh-token';
+    };
+    addTearDown(() {
+      HttpClientWrapper.onRefreshToken = null;
+      HttpClientWrapper.onUnauthorized = null;
+    });
+
+    final api = HttpClientWrapper(
+      httpClient: client,
+      baseUrl: 'https://api.example.test',
+      authToken: 'expired-token',
+    );
+
+    final res = await api.get<Map<String, dynamic>>(
+      '/users/me',
+      fromJsonT: (json) => json,
+    );
+
+    expect(refreshCalls, 1);
+    expect(apiCalls, 2);
+    expect(api.authToken, 'fresh-token');
+    expect(res.data, {'ok': true});
+  });
 }
 

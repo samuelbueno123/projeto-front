@@ -70,6 +70,20 @@ class _CommunityHubViewState extends State<CommunityHubView>
   }
 
   @override
+  void didUpdateWidget(covariant CommunityHubView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialCategoryIndex != widget.initialCategoryIndex) {
+      final target = widget.initialCategoryIndex.clamp(
+        0,
+        _categories.length - 1,
+      );
+      if (_tabController.index != target) {
+        _tabController.animateTo(target);
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
@@ -187,79 +201,39 @@ class _CommunityHubViewState extends State<CommunityHubView>
       children: [
         // Compact Category TabBar avoiding page vertical scroll
         Container(
-          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          decoration: BoxDecoration(
+            color: isDark ? SaaSColors.cardNavy : Colors.white,
+            border: Border(
+              bottom: BorderSide(color: SaaSColors.border(isDark)),
+            ),
+          ),
           child: TabBar(
             controller: _tabController,
             isScrollable: true,
             tabAlignment: TabAlignment.center,
-            labelColor: const Color(0xFF2563EB),
-            unselectedLabelColor: isDark
-                ? const Color(0xFF94A3B8)
-                : const Color(0xFF64748B),
-            indicatorColor: const Color(0xFF2563EB),
+            labelColor: isDark ? const Color(0xFF60A5FA) : SaaSColors.primary,
+            unselectedLabelColor: SaaSColors.textSecondary(isDark),
+            indicatorColor: isDark
+                ? const Color(0xFF60A5FA)
+                : SaaSColors.primary,
             indicatorWeight: 3,
-            tabs: const [
-              Tab(
-                icon: Icon(Icons.report_problem_outlined, size: 20),
-                text: 'Ocorrências',
-              ),
-              Tab(
-                icon: Icon(Icons.badge_outlined, size: 20),
-                text: 'Visitantes',
-              ),
-              Tab(
-                icon: Icon(Icons.how_to_vote_outlined, size: 20),
-                text: 'Votações',
-              ),
-              Tab(
-                icon: Icon(Icons.storefront_outlined, size: 20),
-                text: 'Classificados',
-              ),
-              Tab(
-                icon: Icon(Icons.directions_car_outlined, size: 20),
-                text: 'Veículos',
-              ),
-              Tab(icon: Icon(Icons.pets_outlined, size: 20), text: 'Pets'),
-              Tab(
-                icon: Icon(Icons.local_shipping_outlined, size: 20),
-                text: 'Mudanças',
-              ),
-              Tab(
-                icon: Icon(Icons.menu_book_outlined, size: 20),
-                text: 'Documentos',
-              ),
-              Tab(
-                icon: Icon(Icons.gavel_outlined, size: 20),
-                text: 'Notificações & Multas',
-              ),
-              Tab(
-                icon: Icon(Icons.lock_clock_outlined, size: 20),
-                text: 'Lockers',
-              ),
-              Tab(
-                icon: Icon(Icons.people_outline_rounded, size: 20),
-                text: 'Convidados',
-              ),
-              Tab(
-                icon: Icon(Icons.build_circle_outlined, size: 20),
-                text: 'Manutenção & O.S.',
-              ),
-              Tab(
-                icon: Icon(Icons.groups_outlined, size: 20),
-                text: 'Assembleias',
-              ),
-              Tab(
-                icon: Icon(Icons.account_balance_wallet_outlined, size: 20),
-                text: 'Financeiro',
-              ),
-              Tab(
-                icon: Icon(Icons.find_in_page_outlined, size: 20),
-                text: 'Achados e Perdidos',
-              ),
-              Tab(
-                icon: Icon(Icons.analytics_outlined, size: 20),
-                text: 'Relatórios & KPIs',
-              ),
+            tabs: [
+              _buildCategoryTab(0, Icons.report_problem_outlined, 'Ocorrências'),
+              _buildCategoryTab(1, Icons.badge_outlined, 'Visitantes'),
+              _buildCategoryTab(2, Icons.how_to_vote_outlined, 'Votações'),
+              _buildCategoryTab(3, Icons.storefront_outlined, 'Classificados'),
+              _buildCategoryTab(4, Icons.directions_car_outlined, 'Veículos'),
+              _buildCategoryTab(5, Icons.pets_outlined, 'Pets'),
+              _buildCategoryTab(6, Icons.local_shipping_outlined, 'Mudanças'),
+              _buildCategoryTab(7, Icons.menu_book_outlined, 'Documentos'),
+              _buildCategoryTab(8, Icons.gavel_outlined, 'Notificações & Multas'),
+              _buildCategoryTab(9, Icons.lock_clock_outlined, 'Lockers'),
+              _buildCategoryTab(10, Icons.people_outline_rounded, 'Convidados'),
+              _buildCategoryTab(11, Icons.build_circle_outlined, 'Manutenção & O.S.'),
+              _buildCategoryTab(12, Icons.groups_outlined, 'Assembleias'),
+              _buildCategoryTab(13, Icons.account_balance_wallet_outlined, 'Financeiro'),
+              _buildCategoryTab(14, Icons.find_in_page_outlined, 'Achados e Perdidos'),
+              _buildCategoryTab(15, Icons.analytics_outlined, 'Relatórios & KPIs'),
             ],
           ),
         ),
@@ -272,20 +246,32 @@ class _CommunityHubViewState extends State<CommunityHubView>
             ),
             controller: _tabController,
             children: [
-              _TicketsSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'COMMUNITY_TICKETS',
+                featureName: 'Ocorrências e Chamados',
+                child: _TicketsSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _VisitorsSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'VISITORS',
+                featureName: 'Visitantes e QR Code',
+                child: _VisitorsSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _PollsSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'POLLS',
+                featureName: 'Enquetes Rápidas',
+                child: _PollsSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
               _buildPlanGatedWrapper(
                 requiredFeature: 'MARKETPLACE_INTEGRATION',
@@ -296,25 +282,41 @@ class _CommunityHubViewState extends State<CommunityHubView>
                   canManage: widget.canManage,
                 ),
               ),
-              _VehiclesSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'COMMUNITY_TICKETS',
+                featureName: 'Veículos e Garagem',
+                child: _VehiclesSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _PetsSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'COMMUNITY_TICKETS',
+                featureName: 'Cadastro de Pets',
+                child: _PetsSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _MovingSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'COMMUNITY_TICKETS',
+                featureName: 'Agendamento de Mudanças',
+                child: _MovingSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _DocumentsSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'COMMUNITY_TICKETS',
+                featureName: 'Documentos e Atas',
+                child: _DocumentsSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
               _buildPlanGatedWrapper(
                 requiredFeature: 'NOTIFICATIONS',
@@ -326,7 +328,7 @@ class _CommunityHubViewState extends State<CommunityHubView>
                 ),
               ),
               _buildPlanGatedWrapper(
-                requiredFeature: 'PACKAGES',
+                requiredFeature: 'SMART_LOCKERS',
                 featureName: 'Armários Inteligentes (Lockers)',
                 child: _LockersSubView(
                   api: widget.api,
@@ -335,7 +337,7 @@ class _CommunityHubViewState extends State<CommunityHubView>
                 ),
               ),
               _buildPlanGatedWrapper(
-                requiredFeature: 'RESERVATIONS',
+                requiredFeature: 'VISITORS',
                 featureName: 'Lista de Convidados',
                 child: _GuestListsSubView(
                   api: widget.api,
@@ -343,35 +345,99 @@ class _CommunityHubViewState extends State<CommunityHubView>
                   canManage: widget.canManage,
                 ),
               ),
-              _MaintenanceSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'MAINTENANCE',
+                featureName: 'Manutenção Predial & O.S.',
+                child: _MaintenanceSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _AssembliesSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'ASSEMBLIES',
+                featureName: 'Assembleias Virtuais',
+                child: _AssembliesSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _FinancialSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'FINANCIAL',
+                featureName: 'Gestão Financeira e Orçamento',
+                child: _FinancialSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _LostFoundSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'COMMUNITY_TICKETS',
+                featureName: 'Achados e Perdidos',
+                child: _LostFoundSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
-              _ReportsSubView(
-                api: widget.api,
-                condominiumId: widget.condominiumId,
-                canManage: widget.canManage,
+              _buildPlanGatedWrapper(
+                requiredFeature: 'REPORTS',
+                featureName: 'Relatórios Gerenciais & KPIs',
+                child: _ReportsSubView(
+                  api: widget.api,
+                  condominiumId: widget.condominiumId,
+                  canManage: widget.canManage,
+                ),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  static const Map<int, String> _categoryFeatures = {
+    0: 'COMMUNITY_TICKETS',
+    1: 'VISITORS',
+    2: 'POLLS',
+    3: 'MARKETPLACE_INTEGRATION',
+    4: 'COMMUNITY_TICKETS',
+    5: 'COMMUNITY_TICKETS',
+    6: 'COMMUNITY_TICKETS',
+    7: 'COMMUNITY_TICKETS',
+    8: 'NOTIFICATIONS',
+    9: 'SMART_LOCKERS',
+    10: 'VISITORS',
+    11: 'MAINTENANCE',
+    12: 'ASSEMBLIES',
+    13: 'FINANCIAL',
+    14: 'COMMUNITY_TICKETS',
+    15: 'REPORTS',
+  };
+
+  bool _isCategoryLocked(int index) {
+    final enabled = widget.enabledFeatures;
+    if (enabled == null) return false;
+    final feature = _categoryFeatures[index];
+    if (feature == null) return false;
+    return !enabled.map((e) => e.toUpperCase()).contains(feature);
+  }
+
+  Tab _buildCategoryTab(int index, IconData icon, String text) {
+    final locked = _isCategoryLocked(index);
+    return Tab(
+      icon: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 20),
+          if (locked) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.lock_outline_rounded, size: 13, color: Color(0xFFF59E0B)),
+          ],
+        ],
+      ),
+      text: text,
     );
   }
 }

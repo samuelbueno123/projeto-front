@@ -1,6 +1,6 @@
-import 'dart:convert';
 import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/widgets/smart_image.dart';
 import '../dialogs/counter_proposal_dialog.dart';
 import 'package:flutter/material.dart';
 import '../../data/community_api.dart';

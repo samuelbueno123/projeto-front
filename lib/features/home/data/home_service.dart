@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import '../../../core/config/api_config.dart';
 import '../../../core/http/api_exception.dart';
 import '../../../core/http/http_client_wrapper.dart';
 
@@ -10,12 +11,7 @@ class HomeService {
     : _wrapper = HttpClientWrapper(
         httpClient: client,
         authToken: token,
-        baseUrl:
-            baseUrl ??
-            const String.fromEnvironment(
-              'API_BASE_URL',
-              defaultValue: 'http://localhost:8080',
-            ),
+        baseUrl: baseUrl ?? ApiConfig.baseUrl,
       );
 
   final HttpClientWrapper _wrapper;

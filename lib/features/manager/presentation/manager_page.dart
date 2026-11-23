@@ -1,21 +1,27 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../core/design_system/motion_system.dart';
 import '../../../core/design_system/saas_design_system.dart';
 import '../../../core/services/realtime_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/enter_search_field.dart';
 import '../../../core/widgets/command_palette.dart';
+import '../../../core/widgets/condo_assistant_sheet.dart';
 import '../../../core/widgets/custom_menus.dart';
 import '../../../core/widgets/emergency_sos_banner.dart';
 import '../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../core/widgets/role_switcher_pill.dart';
+import '../../../core/widgets/saas_dashboard_widgets.dart';
+import '../../../core/widgets/smart_image.dart';
+import '../../../core/widgets/subscription_status_banner.dart';
 import '../../../core/widgets/user_avatar.dart';
 import '../../auth/presentation/pages/user_profile_page.dart';
 import '../../community/data/community_api.dart';
@@ -29,6 +35,9 @@ import '../../directory/presentation/unit_directory.dart';
 import '../../home/data/home_service.dart';
 import '../../home/presentation/pages/notifications_page.dart';
 import 'membership_management_page.dart';
+
+part 'manager_dashboard_panels_part.dart';
+part 'manager_secondary_views_part.dart';
 
 class ManagerPage extends StatefulWidget {
   const ManagerPage({
@@ -44,6 +53,7 @@ class ManagerPage extends StatefulWidget {
     this.currentRole,
     this.availableRoles = const [],
     this.onSwitchRole,
+    this.api,
   });
 
   final String? token;
@@ -58,20 +68,31 @@ class ManagerPage extends StatefulWidget {
   final String? currentRole;
   final List<String> availableRoles;
   final ValueChanged<String>? onSwitchRole;
+  final HomeService? api;
 
   @override
   State<ManagerPage> createState() => _ManagerPageState();
 }
 
 class _ManagerPageState extends State<ManagerPage> {
-  late HomeService _api = HomeService(token: widget.token);
+  late HomeService _api = widget.api ?? HomeService(token: widget.token);
   late CommunityApi _communityApi = CommunityApi(api: _api);
   List<Map<String, dynamic>> _condos = [];
   Map<String, dynamic> _profile = {};
   Map<String, dynamic>? _condoDetails;
+  Map<String, dynamic>? _subscription;
+  SubscriptionAccessState get _subAccess => SubscriptionAccessState.fromMaps(
+    condominium: _condoDetails,
+    subscription: _subscription,
+  );
+  bool _hasFeature(String code) => _subAccess.hasFeature(code);
   int? _selected;
   int _navIndex = 0;
+  int _communityTabIndex = 0;
   Map<String, dynamic>? _dashboard;
+  List<Map<String, dynamic>> _tickets = [];
+  List<Map<String, dynamic>> _maintenanceOrders = [];
+  Map<String, dynamic> _financialSummary = {};
   bool _loading = true;
   String? _error;
   String _query = '';
@@ -83,13 +104,16 @@ class _ManagerPageState extends State<ManagerPage> {
     RealtimeService.instance.setToken(widget.token);
     _realtimeSub = RealtimeService.instance.events.listen((event) {
       const relevantEvents = {
-        'PACKAGE_UPDATED',
-        'RESERVATION_UPDATED',
-        'ANNOUNCEMENT_CREATED',
-        'INVOICE_UPDATED',
-        'MEMBERSHIP_UPDATED',
-        'MAINTENANCE_UPDATED',
-        'SOS_ALERT_CREATED',
+        RealtimeEventTypes.packageUpdated,
+        RealtimeEventTypes.reservationUpdated,
+        RealtimeEventTypes.announcementCreated,
+        RealtimeEventTypes.announcement,
+        RealtimeEventTypes.invoiceUpdated,
+        RealtimeEventTypes.membershipUpdated,
+        RealtimeEventTypes.maintenanceUpdated,
+        RealtimeEventTypes.sosAlertCreated,
+        RealtimeEventTypes.emergencyAlert,
+        RealtimeEventTypes.subscriptionUpdated,
       };
       if (relevantEvents.contains(event.type) &&
           (event.condominiumId == null || event.condominiumId == _selected) &&
@@ -104,9 +128,12 @@ class _ManagerPageState extends State<ManagerPage> {
   @override
   void didUpdateWidget(covariant ManagerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.token != widget.token) {
+    if (oldWidget.token != widget.token || oldWidget.api != widget.api) {
       RealtimeService.instance.setToken(widget.token);
-      _api = HomeService(token: widget.token);
+      if (oldWidget.api == null && widget.api == null) {
+        _api.dispose();
+      }
+      _api = widget.api ?? HomeService(token: widget.token);
       _communityApi = CommunityApi(api: _api);
       _loadProfile();
       _init();
@@ -116,7 +143,14 @@ class _ManagerPageState extends State<ManagerPage> {
   @override
   void dispose() {
     _realtimeSub?.cancel();
+    if (widget.api == null) {
+      _api.dispose();
+    }
     super.dispose();
+  }
+
+  void _mutate(VoidCallback fn) {
+    if (mounted) setState(fn);
   }
 
   Future<void> _toggleTheme() async {
@@ -239,9 +273,12 @@ class _ManagerPageState extends State<ManagerPage> {
       final memberships = result is List
           ? result.whereType<Map<String, dynamic>>().toList()
           : <Map<String, dynamic>>[];
-      final managed = memberships
-          .where((membership) => membership['authority'] == 'ROLE_MANAGER')
-          .toList();
+      final seenCondoIds = <int>{};
+      final managed = memberships.where((membership) {
+        if (membership['authority'] != 'ROLE_MANAGER') return false;
+        final cid = (membership['condominiumId'] as num?)?.toInt();
+        return cid != null && seenCondoIds.add(cid);
+      }).toList();
       if (!mounted) return;
       setState(() => _condos = managed);
       if (managed.isEmpty) {
@@ -260,6 +297,21 @@ class _ManagerPageState extends State<ManagerPage> {
     }
   }
 
+  Future<dynamic> _safeGet(String path) async {
+    try {
+      return await _api.get(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<Map<String, dynamic>> _asMapList(dynamic raw) {
+    if (raw is List) {
+      return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    return [];
+  }
+
   Future<void> _load({bool silent = false}) async {
     if (_selected == null || !mounted) return;
     if (!silent) {
@@ -272,16 +324,32 @@ class _ManagerPageState extends State<ManagerPage> {
       final results = await Future.wait([
         _api.get('/manager/dashboard?condominiumId=$_selected'),
         _api.get('/condominiums/$_selected'),
+        _safeGet('/condominiums/$_selected/tickets?mine=false'),
+        _safeGet('/condominiums/$_selected/maintenance/orders'),
+        _safeGet('/condominiums/$_selected/financial/summary'),
+        _safeGet('/condominiums/$_selected/subscription'),
       ]);
       final result = results[0];
       final condoData = results[1] is Map<String, dynamic>
           ? results[1] as Map<String, dynamic>
+          : null;
+      final tickets = _asMapList(results[2]);
+      final maintenanceOrders = _asMapList(results[3]);
+      final financialSummary = results[4] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(results[4] as Map<String, dynamic>)
+          : <String, dynamic>{};
+      final subscriptionData = results[5] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(results[5] as Map)
           : null;
 
       if (mounted) {
         setState(() {
           _dashboard = result as Map<String, dynamic>;
           _condoDetails = condoData;
+          _subscription = subscriptionData;
+          _tickets = tickets;
+          _maintenanceOrders = maintenanceOrders;
+          _financialSummary = financialSummary;
           if (!silent) _loading = false;
         });
 
@@ -314,24 +382,6 @@ class _ManagerPageState extends State<ManagerPage> {
         }
       }
     }
-  }
-
-  Future<void> _openGallery() async {
-    final condoId = _selected;
-    if (condoId == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Galeria de Fotos do Condomínio')),
-          body: CondominiumGalleryView(
-            condominiumId: condoId,
-            api: _communityApi,
-            canManage: true,
-          ),
-        ),
-      ),
-    );
-    if (mounted) _load();
   }
 
   Future<void> _generateBoleto() async {
@@ -522,390 +572,76 @@ class _ManagerPageState extends State<ManagerPage> {
   }
 
   Future<void> _openMemberships() async {
-    final condominiumId = _selected;
-    if (condominiumId == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            MembershipManagementPage(api: _api, condominiumId: condominiumId),
-      ),
-    );
-    if (mounted) _load();
+    if (_selected == null) return;
+    setState(() => _navIndex = 5);
   }
 
   Future<void> _openCommunityHub({int initialIndex = 0}) async {
-    final condoId = _selected;
-    if (condoId == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: const Text('Serviços da Comunidade & Operacional'),
-          ),
-          body: CommunityHubView(
-            api: _communityApi,
-            condominiumId: condoId,
-            canManage: true,
-            enabledFeatures: (_condoDetails?['features'] as List?)
-                ?.whereType<String>()
-                .toList(),
-            initialCategoryIndex: initialIndex,
-          ),
-        ),
-      ),
-    );
-    if (mounted) _load();
+    if (_selected == null) return;
+    setState(() {
+      _communityTabIndex = initialIndex;
+      _navIndex = 3;
+    });
   }
 
   Future<void> _openCondoAssistant() async {
     final condoId = _selected;
     if (condoId == null) return;
-    final questionCtrl = TextEditingController();
-    Map<String, dynamic>? assistantResponse;
-    bool asking = false;
+    if (!_hasFeature('AI_ASSISTANT')) {
+      SaaSFeedback.showWarning(
+        context,
+        'O Assistente IA requer o plano Enterprise ou assinatura ativa.',
+      );
+      return;
+    }
+    await CondoAssistantSheet.show(
+      context,
+      api: _api,
+      condominiumId: condoId,
+      condominiumName: _selectedCondoName(),
+    );
+  }
 
-    await showModalBottomSheet<void>(
+  Future<void> _openPlanManagerDialog() async {
+    final condoId = _selected;
+    if (condoId == null) return;
+    await showDialog<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: EdgeInsets.fromLTRB(
-            20,
-            20,
-            20,
-            MediaQuery.of(context).viewInsets.bottom + 20,
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 650),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.auto_awesome,
-                        color: Color(0xFFD97706),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Assistente do Condomínio (IA)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 17,
-                            ),
-                          ),
-                          Text(
-                            'Respostas sobre regimento, leis e minutas',
-                            style: TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 12.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: questionCtrl,
-                        decoration: const InputDecoration(
-                          hintText:
-                              'Ex: Qual a regra para barulho? Ou redigir aviso de obra...',
-                          isDense: true,
-                        ),
-                        onSubmitted: (q) async {
-                          if (q.trim().isEmpty) return;
-                          setModalState(() => asking = true);
-                          try {
-                            final res = await _communityApi.askAssistant(
-                              condoId,
-                              q.trim(),
-                            );
-                            setModalState(() {
-                              assistantResponse = res;
-                              asking = false;
-                            });
-                          } catch (e) {
-                            setModalState(() => asking = false);
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                      ),
-                      onPressed: asking
-                          ? null
-                          : () async {
-                              final q = questionCtrl.text.trim();
-                              if (q.isEmpty) return;
-                              setModalState(() => asking = true);
-                              try {
-                                final res = await _communityApi.askAssistant(
-                                  condoId,
-                                  q,
-                                );
-                                setModalState(() {
-                                  assistantResponse = res;
-                                  asking = false;
-                                });
-                              } catch (e) {
-                                setModalState(() => asking = false);
-                              }
-                            },
-                      child: asking
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Text('Perguntar'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                if (assistantResponse != null)
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(
-                                  Icons.psychology_outlined,
-                                  size: 18,
-                                  color: Color(0xFF2563EB),
-                                ),
-                                SizedBox(width: 6),
-                                Text(
-                                  'Orientação Especializada:',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            SelectableText(
-                              assistantResponse!['answer'] ?? '',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                height: 1.45,
-                                color: Color(0xFF1E293B),
-                              ),
-                            ),
-                            if (assistantResponse!['legalBasis'] != null) ...[
-                              const Divider(height: 20),
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.gavel_outlined,
-                                    size: 16,
-                                    color: Color(0xFF64748B),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      'Fundamento: ${assistantResponse!['legalBasis']}',
-                                      style: const TextStyle(
-                                        color: Color(0xFF64748B),
-                                        fontSize: 12,
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                            if (assistantResponse!['suggestedFollowUps']
-                                is List) ...[
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Perguntas relacionadas:',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children:
-                                    (assistantResponse!['suggestedFollowUps']
-                                            as List)
-                                        .map(
-                                          (f) => ActionChip(
-                                            label: Text(
-                                              f.toString(),
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                            onPressed: () {
-                                              questionCtrl.text = f.toString();
-                                            },
-                                          ),
-                                        )
-                                        .toList(),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ActionChip(
-                        avatar: const Icon(Icons.volume_off_outlined, size: 16),
-                        label: const Text('Horário de Silêncio'),
-                        onPressed: () => questionCtrl.text =
-                            'Quais os horários de silêncio e multas por barulho?',
-                      ),
-                      ActionChip(
-                        avatar: const Icon(
-                          Icons.local_shipping_outlined,
-                          size: 16,
-                        ),
-                        label: const Text('Regras de Mudança'),
-                        onPressed: () => questionCtrl.text =
-                            'Quais os horários permitidos e regras para mudanças?',
-                      ),
-                      ActionChip(
-                        avatar: const Icon(Icons.pets_outlined, size: 16),
-                        label: const Text('Regras para Pets'),
-                        onPressed: () => questionCtrl.text =
-                            'Quais as regras e direitos para animais de estimação?',
-                      ),
-                      ActionChip(
-                        avatar: const Icon(
-                          Icons.construction_outlined,
-                          size: 16,
-                        ),
-                        label: const Text('Reformas & ART'),
-                        onPressed: () => questionCtrl.text =
-                            'O que é exigido para reformas nos apartamentos?',
-                      ),
-                      ActionChip(
-                        avatar: const Icon(Icons.campaign_outlined, size: 16),
-                        label: const Text('Redigir Comunicado'),
-                        onPressed: () => questionCtrl.text =
-                            'Redigir minuta de comunicado sobre manutenção preventiva na caixa d\'água',
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-        ),
+      builder: (ctx) => PlanSelectionDialog(
+        condominiumId: condoId,
+        condominiumName: _selectedCondoName(),
+        api: _communityApi,
+        isInitialSetup: false,
+        currentPlanId: _subAccess.billingPlanId,
+        currentPlanName: _subAccess.planName,
+        subscriptionStatus: _subAccess.status,
+        initialBillingCycle: _subAccess.billingCycle ?? 'MONTHLY',
+        onPlanSelected: () => _load(),
       ),
     );
   }
 
   Future<void> _openUnitsMenu() async {
-    final condominiumId = _selected;
-    if (condominiumId == null) return;
-    final units = (_dashboard?['units'] is List)
-        ? (_dashboard!['units'] as List)
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList()
-        : <Map<String, dynamic>>[];
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            _ManagerUnitsMenuPage(units: units, onEditPayment: _editPayment),
-      ),
-    );
-    if (mounted) _load();
+    if (_selected == null) return;
+    setState(() => _navIndex = 1);
   }
 
   Future<void> _openReservationsMenu() async {
-    final condominiumId = _selected;
-    if (condominiumId == null) return;
-    final reservations = (_dashboard?['reservations'] is List)
-        ? (_dashboard!['reservations'] as List)
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList()
-        : <Map<String, dynamic>>[];
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            _ManagerReservationsMenuPage(api: _api, reservations: reservations),
-      ),
-    );
-    if (mounted) _load();
+    if (_selected == null) return;
+    setState(() => _navIndex = 2);
   }
 
   Future<void> _selectNavigation(int index) async {
-    if (index == 0) {
-      if (_navIndex != 0) setState(() => _navIndex = 0);
-      return;
+    if (index < 0 || index > 6) return;
+    setState(() {
+      if (index == 3 && _navIndex != 3) {
+        _communityTabIndex = 0;
+      }
+      _navIndex = index;
+    });
+    if (index == 0 && _selected != null) {
+      await _load(silent: true);
     }
-    if (index < 0 || index > 5) return;
-    setState(() => _navIndex = index);
-    switch (index) {
-      case 1:
-        await _openUnitsMenu();
-        break;
-      case 2:
-        await _openReservationsMenu();
-        break;
-      case 3:
-        await _openCommunityHub();
-        break;
-      case 4:
-        await _openGallery();
-        break;
-      case 5:
-        await _openMemberships();
-        break;
-    }
-    if (mounted) setState(() => _navIndex = 0);
   }
 
   Future<bool> _editPayment(Map<String, dynamic> unit) async {
@@ -1132,32 +868,49 @@ class _ManagerPageState extends State<ManagerPage> {
                   ),
                   const SizedBox(height: 12),
                   _reportRow(
-                    '📦 Encomendas Registradas',
+                    'Encomendas Registradas',
                     '${packages is Map ? packages['total'] ?? 0 : 0}',
+                    icon: Icons.inventory_2_outlined,
+                    iconColor: SaaSColors.primary,
                   ),
                   _reportRow(
-                    '📬 Encomendas Aguardando',
+                    'Encomendas Aguardando',
                     '${packages is Map ? packages['pending'] ?? 0 : 0}',
+                    icon: Icons.mark_email_unread_outlined,
+                    iconColor: SaaSColors.warning,
                   ),
                   _reportRow(
-                    '✅ Encomendas Entregues',
+                    'Encomendas Entregues',
                     '${packages is Map ? packages['delivered'] ?? 0 : 0}',
+                    icon: Icons.check_circle_outline_rounded,
+                    iconColor: SaaSColors.success,
                   ),
                   const Divider(height: 20),
                   _reportRow(
-                    '📅 Total de Reservas',
+                    'Total de Reservas',
                     '${reservations is Map ? reservations['total'] ?? 0 : 0}',
+                    icon: Icons.calendar_month_outlined,
+                    iconColor: SaaSColors.primary,
                   ),
                   _reportRow(
-                    '⏳ Reservas Aguardando',
+                    'Reservas Aguardando',
                     '${reservations is Map ? reservations['pending'] ?? 0 : 0}',
+                    icon: Icons.hourglass_bottom_rounded,
+                    iconColor: SaaSColors.warning,
                   ),
                   _reportRow(
-                    '🎉 Reservas Confirmadas',
+                    'Reservas Confirmadas',
                     '${reservations is Map ? reservations['confirmed'] ?? 0 : 0}',
+                    icon: Icons.celebration_outlined,
+                    iconColor: SaaSColors.success,
                   ),
                   const Divider(height: 20),
-                  _reportRow('📢 Comunicados Ativos', '$announcements'),
+                  _reportRow(
+                    'Comunicados Ativos',
+                    '$announcements',
+                    icon: Icons.campaign_outlined,
+                    iconColor: SaaSColors.purple,
+                  ),
                 ],
               ),
             ),
@@ -1215,13 +968,21 @@ Emitido via Âncora Gestão
     }
   }
 
-  Widget _reportRow(String label, String value) {
+  Widget _reportRow(
+    String label,
+    String value, {
+    IconData icon = Icons.analytics_outlined,
+    Color iconColor = SaaSColors.primary,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13.5)),
+          Icon(icon, size: 17, color: iconColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(label, style: const TextStyle(fontSize: 13.5)),
+          ),
           Text(
             value,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
@@ -1308,6 +1069,68 @@ Emitido via Âncora Gestão
       ),
     ];
 
+    final units = _dashboardRecords('units');
+    final reservations = _dashboardRecords('reservations');
+
+    Widget buildInlineWorkspace() {
+      switch (_navIndex) {
+        case 1:
+          return _ManagerUnitsMenuPage(
+            key: ValueKey('mgr_units_$_selected'),
+            units: units,
+            onEditPayment: _editPayment,
+            isEmbedded: true,
+          );
+        case 2:
+          return _ManagerReservationsMenuPage(
+            key: ValueKey('mgr_res_$_selected'),
+            api: _api,
+            reservations: reservations,
+            isEmbedded: true,
+            onChanged: () => _load(silent: true),
+          );
+        case 3:
+          return CommunityHubView(
+            key: ValueKey('mgr_hub_${_selected}_$_communityTabIndex'),
+            api: _communityApi,
+            condominiumId: _selected!,
+            canManage: true,
+            enabledFeatures: _subAccess.enabledFeatures.toList(),
+            initialCategoryIndex: _communityTabIndex,
+          );
+        case 4:
+          return CondominiumGalleryView(
+            key: ValueKey('mgr_gallery_$_selected'),
+            condominiumId: _selected!,
+            api: _communityApi,
+            canManage: true,
+          );
+        case 5:
+          return MembershipManagementPage(
+            key: ValueKey('mgr_members_$_selected'),
+            api: _api,
+            condominiumId: _selected!,
+            isEmbedded: true,
+          );
+        case 6:
+          return NotificationsPage(
+            key: ValueKey('mgr_notif_$_selected'),
+            api: _api,
+            condominiumId: _selected,
+            isEmbedded: true,
+          );
+        default:
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth >= 980) {
+                return _buildDesktopManagerLayout(isDark);
+              }
+              return _buildMobileManagerLayout(isDark);
+            },
+          );
+      }
+    }
+
     final dashboardContent = _loading
         ? const Center(
             child: Padding(
@@ -1331,14 +1154,7 @@ Emitido via Âncora Gestão
             subtitle:
                 'Sua conta ainda não está vinculada como síndico a nenhum condomínio.',
           )
-        : LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth >= 980) {
-                return _buildDesktopManagerLayout(isDark);
-              }
-              return _buildMobileManagerLayout(isDark);
-            },
-          );
+        : buildInlineWorkspace();
 
     return AncoraCommandShortcutWrapper(
       actions: commandActions,
@@ -1387,12 +1203,18 @@ Emitido via Âncora Gestão
             icon: Icons.groups_outlined,
             section: 'Condomínio',
           ),
+          AncoraNavDestination(
+            id: 'notifications',
+            label: 'Notificações',
+            icon: Icons.notifications_outlined,
+            section: 'Condomínio',
+          ),
         ],
         selectedIndex: _navIndex,
         onSelect: _selectNavigation,
         onOpenCommandPalette: () =>
             AncoraCommandShortcutWrapper.open(context, commandActions),
-        banner: _selected == null
+        banner: (_selected == null || !_hasFeature('EMERGENCY_SOS'))
             ? null
             : EmergencySosBanner(api: _api, condominiumId: _selected!),
         headerActions: [
@@ -1428,14 +1250,7 @@ Emitido via Âncora Gestão
               children: [
                 IconButton(
                   tooltip: 'Notificações',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => NotificationsPage(
-                        api: _api,
-                        condominiumId: _selected,
-                      ),
-                    ),
-                  ),
+                  onPressed: () => _selectNavigation(6),
                   icon: const Icon(Icons.notifications_outlined),
                 ),
                 IconButton(
@@ -1457,610 +1272,276 @@ Emitido via Âncora Gestão
     );
   }
 
-  Widget _buildCondominiumCoverBanner(bool isDark) {
-    final condoName = _selectedCondoName();
-    final rawImageUrl = _condoDetails?['imageUrl'] as String?;
-    final imageProvider = resolveAvatarImageProvider(rawImageUrl);
+  Map<String, dynamic> get _summaryMap {
+    final raw = _dashboard?['summary'];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return const {};
+  }
 
-    if (imageProvider != null) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 14),
-        height: 120,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          image: DecorationImage(image: imageProvider, fit: BoxFit.cover),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.15),
-                Colors.black.withValues(alpha: 0.75),
-              ],
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+  int _intStat(String key, [int fallback = 0]) {
+    final val = _summaryMap[key];
+    return val is num ? val.toInt() : fallback;
+  }
+
+  double _doubleStat(String key, [double fallback = 0.0]) {
+    final val = _summaryMap[key];
+    return val is num ? val.toDouble() : fallback;
+  }
+
+  String _buildAiMonitorSummary() {
+    final overdueMaint = _intStat('overdueMaintenanceCount');
+    final openMaint = _intStat(
+      'openMaintenanceCount',
+      _maintenanceOrders
+          .where((o) => o['status'] == 'OPEN' || o['status'] == 'IN_PROGRESS')
+          .length,
+    );
+    final pendingAssemblies = _intStat('pendingAssembliesCount');
+    final openTickets = _intStat(
+      'openTicketsCount',
+      _tickets
+          .where((t) => t['status'] == 'OPEN' || t['status'] == 'IN_PROGRESS')
+          .length,
+    );
+    final parts = <String>[];
+    if (overdueMaint > 0) {
+      parts.add(
+        '$overdueMaint ${overdueMaint == 1 ? 'manutenção atrasada' : 'manutenções atrasadas'}',
+      );
+    } else if (openMaint > 0) {
+      parts.add(
+        '$openMaint ${openMaint == 1 ? 'manutenção aberta' : 'manutenções abertas'}',
+      );
+    }
+    if (pendingAssemblies > 0) {
+      parts.add(
+        '$pendingAssemblies ${pendingAssemblies == 1 ? 'assembleia pendente' : 'assembleias pendentes'}',
+      );
+    }
+    if (openTickets > 0) {
+      parts.add(
+        '$openTickets ${openTickets == 1 ? 'chamado aberto' : 'chamados abertos'}',
+      );
+    }
+    if (parts.isEmpty) {
+      return 'Operação regular • Nenhuma pendência crítica';
+    }
+    return parts.join(' • ');
+  }
+
+  Future<void> _openNewMaintenanceDialog() async {
+    final condoId = _selected;
+    if (condoId == null) return;
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    String category = 'ELEVATOR';
+    String priority = 'MEDIUM';
+    bool saving = false;
+
+    final created = await showAncoraDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          title: const Row(
             children: [
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      condoName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                        letterSpacing: -0.3,
-                        shadows: [Shadow(blurRadius: 4, color: Colors.black)],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const Text(
-                      'Condomínio em gestão • Imagem de fachada ativa',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                        shadows: [Shadow(blurRadius: 4, color: Colors.black)],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Wrap(
-                spacing: 8,
+              Icon(Icons.build_circle_outlined, color: SaaSColors.primary),
+              SizedBox(width: 10),
+              Expanded(child: Text('Nova Ordem de Manutenção')),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (rawImageUrl != null)
-                    FilledButton.tonalIcon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.85),
-                        foregroundColor: Colors.black87,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                      onPressed: () => showFullScreenImage(
-                        context,
-                        imageSource: rawImageUrl,
-                        title: condoName,
-                      ),
-                      icon: const Icon(Icons.fullscreen, size: 16),
-                      label: const Text(
-                        'Ampliar',
-                        style: TextStyle(fontSize: 12.5),
-                      ),
+                  TextField(
+                    controller: titleCtrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Título da manutenção *',
+                      hintText: 'Ex.: Revisão preventiva do elevador',
                     ),
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: SaaSColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    onPressed: _changeCondominiumImage,
-                    icon: const Icon(Icons.camera_alt_outlined, size: 16),
-                    label: const Text(
-                      'Alterar Foto',
-                      style: TextStyle(fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: category,
+                    decoration: const InputDecoration(labelText: 'Categoria'),
+                    items: const [
+                      DropdownMenuItem(value: 'ELEVATOR', child: Text('Elevadores')),
+                      DropdownMenuItem(value: 'ELECTRICAL', child: Text('Elétrica')),
+                      DropdownMenuItem(value: 'PLUMBING', child: Text('Hidráulica')),
+                      DropdownMenuItem(value: 'SECURITY', child: Text('Segurança / CFTV')),
+                      DropdownMenuItem(value: 'CLEANING', child: Text('Limpeza / Conservação')),
+                      DropdownMenuItem(value: 'GENERAL', child: Text('Manutenção Geral')),
+                    ],
+                    onChanged: (v) => setDlgState(() => category = v ?? category),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: priority,
+                    decoration: const InputDecoration(labelText: 'Prioridade'),
+                    items: const [
+                      DropdownMenuItem(value: 'LOW', child: Text('Baixa')),
+                      DropdownMenuItem(value: 'MEDIUM', child: Text('Média')),
+                      DropdownMenuItem(value: 'HIGH', child: Text('Alta')),
+                      DropdownMenuItem(value: 'URGENT', child: Text('Urgente')),
+                    ],
+                    onChanged: (v) => setDlgState(() => priority = v ?? priority),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: descCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Descrição detalhada *',
+                      hintText: 'Descreva o problema ou serviço preventivo',
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (titleCtrl.text.trim().isEmpty ||
+                          descCtrl.text.trim().isEmpty) {
+                        SaaSFeedback.showWarning(
+                          context,
+                          'Informe título e descrição.',
+                        );
+                        return;
+                      }
+                      setDlgState(() => saving = true);
+                      try {
+                        await _communityApi.createMaintenanceOrder(
+                          condoId,
+                          title: titleCtrl.text.trim(),
+                          description: descCtrl.text.trim(),
+                          category: category,
+                          priority: priority,
+                          type: 'CORRECTIVE',
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      } catch (e) {
+                        setDlgState(() => saving = false);
+                        if (context.mounted) {
+                          SaaSFeedback.showError(context, 'Erro ao criar ordem: $e');
+                        }
+                      }
+                    },
+              icon: saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.check_rounded, size: 18),
+              label: const Text('Registrar Manutenção'),
+            ),
+          ],
         ),
-      );
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: SaaSColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.apartment_rounded,
-              color: SaaSColors.primary,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  condoName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-                Text(
-                  'Personalize a identidade do condomínio adicionando uma foto da fachada.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white60 : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: _changeCondominiumImage,
-            icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
-            label: const Text('Adicionar foto'),
-          ),
-        ],
       ),
     );
+    titleCtrl.dispose();
+    descCtrl.dispose();
+    if (created == true && mounted) {
+      SaaSFeedback.showSuccess(context, 'Ordem de manutenção registrada!');
+      _load();
+    }
+  }
+
+  Future<void> _quickApproveReservation(num id) async {
+    try {
+      await _communityApi.approveReservation(id);
+      if (!mounted) return;
+      SaaSFeedback.showSuccess(context, 'Reserva confirmada com sucesso!');
+      _load();
+    } catch (e) {
+      if (mounted) SaaSFeedback.showError(context, '$e');
+    }
+  }
+
+  Future<void> _quickRejectReservation(num id) async {
+    try {
+      await _communityApi.rejectReservation(id, 'Recusada pela administração');
+      if (!mounted) return;
+      SaaSFeedback.showInfo(context, 'Reserva recusada.');
+      _load();
+    } catch (e) {
+      if (mounted) SaaSFeedback.showError(context, '$e');
+    }
   }
 
   // ==========================================
-  // DESKTOP LAYOUT (Multi-Panel, Zero Scroll)
+  // DESKTOP LAYOUT (Multi-Panel, Responsivo)
   // ==========================================
   Widget _buildDesktopManagerLayout(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 16, 28, 16),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Condominium Cover Banner
+          SubscriptionStatusBanner(
+            access: _subAccess,
+            onManagePlan: _openPlanManagerDialog,
+          ),
           _buildCondominiumCoverBanner(isDark),
-
-          // Top bar: Condominium selector + Action pills
+          _buildManagerMetricsGrid(),
+          const SizedBox(height: 16),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                flex: 4,
-                child: DropdownButtonFormField<int>(
-                  initialValue: _selected,
-                  decoration: const InputDecoration(
-                    labelText: 'Condomínio em gestão',
-                    prefixIcon: Icon(Icons.apartment_rounded),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                  ),
-                  items: _condos
-                      .map(
-                        (membership) => DropdownMenuItem<int>(
-                          value: (membership['condominiumId'] as num).toInt(),
-                          child: Text(
-                            membership['condominiumName']
-                                        ?.toString()
-                                        .trim()
-                                        .isNotEmpty ==
-                                    true
-                                ? '${membership['condominiumName']}'
-                                : 'Condomínio vinculado',
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                flex: 6,
+                child: SizedBox(
+                  height: 520,
+                  child: _hasFeature('FINANCIAL')
+                      ? _buildFinancialPanel(isDark)
+                      : FeatureLockedPlaceholder(
+                          featureLabel: 'Gestão Financeira & Boletos',
+                          planName: _subAccess.planName,
+                          isSuspended: _subAccess.isSuspendedOrCancelled,
+                          onManagePlan: _openPlanManagerDialog,
                         ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() => _selected = value);
-                    _load();
-                  },
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 16),
               Expanded(
-                flex: 8,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: SaaSColors.primary,
-                        ),
-                        onPressed: _openMemberships,
-                        icon: const Icon(Icons.group_add_outlined, size: 16),
-                        label: const Text('Convidar / Vínculos'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _sendAnnouncement,
-                        icon: const Icon(Icons.campaign_outlined, size: 16),
-                        label: const Text('Comunicado'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _openAnnouncementsReceiptsDialog,
-                        icon: const Icon(Icons.done_all_rounded, size: 16),
-                        label: const Text('Mural & Leituras'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _generateBoleto,
-                        icon: const Icon(Icons.receipt_long_outlined, size: 16),
-                        label: const Text('Gerar Boleto'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _openCommunityHub,
-                        icon: const Icon(Icons.diversity_3_outlined, size: 16),
-                        label: const Text('Hub Geral'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => _openCommunityHub(initialIndex: 11),
-                        icon: const Icon(Icons.build_circle_outlined, size: 16),
-                        label: const Text('Manutenções'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => _openCommunityHub(initialIndex: 12),
-                        icon: const Icon(Icons.groups_outlined, size: 16),
-                        label: const Text('Assembleias'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => _openCommunityHub(initialIndex: 13),
-                        icon: const Icon(
-                          Icons.account_balance_wallet_outlined,
-                          size: 16,
-                        ),
-                        label: const Text('Financeiro'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _openGallery,
-                        icon: const Icon(
-                          Icons.photo_library_outlined,
-                          size: 16,
-                        ),
-                        label: const Text('Galeria'),
-                      ),
-                    ],
-                  ),
+                flex: 6,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 252,
+                      child: _hasFeature('RESERVATIONS')
+                          ? _buildReservationsPanel(isDark)
+                          : FeatureLockedPlaceholder(
+                              featureLabel: 'Reservas de Áreas Comuns',
+                              planName: _subAccess.planName,
+                              isSuspended: _subAccess.isSuspendedOrCancelled,
+                              onManagePlan: _openPlanManagerDialog,
+                            ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 252,
+                      child: _buildOperationalFeedPanel(isDark),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-
-          // 4 Metric cards
-          Row(
-            children: [
-              Expanded(
-                child: SaaSMetricCard(
-                  title: 'Unidades Cadastradas',
-                  value: '${_dashboard?['totalUnits'] ?? 0}',
-                  icon: Icons.home_work_outlined,
-                  iconColor: SaaSColors.primary,
-                  subtitle: 'Total registrado',
-                  onTap: _openUnitsMenu,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: SaaSMetricCard(
-                  title: 'Pessoas Vinculadas',
-                  value: '${_dashboard?['totalUsers'] ?? 0}',
-                  icon: Icons.groups_outlined,
-                  iconColor: const Color(0xFF10B981),
-                  subtitle: 'Moradores e porteiros',
-                  onTap: _openMemberships,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: SaaSMetricCard(
-                  title: 'Reservas Registradas',
-                  value: '${_dashboard?['totalReservations'] ?? 0}',
-                  icon: Icons.event_available_outlined,
-                  iconColor: const Color(0xFFF59E0B),
-                  subtitle: 'Áreas comuns',
-                  onTap: _openReservationsMenu,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: SaaSMetricCard(
-                  title: 'Assistente IA Síndico',
-                  value: 'Ativo',
-                  icon: Icons.auto_awesome,
-                  iconColor: const Color(0xFF8B5CF6),
-                  subtitle: 'Análise de dados do condomínio',
-                  onTap: _openCondoAssistant,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // 2-Column Split Workspace (Zero Page Scroll)
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Left Panel: Situação Financeira das Unidades
-                Expanded(
-                  flex: 6,
-                  child: SaaSCard(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SaaSSectionHeader(
-                          title: 'Situação Financeira das Unidades',
-                          action: FilledButton.icon(
-                            onPressed: _generateBoleto,
-                            icon: const Icon(
-                              Icons.receipt_long_rounded,
-                              size: 16,
-                            ),
-                            label: const Text('Novo Boleto'),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: SaaSColors.primary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 8,
-                              ),
-                            ),
-                          ),
-                        ),
-                        EnterSearchField(
-                          hintText: 'Pesquisar unidades ou moradores (Enter)',
-                          onSubmitted: (query) =>
-                              setState(() => _query = query),
-                        ),
-                        const SizedBox(height: 12),
-                        Expanded(
-                          child: _dashboardRecords('units').isEmpty
-                              ? const SaaSEmptyState(
-                                  icon: Icons.home_work_outlined,
-                                  title: 'Nenhuma unidade encontrada',
-                                  description:
-                                      'Verifique a busca ou cadastre novas unidades.',
-                                )
-                              : ListView.separated(
-                                  itemCount: _dashboardRecords('units').length,
-                                  separatorBuilder: (_, _) =>
-                                      const SizedBox(height: 8),
-                                  itemBuilder: (context, index) {
-                                    final unit = _dashboardRecords(
-                                      'units',
-                                    )[index];
-                                    final (label, bg, fg) = _statusStyle(
-                                      unit['paymentStatus'],
-                                    );
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 10,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: SaaSColors.surfaceSubtle(isDark),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: SaaSColors.border(isDark),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          CircleAvatar(
-                                            radius: 18,
-                                            backgroundColor: bg,
-                                            child: Icon(
-                                              Icons.home_outlined,
-                                              color: fg,
-                                              size: 18,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  '${unit['sector']} • Unidade ${unit['identifier']}',
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 13.5,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  'Status: $label${unit['dueDate'] == null ? '' : ' • Venc: ${_formatDate(unit['dueDate'])}'}${unit['amount'] == null ? '' : ' • R\$ ${unit['amount']}'}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color:
-                                                        SaaSColors.textSecondary(
-                                                          isDark,
-                                                        ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          OutlinedButton.icon(
-                                            onPressed: () => _editPayment(unit),
-                                            icon: const Icon(
-                                              Icons.edit_outlined,
-                                              size: 15,
-                                            ),
-                                            label: const Text('Atualizar'),
-                                            style: OutlinedButton.styleFrom(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                    vertical: 6,
-                                                  ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-
-                // Right Panel: Agendamentos de Áreas Comuns
-                Expanded(
-                  flex: 6,
-                  child: SaaSCard(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SaaSSectionHeader(
-                          title: 'Agendamentos de Áreas Comuns',
-                          badge: SaaSBadge(
-                            label:
-                                '${_dashboardRecords('reservations').length}',
-                            variant: SaaSBadgeVariant.warning,
-                          ),
-                          action: OutlinedButton.icon(
-                            onPressed: _openReservationsMenu,
-                            icon: const Icon(
-                              Icons.visibility_outlined,
-                              size: 16,
-                            ),
-                            label: const Text('Ver todas'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: _dashboardRecords('reservations').isEmpty
-                              ? const SaaSEmptyState(
-                                  icon: Icons.event_available_outlined,
-                                  title: 'Nenhum agendamento pendente',
-                                  description:
-                                      'Não há solicitações de áreas comuns registradas no momento.',
-                                )
-                              : ListView.separated(
-                                  itemCount: _dashboardRecords(
-                                    'reservations',
-                                  ).length,
-                                  separatorBuilder: (_, _) =>
-                                      const SizedBox(height: 8),
-                                  itemBuilder: (context, index) {
-                                    final reservation = _dashboardRecords(
-                                      'reservations',
-                                    )[index];
-                                    return Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: SaaSColors.surfaceSubtle(isDark),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: SaaSColors.border(isDark),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: isDark
-                                                  ? const Color(0xFF1E293B)
-                                                  : const Color(0xFFEFF6FF),
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            child: const Icon(
-                                              Icons.event_available_outlined,
-                                              color: SaaSColors.primary,
-                                              size: 20,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  '${reservation['commonArea']} • ${reservation['residentName']}',
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 13.5,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color:
-                                                        SaaSColors.textSecondary(
-                                                          isDark,
-                                                        ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  '${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''} • ${_translateStatus(reservation['status'])}',
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    color:
-                                                        SaaSColors.textSecondary(
-                                                          isDark,
-                                                        ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -2073,340 +1554,36 @@ Emitido via Âncora Gestão
   Widget _buildMobileManagerLayout(bool isDark) {
     return RefreshIndicator(
       onRefresh: _load,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1200),
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _buildCondominiumCoverBanner(isDark),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Olá, ${firstNameOf(widget.userName, fallback: 'síndico')}! 👋',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Gerencie moradores, porteiros, reservas e pagamentos.',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
-                    const SizedBox(height: 14),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF1E3A8A),
-                            ),
-                            onPressed: _openMemberships,
-                            icon: const Icon(
-                              Icons.group_add_outlined,
-                              size: 16,
-                            ),
-                            label: const Text('Vínculos'),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFFEF3C7),
-                              foregroundColor: const Color(0xFFB45309),
-                            ),
-                            onPressed: _sendAnnouncement,
-                            icon: const Icon(Icons.campaign_outlined, size: 16),
-                            label: const Text('Comunicado'),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFFEF9C3),
-                              foregroundColor: const Color(0xFF854D0E),
-                            ),
-                            onPressed: _openAnnouncementsReceiptsDialog,
-                            icon: const Icon(Icons.done_all_rounded, size: 16),
-                            label: const Text('Leituras'),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFDCFCE7),
-                              foregroundColor: const Color(0xFF15803D),
-                            ),
-                            onPressed: _openCommunityHub,
-                            icon: const Icon(
-                              Icons.diversity_3_outlined,
-                              size: 16,
-                            ),
-                            label: const Text('Hub Geral'),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFE0E7FF),
-                              foregroundColor: const Color(0xFF1D4ED8),
-                            ),
-                            onPressed: () =>
-                                _openCommunityHub(initialIndex: 11),
-                            icon: const Icon(
-                              Icons.build_circle_outlined,
-                              size: 16,
-                            ),
-                            label: const Text('Manutenções'),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFF3E8FF),
-                              foregroundColor: const Color(0xFF6D28D9),
-                            ),
-                            onPressed: () =>
-                                _openCommunityHub(initialIndex: 12),
-                            icon: const Icon(Icons.groups_outlined, size: 16),
-                            label: const Text('Assembleias'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                initialValue: _selected,
-                decoration: const InputDecoration(
-                  labelText: 'Condomínio em gestão',
-                  prefixIcon: Icon(Icons.apartment_rounded),
-                ),
-                items: _condos
-                    .map(
-                      (membership) => DropdownMenuItem<int>(
-                        value: (membership['condominiumId'] as num).toInt(),
-                        child: Text(
-                          membership['condominiumName']
-                                      ?.toString()
-                                      .trim()
-                                      .isNotEmpty ==
-                                  true
-                              ? '${membership['condominiumName']}'
-                              : 'Condomínio vinculado',
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  setState(() => _selected = value);
-                  _load();
-                },
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  _metric(
-                    'Unidades cadastradas',
-                    _dashboard?['totalUnits'],
-                    Icons.home_work_outlined,
-                    accentBg: isDark
-                        ? const Color(0xFF1E293B)
-                        : const Color(0xFFE0E7FF),
-                    accentFg: SaaSColors.primary,
-                    onTap: _openUnitsMenu,
-                  ),
-                  _metric(
-                    'Pessoas vinculadas',
-                    _dashboard?['totalUsers'],
-                    Icons.groups_outlined,
-                    accentBg: isDark
-                        ? const Color(0xFF064E3B)
-                        : const Color(0xFFCCFBF1),
-                    accentFg: const Color(0xFF0F766E),
-                    onTap: _openMemberships,
-                  ),
-                  _metric(
-                    'Reservas registradas',
-                    _dashboard?['totalReservations'],
-                    Icons.event_available_outlined,
-                    accentBg: isDark
-                        ? const Color(0xFF78350F)
-                        : const Color(0xFFDCFCE7),
-                    accentFg: const Color(0xFF15803D),
-                    onTap: _openReservationsMenu,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              EnterSearchField(
-                hintText: 'Pesquisar unidades ou reservas (Enter)',
-                onSubmitted: (query) => setState(() => _query = query),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Situação financeira das unidades',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: SaaSColors.textPrimary(isDark),
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _generateBoleto,
-                    icon: const Icon(Icons.receipt_long_rounded, size: 16),
-                    label: const Text('Gerar Boleto'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: SaaSColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (_dashboardRecords('units').isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text('Nenhuma unidade encontrada.'),
-                  ),
-                )
-              else
-                ..._dashboardRecords('units').map((unit) {
-                  final (label, bg, fg) = _statusStyle(unit['paymentStatus']);
-                  return SaaSCard(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: bg,
-                          child: Icon(Icons.home_outlined, color: fg, size: 18),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${unit['sector']} • Unidade ${unit['identifier']}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Status: $label${unit['dueDate'] == null ? '' : ' • Vencimento: ${_formatDate(unit['dueDate'])}'}${unit['amount'] == null ? '' : ' • R\$ ${unit['amount']}'}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: SaaSColors.textSecondary(isDark),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: () => _editPayment(unit),
-                          icon: const Icon(Icons.edit_outlined, size: 16),
-                          label: const Text('Atualizar'),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              const SizedBox(height: 20),
-              Text(
-                'Agendamentos de áreas comuns',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: SaaSColors.textPrimary(isDark),
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (_dashboardRecords('reservations').isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text('Nenhum agendamento encontrado.'),
-                  ),
-                )
-              else
-                ..._dashboardRecords('reservations').map((reservation) {
-                  return SaaSCard(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF1E293B)
-                                : const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.event_available_outlined,
-                            color: SaaSColors.primary,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${reservation['commonArea']} • ${reservation['residentName']}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: SaaSColors.textSecondary(isDark),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''} • ${_translateStatus(reservation['status'])}',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: SaaSColors.textSecondary(isDark),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-            ],
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          SubscriptionStatusBanner(
+            access: _subAccess,
+            onManagePlan: _openPlanManagerDialog,
           ),
-        ),
+          _buildCondominiumCoverBanner(isDark),
+          _buildManagerMetricsGrid(),
+          const SizedBox(height: 16),
+          _hasFeature('FINANCIAL')
+              ? _buildFinancialPanel(isDark, shrinkWrap: true)
+              : FeatureLockedPlaceholder(
+                  featureLabel: 'Gestão Financeira & Boletos',
+                  planName: _subAccess.planName,
+                  isSuspended: _subAccess.isSuspendedOrCancelled,
+                  onManagePlan: _openPlanManagerDialog,
+                ),
+          const SizedBox(height: 16),
+          _hasFeature('RESERVATIONS')
+              ? _buildReservationsPanel(isDark, shrinkWrap: true)
+              : FeatureLockedPlaceholder(
+                  featureLabel: 'Reservas de Áreas Comuns',
+                  planName: _subAccess.planName,
+                  isSuspended: _subAccess.isSuspendedOrCancelled,
+                  onManagePlan: _openPlanManagerDialog,
+                ),
+          const SizedBox(height: 16),
+          _buildOperationalFeedPanel(isDark, shrinkWrap: true),
+        ],
       ),
     );
   }
@@ -2442,1291 +1619,5 @@ Emitido via Âncora Gestão
     'OVERDUE' => ('Atrasado', const Color(0xFFFEE2E2), const Color(0xFFB91C1C)),
     _ => ('Sem lançamento', const Color(0xFFF1F5F9), const Color(0xFF475569)),
   };
-
-  Widget _metric(
-    String label,
-    dynamic value,
-    IconData icon, {
-    required VoidCallback onTap,
-    Color accentBg = const Color(0xFFE8ECFF),
-    Color accentFg = const Color(0xFF2F3FB0),
-  }) => SizedBox(
-    width: 260,
-    child: Card(
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: accentFg.withValues(alpha: 0.22)),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: accentBg,
-                child: Icon(icon, color: accentFg),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${value ?? 0}',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: Color(0xFF94A3B8),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
-class _ManagerUnitsMenuPage extends StatefulWidget {
-  const _ManagerUnitsMenuPage({
-    required this.units,
-    required this.onEditPayment,
-  });
-
-  final List<Map<String, dynamic>> units;
-  final Future<bool> Function(Map<String, dynamic> unit) onEditPayment;
-
-  @override
-  State<_ManagerUnitsMenuPage> createState() => _ManagerUnitsMenuPageState();
-}
-
-class _ManagerUnitsMenuPageState extends State<_ManagerUnitsMenuPage> {
-  String _query = '';
-
-  (String, Color, Color) _statusStyle(dynamic status) => switch (status) {
-    'PAID' => (
-      'Pago (em dia)',
-      const Color(0xFFDCFCE7),
-      const Color(0xFF15803D),
-    ),
-    'CONFIRMATION_REQUESTED' => (
-      'Comprovante enviado / Aguardando confirmação',
-      const Color(0xFFFEF3C7),
-      const Color(0xFFB45309),
-    ),
-    'PENDING' => ('Pendente', const Color(0xFFFEF3C7), const Color(0xFFB45309)),
-    'OVERDUE' => ('Atrasado', const Color(0xFFFEE2E2), const Color(0xFFB91C1C)),
-    _ => ('Sem lançamento', const Color(0xFFF1F5F9), const Color(0xFF475569)),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = widget.units
-        .where((item) => recordMatchesQuery(item, _query))
-        .toList();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Unidades cadastradas')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
-          child: ListView(
-            padding: const EdgeInsets.all(18),
-            children: [
-              EnterSearchField(
-                hintText: 'Pesquisar unidades ou setores (Enter)',
-                onSubmitted: (value) => setState(() => _query = value),
-              ),
-              const SizedBox(height: 14),
-              if (filtered.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('Nenhuma unidade encontrada.'),
-                  ),
-                )
-              else
-                ...filtered.map((unit) {
-                  final (label, bg, fg) = _statusStyle(unit['paymentStatus']);
-                  return Card(
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: bg,
-                        child: Icon(Icons.home_outlined, color: fg, size: 20),
-                      ),
-                      title: Text(
-                        '${unit['sector']} • Unidade ${unit['identifier']}',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text('Situação financeira: $label'),
-                      trailing:
-                          unit['paymentStatus'] == 'CONFIRMATION_REQUESTED'
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF15803D),
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  onPressed: () async {
-                                    final updated = await widget.onEditPayment({
-                                      ...unit,
-                                      'paymentStatus': 'PAID',
-                                    });
-                                    if (updated && context.mounted) {
-                                      Navigator.pop(context);
-                                    }
-                                  },
-                                  icon: const Icon(
-                                    Icons.check_circle_outline,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Confirmar Pagamento'),
-                                ),
-                                const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  onPressed: () async {
-                                    final updated = await widget.onEditPayment(
-                                      unit,
-                                    );
-                                    if (updated && context.mounted) {
-                                      Navigator.pop(context);
-                                    }
-                                  },
-                                  icon: const Icon(
-                                    Icons.edit_outlined,
-                                    size: 18,
-                                  ),
-                                  label: const Text('Editar'),
-                                ),
-                              ],
-                            )
-                          : OutlinedButton.icon(
-                              onPressed: () async {
-                                final updated = await widget.onEditPayment(
-                                  unit,
-                                );
-                                if (updated && context.mounted) {
-                                  Navigator.pop(context);
-                                }
-                              },
-                              icon: const Icon(Icons.edit_outlined, size: 18),
-                              label: const Text('Atualizar'),
-                            ),
-                    ),
-                  );
-                }),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ManagerReservationsMenuPage extends StatefulWidget {
-  const _ManagerReservationsMenuPage({
-    required this.api,
-    required this.reservations,
-  });
-
-  final HomeService api;
-  final List<Map<String, dynamic>> reservations;
-
-  @override
-  State<_ManagerReservationsMenuPage> createState() =>
-      _ManagerReservationsMenuPageState();
-}
-
-class _ManagerReservationsMenuPageState
-    extends State<_ManagerReservationsMenuPage> {
-  String _query = '';
-  String _selectedTab = 'SCHEDULED'; // 'SCHEDULED', 'PAST', 'CANCELLED'
-
-  String _formatDateTime(dynamic dateTimeString) {
-    if (dateTimeString == null) return '';
-    return formatDateTime(dateTimeString, fallback: dateTimeString.toString());
-  }
-
-  bool _isCancelled(Map<String, dynamic> r) {
-    final status = r['status']?.toString().toUpperCase();
-    return status == 'CANCELLED' || status == 'REJECTED';
-  }
-
-  bool _isPast(Map<String, dynamic> r) {
-    if (_isCancelled(r)) return false;
-    final endAt = r['endAt'];
-    if (endAt == null) return false;
-    try {
-      final dt = parseUtcToLocal(endAt);
-      if (dt == null) return false;
-      return dt.isBefore(DateTime.now());
-    } catch (_) {
-      return false;
-    }
-  }
-
-  bool _isScheduled(Map<String, dynamic> r) {
-    return !_isCancelled(r) && !_isPast(r);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final allFiltered = widget.reservations
-        .where((item) => recordMatchesQuery(item, _query))
-        .toList();
-
-    final scheduled = allFiltered.where(_isScheduled).toList();
-    final past = allFiltered.where(_isPast).toList();
-    final cancelled = allFiltered.where(_isCancelled).toList();
-
-    final currentList = switch (_selectedTab) {
-      'PAST' => past,
-      'CANCELLED' => cancelled,
-      _ => scheduled,
-    };
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Reservas registradas')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 860),
-          child: ListView(
-            padding: const EdgeInsets.all(18),
-            children: [
-              EnterSearchField(
-                hintText: 'Pesquisar reservas por área ou morador (Enter)',
-                onSubmitted: (value) => setState(() => _query = value),
-              ),
-              const SizedBox(height: 14),
-              // Segmented Category Tabs
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    ChoiceChip(
-                      label: Text('Agendadas (${scheduled.length})'),
-                      selected: _selectedTab == 'SCHEDULED',
-                      onSelected: (val) {
-                        if (val) setState(() => _selectedTab = 'SCHEDULED');
-                      },
-                      avatar: const Icon(
-                        Icons.calendar_month_outlined,
-                        size: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: Text('Já passaram (${past.length})'),
-                      selected: _selectedTab == 'PAST',
-                      onSelected: (val) {
-                        if (val) setState(() => _selectedTab = 'PAST');
-                      },
-                      avatar: const Icon(Icons.history_rounded, size: 16),
-                    ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: Text(
-                        'Canceladas (${cancelled.length})',
-                        style: TextStyle(
-                          color: _selectedTab == 'CANCELLED'
-                              ? Colors.white
-                              : const Color(0xFFDC2626),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      selected: _selectedTab == 'CANCELLED',
-                      selectedColor: const Color(0xFFDC2626),
-                      backgroundColor: isDark
-                          ? const Color(0xFF450A0A).withValues(alpha: 0.3)
-                          : const Color(0xFFFEE2E2),
-                      side: BorderSide(
-                        color: _selectedTab == 'CANCELLED'
-                            ? const Color(0xFFDC2626)
-                            : const Color(0xFFFCA5A5),
-                      ),
-                      onSelected: (val) {
-                        if (val) setState(() => _selectedTab = 'CANCELLED');
-                      },
-                      avatar: Icon(
-                        Icons.cancel_outlined,
-                        size: 16,
-                        color: _selectedTab == 'CANCELLED'
-                            ? Colors.white
-                            : const Color(0xFFDC2626),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (currentList.isEmpty)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: Center(
-                      child: Text(
-                        _selectedTab == 'CANCELLED'
-                            ? 'Nenhuma reserva cancelada.'
-                            : _selectedTab == 'PAST'
-                            ? 'Nenhuma reserva finalizada.'
-                            : 'Nenhuma reserva agendada no momento.',
-                        style: TextStyle(
-                          color: isDark
-                              ? Colors.white60
-                              : const Color(0xFF64748B),
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-              else
-                ...currentList.map((reservation) {
-                  final status = reservation['status']?.toString();
-                  final isItemCancelled = _isCancelled(reservation);
-
-                  return Card(
-                    color: isItemCancelled
-                        ? (isDark
-                              ? const Color(0xFF450A0A).withValues(alpha: 0.35)
-                              : const Color(0xFFFEF2F2))
-                        : null,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(
-                        color: isItemCancelled
-                            ? const Color(0xFFFCA5A5)
-                            : (isDark
-                                  ? const Color(0xFF334155)
-                                  : const Color(0xFFE2E8F0)),
-                        width: isItemCancelled ? 1.5 : 1.0,
-                      ),
-                    ),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: SizedBox(
-                          width: 44,
-                          height: 44,
-                          child:
-                              (reservation['imageUrl'] != null &&
-                                  reservation['imageUrl'].toString().isNotEmpty)
-                              ? (reservation['imageUrl'].toString().startsWith(
-                                      'data:',
-                                    )
-                                    ? Image.memory(
-                                        base64Decode(
-                                          reservation['imageUrl']
-                                              .toString()
-                                              .split(',')
-                                              .last,
-                                        ),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => CircleAvatar(
-                                          backgroundColor: isItemCancelled
-                                              ? const Color(0xFFFEE2E2)
-                                              : const Color(0xFFE0E7FF),
-                                          child: Icon(
-                                            isItemCancelled
-                                                ? Icons.cancel_outlined
-                                                : Icons
-                                                      .event_available_outlined,
-                                            color: isItemCancelled
-                                                ? const Color(0xFFDC2626)
-                                                : const Color(0xFF2F3FB0),
-                                          ),
-                                        ),
-                                      )
-                                    : Image.network(
-                                        reservation['imageUrl'].toString(),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => CircleAvatar(
-                                          backgroundColor: isItemCancelled
-                                              ? const Color(0xFFFEE2E2)
-                                              : const Color(0xFFE0E7FF),
-                                          child: Icon(
-                                            isItemCancelled
-                                                ? Icons.cancel_outlined
-                                                : Icons
-                                                      .event_available_outlined,
-                                            color: isItemCancelled
-                                                ? const Color(0xFFDC2626)
-                                                : const Color(0xFF2F3FB0),
-                                          ),
-                                        ),
-                                      ))
-                              : CircleAvatar(
-                                  backgroundColor: isItemCancelled
-                                      ? const Color(0xFFFEE2E2)
-                                      : const Color(0xFFE0E7FF),
-                                  child: Icon(
-                                    isItemCancelled
-                                        ? Icons.cancel_outlined
-                                        : Icons.event_available_outlined,
-                                    color: isItemCancelled
-                                        ? const Color(0xFFDC2626)
-                                        : const Color(0xFF2F3FB0),
-                                  ),
-                                ),
-                        ),
-                      ),
-                      title: Text(
-                        '${reservation['commonArea']} • ${reservation['residentName']}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: isItemCancelled
-                              ? const Color(0xFFB91C1C)
-                              : null,
-                        ),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 2),
-                          Text(
-                            '${_formatDateTime(reservation['startAt'])} até ${_formatDateTime(reservation['endAt'])}',
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                          Text(
-                            '${reservation['residentEmail']}${reservation['contactPhone'] != null && reservation['contactPhone'].toString().isNotEmpty ? ' • ${formatPhone(reservation['contactPhone']?.toString())}' : ''}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark
-                                  ? Colors.white60
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                          if (isItemCancelled) ...[
-                            const SizedBox(height: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFEE2E2),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: const Color(0xFFF87171),
-                                ),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.cancel_rounded,
-                                    size: 13,
-                                    color: Color(0xFFDC2626),
-                                  ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'CANCELADA / RECUSADA',
-                                    style: TextStyle(
-                                      color: Color(0xFFDC2626),
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 10.5,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      isThreeLine: true,
-                      trailing: status == 'PENDING'
-                          ? SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  FilledButton.icon(
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: const Color(0xFF15803D),
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                    ),
-                                    onPressed: () async {
-                                      await widget.api.send(
-                                        'PATCH',
-                                        '/reservations/${reservation['id']}/approve',
-                                      );
-                                      if (context.mounted) {
-                                        Navigator.pop(context);
-                                      }
-                                    },
-                                    icon: const Icon(Icons.check, size: 16),
-                                    label: const Text('Aprovar'),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  FilledButton.tonalIcon(
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: const Color(0xFFFEF3C7),
-                                      foregroundColor: const Color(0xFFB45309),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                    ),
-                                    onPressed: () async {
-                                      final communityApi = CommunityApi(
-                                        api: widget.api,
-                                      );
-                                      await showDialog<void>(
-                                        context: context,
-                                        builder: (ctx) => CounterProposalDialog(
-                                          reservation: reservation,
-                                          api: communityApi,
-                                          onSubmitted: () {
-                                            if (context.mounted) {
-                                              Navigator.pop(context);
-                                            }
-                                          },
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(
-                                      Icons.swap_horiz_rounded,
-                                      size: 16,
-                                    ),
-                                    label: const Text('Contraproposta'),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: const Color(0xFFDC2626),
-                                      side: const BorderSide(
-                                        color: Color(0xFFFECACA),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                    ),
-                                    onPressed: () async {
-                                      final reasonCtrl =
-                                          TextEditingController();
-                                      final ok = await showDialog<bool>(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          title: const Text(
-                                            'Recusar Solicitação de Reserva',
-                                          ),
-                                          content: TextField(
-                                            controller: reasonCtrl,
-                                            decoration: const InputDecoration(
-                                              labelText:
-                                                  'Motivo da recusa (opcional)',
-                                              hintText:
-                                                  'Ex: Espaço em manutenção no período.',
-                                            ),
-                                            maxLines: 2,
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, false),
-                                              child: const Text('Voltar'),
-                                            ),
-                                            FilledButton(
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor: const Color(
-                                                  0xFFDC2626,
-                                                ),
-                                              ),
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, true),
-                                              child: const Text(
-                                                'Confirmar Recusa',
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                      if (ok == true) {
-                                        await widget.api.send(
-                                          'PATCH',
-                                          '/reservations/${reservation['id']}/reject',
-                                          body:
-                                              reasonCtrl.text.trim().isNotEmpty
-                                              ? {
-                                                  'reason': reasonCtrl.text
-                                                      .trim(),
-                                                }
-                                              : null,
-                                        );
-                                        if (context.mounted) {
-                                          Navigator.pop(context);
-                                        }
-                                      }
-                                    },
-                                    icon: const Icon(Icons.close, size: 16),
-                                    label: const Text('Recusar'),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : (status == 'COUNTER_PROPOSED'
-                                ? Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFEF3C7),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Text(
-                                      'Contraproposta enviada',
-                                      style: TextStyle(
-                                        color: Color(0xFFB45309),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  )
-                                : null),
-                    ),
-                  );
-                }),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MainPhotosManagerDialog extends StatefulWidget {
-  const _MainPhotosManagerDialog({
-    required this.api,
-    required this.condominiumId,
-    required this.condominiumName,
-    this.currentCondoImage,
-    required this.onCondoImageUpdated,
-  });
-
-  final HomeService api;
-  final int condominiumId;
-  final String condominiumName;
-  final String? currentCondoImage;
-  final ValueChanged<String> onCondoImageUpdated;
-
-  @override
-  State<_MainPhotosManagerDialog> createState() =>
-      _MainPhotosManagerDialogState();
-}
-
-class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
-  String? _condoImg;
-  List<Map<String, dynamic>> _commonAreas = [];
-  List<Map<String, dynamic>> _sectors = [];
-  bool _loadingAreas = true;
-  bool _loadingSectors = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _condoImg = widget.currentCondoImage;
-    _fetchAreas();
-    _fetchSectors();
-  }
-
-  Future<void> _fetchAreas() async {
-    try {
-      final res = await widget.api.get(
-        '/condominiums/${widget.condominiumId}/common-areas/all',
-      );
-      if (mounted) {
-        setState(() {
-          _commonAreas = res is List
-              ? res.whereType<Map<String, dynamic>>().toList()
-              : [];
-          _loadingAreas = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingAreas = false);
-    }
-  }
-
-  Future<void> _fetchSectors() async {
-    try {
-      final res = await widget.api.get(
-        '/sectors?condominiumId=${widget.condominiumId}',
-      );
-      if (mounted) {
-        setState(() {
-          _sectors = res is List
-              ? res.whereType<Map<String, dynamic>>().toList()
-              : [];
-          _loadingSectors = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingSectors = false);
-    }
-  }
-
-  Future<String?> _pickBase64Image() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1600,
-      maxHeight: 1200,
-      imageQuality: 85,
-    );
-    if (picked == null) return null;
-    final bytes = await picked.readAsBytes();
-    final ext = picked.name.split('.').last.toLowerCase();
-    final mime = switch (ext) {
-      'png' => 'image/png',
-      'webp' => 'image/webp',
-      _ => 'image/jpeg',
-    };
-    return 'data:$mime;base64,${base64Encode(bytes)}';
-  }
-
-  Future<void> _changeCondoImage() async {
-    final dataUri = await _pickBase64Image();
-    if (dataUri == null) return;
-    try {
-      await widget.api.send(
-        'PATCH',
-        '/condominiums/${widget.condominiumId}/image',
-        body: {'imageUrl': dataUri},
-      );
-      if (mounted) {
-        setState(() => _condoImg = dataUri);
-        widget.onCondoImageUpdated(dataUri);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Foto da fachada do condomínio atualizada!'),
-            backgroundColor: Color(0xFF15803D),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
-      }
-    }
-  }
-
-  Future<void> _changeAreaImage(Map<String, dynamic> area) async {
-    final dataUri = await _pickBase64Image();
-    if (dataUri == null) return;
-    try {
-      await widget.api.send(
-        'PATCH',
-        '/common-areas/${area['id']}/image',
-        body: {'imageUrl': dataUri},
-      );
-      if (mounted) {
-        setState(() {
-          area['imageUrl'] = dataUri;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Foto de "${area['name']}" atualizada com sucesso!'),
-            backgroundColor: const Color(0xFF15803D),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
-      }
-    }
-  }
-
-  Future<void> _changeSectorImage(Map<String, dynamic> sector) async {
-    final dataUri = await _pickBase64Image();
-    if (dataUri == null) return;
-    try {
-      await widget.api.send(
-        'PATCH',
-        '/sectors/${sector['id']}/image',
-        body: {'imageUrl': dataUri},
-      );
-      if (mounted) {
-        setState(() {
-          sector['imageUrl'] = dataUri;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Foto de "${sector['name']}" atualizada com sucesso!',
-            ),
-            backgroundColor: const Color(0xFF15803D),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
-      }
-    }
-  }
-
-  Widget _buildPhotoThumbnail(String? url, IconData fallbackIcon) {
-    if (url != null && url.isNotEmpty) {
-      if (url.startsWith('data:')) {
-        try {
-          return Image.memory(
-            base64Decode(url.split(',').last),
-            width: 52,
-            height: 52,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
-                Icon(fallbackIcon, color: SaaSColors.primary, size: 26),
-          );
-        } catch (_) {}
-      } else {
-        return Image.network(
-          url,
-          width: 52,
-          height: 52,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-              Icon(fallbackIcon, color: SaaSColors.primary, size: 26),
-        );
-      }
-    }
-    return Icon(fallbackIcon, color: SaaSColors.primary, size: 26);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 600),
-        child: DefaultTabController(
-          length: 3,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF1E293B)
-                            : const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.photo_library_outlined,
-                        color: SaaSColors.primary,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Fotos Principais do Condomínio',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 17,
-                            ),
-                          ),
-                          Text(
-                            'Personalize as imagens reais de fachada, áreas de lazer e blocos',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: SaaSColors.textSecondary(isDark),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              TabBar(
-                labelColor: SaaSColors.primary,
-                unselectedLabelColor: SaaSColors.textSecondary(isDark),
-                indicatorColor: SaaSColors.primary,
-                tabs: const [
-                  Tab(
-                    icon: Icon(Icons.apartment_rounded, size: 18),
-                    text: 'Condomínio',
-                  ),
-                  Tab(
-                    icon: Icon(Icons.deck_rounded, size: 18),
-                    text: 'Áreas Comuns',
-                  ),
-                  Tab(
-                    icon: Icon(Icons.business_outlined, size: 18),
-                    text: 'Setores / Blocos',
-                  ),
-                ],
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    // Tab 1: Fachada
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'Foto de Fachada do Condomínio',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Esta foto aparece no topo do menu de todos os moradores e na apresentação do condomínio.',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: SaaSColors.textSecondary(isDark),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
-                              child: Container(
-                                width: double.infinity,
-                                color: isDark
-                                    ? const Color(0xFF1E293B)
-                                    : const Color(0xFFF1F5F9),
-                                alignment: Alignment.center,
-                                child:
-                                    _condoImg != null && _condoImg!.isNotEmpty
-                                    ? (_condoImg!.startsWith('data:')
-                                          ? Image.memory(
-                                              base64Decode(
-                                                _condoImg!.split(',').last,
-                                              ),
-                                              width: double.infinity,
-                                              height: double.infinity,
-                                              fit: BoxFit.cover,
-                                            )
-                                          : Image.network(
-                                              _condoImg!,
-                                              width: double.infinity,
-                                              height: double.infinity,
-                                              fit: BoxFit.cover,
-                                            ))
-                                    : Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.add_photo_alternate_outlined,
-                                            size: 48,
-                                            color: SaaSColors.textSecondary(
-                                              isDark,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Nenhuma foto de fachada definida',
-                                            style: TextStyle(
-                                              color: SaaSColors.textSecondary(
-                                                isDark,
-                                              ),
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Center(
-                            child: FilledButton.icon(
-                              onPressed: _changeCondoImage,
-                              icon: const Icon(Icons.photo_camera_outlined),
-                              label: Text(
-                                _condoImg == null
-                                    ? 'Definir Foto da Fachada'
-                                    : 'Alterar Foto da Fachada',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Tab 2: Áreas Comuns
-                    _loadingAreas
-                        ? const Padding(
-                            padding: EdgeInsets.all(24),
-                            child: SaaSLoadingState(
-                              message: 'Carregando áreas comuns...',
-                            ),
-                          )
-                        : _commonAreas.isEmpty
-                        ? const SaaSEmptyState(
-                            icon: Icons.deck_rounded,
-                            title: 'Nenhuma área comum',
-                            subtitle:
-                                'Nenhuma área comum cadastrada no condomínio.',
-                          )
-                        : ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _commonAreas.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (context, idx) {
-                              final area = _commonAreas[idx];
-                              final img = area['imageUrl']?.toString();
-                              return Card(
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(
-                                    color: isDark
-                                        ? const Color(0xFF334155)
-                                        : const Color(0xFFE2E8F0),
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Row(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(10),
-                                        child: Container(
-                                          width: 52,
-                                          height: 52,
-                                          color: isDark
-                                              ? const Color(0xFF1E293B)
-                                              : const Color(0xFFEFF6FF),
-                                          alignment: Alignment.center,
-                                          child: _buildPhotoThumbnail(
-                                            img,
-                                            Icons.deck_rounded,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              area['name'] ?? 'Área Comum',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 14.5,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              'Capacidade: ${area['capacity'] ?? 'Livre'} pessoas • ${img != null && img.isNotEmpty ? 'Foto definida' : 'Sem foto cadastrada'}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color:
-                                                    img != null &&
-                                                        img.isNotEmpty
-                                                    ? const Color(0xFF15803D)
-                                                    : SaaSColors.textSecondary(
-                                                        isDark,
-                                                      ),
-                                                fontWeight:
-                                                    img != null &&
-                                                        img.isNotEmpty
-                                                    ? FontWeight.w600
-                                                    : FontWeight.normal,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      FilledButton.tonalIcon(
-                                        style: FilledButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 8,
-                                          ),
-                                        ),
-                                        onPressed: () => _changeAreaImage(area),
-                                        icon: const Icon(
-                                          Icons.add_a_photo_outlined,
-                                          size: 16,
-                                        ),
-                                        label: Text(
-                                          img == null
-                                              ? 'Definir Foto'
-                                              : 'Alterar',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-
-                    // Tab 3: Setores / Blocos
-                    _loadingSectors
-                        ? const Padding(
-                            padding: EdgeInsets.all(24),
-                            child: SaaSLoadingState(
-                              message: 'Carregando setores e blocos...',
-                            ),
-                          )
-                        : _sectors.isEmpty
-                        ? const SaaSEmptyState(
-                            icon: Icons.view_quilt_outlined,
-                            title: 'Nenhum setor ou bloco',
-                            subtitle:
-                                'Nenhum setor ou bloco cadastrado no condomínio.',
-                          )
-                        : ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _sectors.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (context, idx) {
-                              final sector = _sectors[idx];
-                              final img = sector['imageUrl']?.toString();
-                              return Card(
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(
-                                    color: isDark
-                                        ? const Color(0xFF334155)
-                                        : const Color(0xFFE2E8F0),
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Row(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(10),
-                                        child: Container(
-                                          width: 52,
-                                          height: 52,
-                                          color: isDark
-                                              ? const Color(0xFF1E293B)
-                                              : const Color(0xFFEFF6FF),
-                                          alignment: Alignment.center,
-                                          child: _buildPhotoThumbnail(
-                                            img,
-                                            Icons.apartment_rounded,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              sector['name'] ?? 'Setor',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 14.5,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              'Tipo: ${sector['structuralType'] ?? 'BLOCO'} • ${img != null && img.isNotEmpty ? 'Foto definida' : 'Sem foto cadastrada'}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color:
-                                                    img != null &&
-                                                        img.isNotEmpty
-                                                    ? const Color(0xFF15803D)
-                                                    : SaaSColors.textSecondary(
-                                                        isDark,
-                                                      ),
-                                                fontWeight:
-                                                    img != null &&
-                                                        img.isNotEmpty
-                                                    ? FontWeight.w600
-                                                    : FontWeight.normal,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      FilledButton.tonalIcon(
-                                        style: FilledButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 8,
-                                          ),
-                                        ),
-                                        onPressed: () =>
-                                            _changeSectorImage(sector),
-                                        icon: const Icon(
-                                          Icons.add_a_photo_outlined,
-                                          size: 16,
-                                        ),
-                                        label: Text(
-                                          img == null
-                                              ? 'Definir Foto'
-                                              : 'Alterar',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

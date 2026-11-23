@@ -9,11 +9,13 @@ class MembershipManagementPage extends StatefulWidget {
     required this.api,
     required this.condominiumId,
     this.isSystemAdmin = false,
+    this.isEmbedded = false,
   });
 
   final HomeService api;
   final int condominiumId;
   final bool isSystemAdmin;
+  final bool isEmbedded;
 
   @override
   State<MembershipManagementPage> createState() =>
@@ -276,12 +278,14 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
       ),
     );
 
-    if (ok == true && name.text.trim().isNotEmpty) {
+    final sectorName = name.text.trim();
+    name.dispose();
+    if (ok == true && sectorName.isNotEmpty) {
       try {
         await widget.api.send(
           'POST',
           '/manager/condominiums/${widget.condominiumId}/sectors',
-          body: {'name': name.text.trim(), 'structuralType': structuralType},
+          body: {'name': sectorName, 'structuralType': structuralType},
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -311,6 +315,7 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
     } catch (_) {}
 
     if (sectors.isEmpty) {
+      idCtrl.dispose();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Crie um setor antes de cadastrar uma unidade.')),
@@ -321,7 +326,10 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
 
     Map<String, dynamic> selectedSector = sectors.first;
 
-    if (!mounted) return;
+    if (!mounted) {
+      idCtrl.dispose();
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -351,12 +359,15 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
       ),
     );
 
-    if (ok == true && idCtrl.text.trim().isNotEmpty) {
+    final unitIdentifier = idCtrl.text.trim();
+    idCtrl.dispose();
+
+    if (ok == true && unitIdentifier.isNotEmpty) {
       try {
         await widget.api.send(
           'POST',
           '/manager/condominiums/${widget.condominiumId}/units',
-          body: {'sectorId': selectedSector['id'], 'identifier': idCtrl.text.trim()},
+          body: {'sectorId': selectedSector['id'], 'identifier': unitIdentifier},
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -382,50 +393,71 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
         ? 'Síndicos do condomínio'
         : 'Gestão de moradores e porteiros';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-        actions: [
-          IconButton(
-            tooltip: 'Criar Setor / Bloco',
-            onPressed: _createSectorDialog,
-            icon: const Icon(Icons.domain_add),
-          ),
-          IconButton(
-            tooltip: 'Criar Unidade',
-            onPressed: _createUnitDialog,
-            icon: const Icon(Icons.add_home_outlined),
-          ),
-          IconButton(
-            tooltip: 'Atualizar lista',
-            onPressed: _load,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: ListView(
-            padding: const EdgeInsets.all(18),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: const Color(0xFFE0E7FF),
-                            child: Icon(
-                              widget.isSystemAdmin
-                                  ? Icons.admin_panel_settings_outlined
-                                  : Icons.person_add_alt_1_outlined,
-                              color: const Color(0xFF2F3FB0),
-                            ),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final listViewBody = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 860),
+        child: ListView(
+          padding: const EdgeInsets.all(18),
+          children: [
+            if (widget.isEmbedded)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _createSectorDialog,
+                          icon: const Icon(Icons.domain_add, size: 17),
+                          label: const Text('Criar Setor / Bloco'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _createUnitDialog,
+                          icon: const Icon(Icons.add_home_outlined, size: 17),
+                          label: const Text('Criar Unidade'),
+                        ),
+                        IconButton(
+                          tooltip: 'Atualizar lista',
+                          onPressed: _load,
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: isDark
+                              ? const Color(0xFF2563EB).withValues(alpha: 0.2)
+                              : const Color(0xFFE0E7FF),
+                          child: Icon(
+                            widget.isSystemAdmin
+                                ? Icons.admin_panel_settings_outlined
+                                : Icons.person_add_alt_1_outlined,
+                            color: isDark
+                                ? const Color(0xFF93C5FD)
+                                : const Color(0xFF2F3FB0),
                           ),
+                        ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -704,7 +736,34 @@ class _MembershipManagementPageState extends State<MembershipManagementPage> {
             ],
           ),
         ),
+      );
+
+    if (widget.isEmbedded) {
+      return listViewBody;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          IconButton(
+            tooltip: 'Criar Setor / Bloco',
+            onPressed: _createSectorDialog,
+            icon: const Icon(Icons.domain_add),
+          ),
+          IconButton(
+            tooltip: 'Criar Unidade',
+            onPressed: _createUnitDialog,
+            icon: const Icon(Icons.add_home_outlined),
+          ),
+          IconButton(
+            tooltip: 'Atualizar lista',
+            onPressed: _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
+      body: listViewBody,
     );
   }
 }

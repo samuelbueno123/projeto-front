@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:async' as async;
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -38,7 +38,9 @@ class HttpClientWrapper {
   static int _requestSequence = 0;
 
   static void Function()? onUnauthorized;
-  bool _handlingUnauthorized = false;
+  static Future<String?> Function()? onRefreshToken;
+  static Future<String?>? _refreshInFlight;
+  static bool _handlingUnauthorized = false;
 
   String _generateCorrelationId() {
     _requestSequence++;
@@ -149,8 +151,15 @@ class HttpClientWrapper {
           continue;
         }
         return response;
-      } on TimeoutException {
-        rethrow;
+      } on async.TimeoutException {
+        if (isIdempotent && attempts <= maxRetries) {
+          await Future.delayed(Duration(milliseconds: 220 * attempts));
+          continue;
+        }
+        throw TimeoutException(
+          'A requisição demorou mais que o esperado. Tente novamente.',
+          correlationId: correlationId,
+        );
       } on http.ClientException catch (e) {
         if (isIdempotent && attempts <= maxRetries) {
           await Future.delayed(Duration(milliseconds: 220 * attempts));
@@ -162,22 +171,55 @@ class HttpClientWrapper {
         );
       } on Object catch (e) {
         if (e is ApiException) rethrow;
-        if (e.toString().contains('TimeoutException')) {
-          if (isIdempotent && attempts <= maxRetries) {
-            await Future.delayed(Duration(milliseconds: 220 * attempts));
-            continue;
-          }
-          throw TimeoutException(
-            'A requisição demorou mais que o esperado. Tente novamente.',
-            correlationId: correlationId,
-          );
-        }
         throw NetworkException(
           'Erro inesperado de rede ao contactar a API.',
           correlationId: correlationId,
         );
       }
     }
+  }
+
+  bool _isExplicitReauthPath(String path) =>
+      path.contains('/oauth2/') ||
+      path.contains('/auth/google') ||
+      path.contains('/users/me/password') ||
+      path.endsWith('/users');
+
+  Future<http.Response> _executeWithAuthRefresh(
+    Future<http.Response> Function() requestAction, {
+    required bool isIdempotent,
+    required String correlationId,
+    required String path,
+    required Map<String, String> headers,
+  }) async {
+    final response = await _executeWithRetry(
+      requestAction,
+      isIdempotent: isIdempotent,
+      correlationId: correlationId,
+    );
+    if (response.statusCode == 401 &&
+        !_isExplicitReauthPath(path) &&
+        onRefreshToken != null) {
+      String? newToken;
+      try {
+        _refreshInFlight ??= onRefreshToken!().whenComplete(() {
+          _refreshInFlight = null;
+        });
+        newToken = await _refreshInFlight;
+      } catch (_) {
+        newToken = null;
+      }
+      if (newToken != null && newToken.trim().isNotEmpty) {
+        authToken = newToken.trim();
+        headers['Authorization'] = 'Bearer $authToken';
+        return _executeWithRetry(
+          requestAction,
+          isIdempotent: isIdempotent,
+          correlationId: correlationId,
+        );
+      }
+    }
+    return response;
   }
 
   void _storeCache(
@@ -237,10 +279,12 @@ class HttpClientWrapper {
       if (existing != null) {
         response = await existing;
       } else {
-        final future = _executeWithRetry(
+        final future = _executeWithAuthRefresh(
           () => _httpClient.get(uri, headers: headers),
           isIdempotent: true,
           correlationId: correlationId,
+          path: uri.path,
+          headers: headers,
         );
         _inFlightRequests[cacheKey] = future;
         try {
@@ -250,10 +294,12 @@ class HttpClientWrapper {
         }
       }
     } else {
-      response = await _executeWithRetry(
+      response = await _executeWithAuthRefresh(
         () => _httpClient.get(uri, headers: headers),
         isIdempotent: true,
         correlationId: correlationId,
+        path: uri.path,
+        headers: headers,
       );
     }
 
@@ -282,10 +328,12 @@ class HttpClientWrapper {
       jsonContentType: false,
     );
 
-    final response = await _executeWithRetry(
+    final response = await _executeWithAuthRefresh(
       () => _httpClient.get(uri, headers: headers),
       isIdempotent: true,
       correlationId: correlationId,
+      path: uri.path,
+      headers: headers,
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -312,10 +360,12 @@ class HttpClientWrapper {
         ? null
         : (body is String ? body : jsonEncode(body));
 
-    final response = await _executeWithRetry(
+    final response = await _executeWithAuthRefresh(
       () => _httpClient.post(uri, headers: headers, body: encodedBody),
       isIdempotent: false,
       correlationId: correlationId,
+      path: uri.path,
+      headers: headers,
     );
     return _handleResponse<T>(response, fromJsonT, correlationId, uri.path);
   }
@@ -337,10 +387,12 @@ class HttpClientWrapper {
         ? null
         : (body is String ? body : jsonEncode(body));
 
-    final response = await _executeWithRetry(
+    final response = await _executeWithAuthRefresh(
       () => _httpClient.put(uri, headers: headers, body: encodedBody),
       isIdempotent: false,
       correlationId: correlationId,
+      path: uri.path,
+      headers: headers,
     );
     return _handleResponse<T>(response, fromJsonT, correlationId, uri.path);
   }
@@ -359,10 +411,12 @@ class HttpClientWrapper {
       jsonContentType: false,
     );
 
-    final response = await _executeWithRetry(
+    final response = await _executeWithAuthRefresh(
       () => _httpClient.delete(uri, headers: headers),
       isIdempotent: false,
       correlationId: correlationId,
+      path: uri.path,
+      headers: headers,
     );
     return _handleResponse<T>(response, fromJsonT, correlationId, uri.path);
   }
@@ -384,10 +438,12 @@ class HttpClientWrapper {
         ? null
         : (body is String ? body : jsonEncode(body));
 
-    final response = await _executeWithRetry(
+    final response = await _executeWithAuthRefresh(
       () => _httpClient.patch(uri, headers: headers, body: encodedBody),
       isIdempotent: false,
       correlationId: correlationId,
+      path: uri.path,
+      headers: headers,
     );
     return _handleResponse<T>(response, fromJsonT, correlationId, uri.path);
   }
@@ -412,7 +468,7 @@ class HttpClientWrapper {
       jsonContentType: body != null,
     );
 
-    final response = await _executeWithRetry(
+    final response = await _executeWithAuthRefresh(
       () {
         final req = http.Request(upper, uri);
         req.headers.addAll(headers);
@@ -423,6 +479,8 @@ class HttpClientWrapper {
       },
       isIdempotent: upper == 'GET' || upper == 'HEAD',
       correlationId: correlationId,
+      path: uri.path,
+      headers: headers,
     );
     return _handleResponse<T>(response, fromJsonT, correlationId, uri.path);
   }

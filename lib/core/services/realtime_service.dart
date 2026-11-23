@@ -11,6 +11,24 @@ import 'realtime_transport.dart';
 
 enum RealtimeConnectionState { disconnected, connecting, connected }
 
+/// Catálogo unificado de tipos de eventos SSE emitidos pelo backend.
+abstract final class RealtimeEventTypes {
+  static const String notification = 'NOTIFICATION';
+  static const String systemAnnouncement = 'SYSTEM_ANNOUNCEMENT';
+  static const String packageUpdated = 'PACKAGE_UPDATED';
+  static const String visitorUpdated = 'VISITOR_UPDATED';
+  static const String announcement = 'ANNOUNCEMENT';
+  static const String announcementCreated = 'ANNOUNCEMENT_CREATED';
+  static const String reservationUpdated = 'RESERVATION_UPDATED';
+  static const String invoiceUpdated = 'INVOICE_UPDATED';
+  static const String membershipUpdated = 'MEMBERSHIP_UPDATED';
+  static const String maintenanceUpdated = 'MAINTENANCE_UPDATED';
+  static const String chatMessage = 'CHAT_MESSAGE';
+  static const String emergencyAlert = 'EMERGENCY_ALERT';
+  static const String sosAlertCreated = 'SOS_ALERT_CREATED';
+  static const String subscriptionUpdated = 'SUBSCRIPTION_UPDATED';
+}
+
 class RealtimeEvent {
   final String type;
   final int? condominiumId;
@@ -72,15 +90,26 @@ class RealtimeService {
 
   void setToken(String? token) {
     final cleanToken = token?.trim();
-    if (_token == cleanToken &&
-        _currentState == RealtimeConnectionState.connected) {
+    final tokenChanged = _token != cleanToken;
+    if (!tokenChanged &&
+        (_currentState == RealtimeConnectionState.connected ||
+            _currentState == RealtimeConnectionState.connecting)) {
       return;
     }
     _token = cleanToken;
-    _lastEventId = null;
+    if (tokenChanged) {
+      _lastEventId = null;
+      _retryCount = 0;
+    }
     if (_token != null && _token!.isNotEmpty) {
       _manualDisconnect = false;
-      connect();
+      if (tokenChanged) {
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
+        unawaited(_startSseStream());
+      } else {
+        connect();
+      }
     } else {
       disconnect();
     }
@@ -270,6 +299,10 @@ class RealtimeService {
       _stateController.add(newState);
     }
   }
+
+  @visibleForTesting
+  void setConnectionStateForTest(RealtimeConnectionState newState) =>
+      _setState(newState);
 
   void _cleanupConnectionOnly() {
     _heartbeatWatchdog?.cancel();

@@ -18,6 +18,7 @@ class _TicketsSubView extends StatefulWidget {
 
 class _TicketsSubViewState extends State<_TicketsSubView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _tickets = [];
 
   @override
@@ -27,7 +28,10 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listTickets(widget.condominiumId);
       if (mounted) {
@@ -36,8 +40,13 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -48,7 +57,8 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
     String category = 'MAINTENANCE';
     String priority = 'MEDIUM';
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
@@ -140,16 +150,30 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
       ),
     );
 
-    if (ok == true && title.text.isNotEmpty && desc.text.isNotEmpty) {
-      await widget.api.createTicket(
-        condoId: widget.condominiumId,
-        category: category,
-        title: title.text.trim(),
-        description: desc.text.trim(),
-        location: location.text.trim().isEmpty ? null : location.text.trim(),
-        priority: priority,
-      );
-      _load();
+      final titleVal = title.text.trim();
+      final descVal = desc.text.trim();
+      final locVal = location.text.trim();
+      if (ok == true && titleVal.isNotEmpty && descVal.isNotEmpty) {
+        try {
+          await widget.api.createTicket(
+            condoId: widget.condominiumId,
+            category: category,
+            title: titleVal,
+            description: descVal,
+            location: locVal.isEmpty ? null : locVal,
+            priority: priority,
+          );
+          _load();
+        } catch (e) {
+          if (mounted) {
+            SaaSFeedback.showError(context, 'Erro ao abrir chamado: $e');
+          }
+        }
+      }
+    } finally {
+      title.dispose();
+      desc.dispose();
+      location.dispose();
     }
   }
 
@@ -167,7 +191,8 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
       text: ticket['adminResponse']?.toString() ?? '',
     );
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setDState) => AlertDialog(
@@ -242,24 +267,33 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
       ),
     );
 
-    if (ok == true) {
-      await widget.api.updateTicketStatus(
-        ticketId: ticket['id'],
-        status: selectedStatus,
-        adminResponse: responseCtrl.text.trim().isEmpty
-            ? null
-            : responseCtrl.text.trim(),
-      );
-      _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Chamado atualizado com sucesso!')),
-        );
+      final respVal = responseCtrl.text.trim();
+      if (ok == true) {
+        try {
+          await widget.api.updateTicketStatus(
+            ticketId: ticket['id'],
+            status: selectedStatus,
+            adminResponse: respVal.isEmpty ? null : respVal,
+          );
+          _load();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Chamado atualizado com sucesso!')),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            SaaSFeedback.showError(context, 'Erro ao atualizar chamado: $e');
+          }
+        }
       }
+    } finally {
+      responseCtrl.dispose();
     }
   }
 
   Widget _buildStatusTimeline(String rawStatus) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final status = rawStatus.toUpperCase();
     final isResolved = status == 'RESOLVED';
     final isInProgress = status == 'IN_PROGRESS' || isResolved;
@@ -269,19 +303,19 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: isDark ? SaaSColors.deepNavy : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: SaaSColors.border(isDark)),
       ),
       child: isRejected
           ? const Row(
               children: [
-                Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 16),
+                Icon(Icons.cancel_rounded, color: Color(0xFFEF4444), size: 16),
                 SizedBox(width: 6),
                 Text(
                   'Chamado Recusado / Arquivado',
                   style: TextStyle(
-                    color: Color(0xFFDC2626),
+                    color: Color(0xFFEF4444),
                     fontWeight: FontWeight.w700,
                     fontSize: 11.5,
                   ),
@@ -294,35 +328,39 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
                   title: 'Aberto',
                   isActive: isOpen,
                   isDone: isInProgress,
-                  activeColor: const Color(0xFFD97706),
+                  activeColor: const Color(0xFFF59E0B),
                 ),
                 Expanded(
                   child: Container(
                     height: 2,
                     color: isInProgress
-                        ? const Color(0xFF1D4ED8)
-                        : const Color(0xFFCBD5E1),
+                        ? SaaSColors.primary
+                        : (isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFCBD5E1)),
                   ),
                 ),
                 _buildTimelineStep(
                   title: 'Em Análise',
                   isActive: isInProgress,
                   isDone: isResolved,
-                  activeColor: const Color(0xFF1D4ED8),
+                  activeColor: SaaSColors.primary,
                 ),
                 Expanded(
                   child: Container(
                     height: 2,
                     color: isResolved
-                        ? const Color(0xFF15803D)
-                        : const Color(0xFFCBD5E1),
+                        ? SaaSColors.success
+                        : (isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFCBD5E1)),
                   ),
                 ),
                 _buildTimelineStep(
                   title: 'Resolvido',
                   isActive: isResolved,
                   isDone: isResolved,
-                  activeColor: const Color(0xFF15803D),
+                  activeColor: SaaSColors.success,
                 ),
               ],
             ),
@@ -394,6 +432,11 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
                       ),
                     ),
                   )
+                : _error != null
+                ? SaaSErrorState(
+                    message: 'Falha ao carregar chamados: $_error',
+                    onRetry: _load,
+                  )
                 : _tickets.isEmpty
                 ? const SaaSEmptyState(
                     icon: Icons.report_problem_outlined,
@@ -407,24 +450,29 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
                     itemBuilder: (context, idx) {
                       final t = _tickets[idx];
                       final status = t['status']?.toString();
+                      final isDark =
+                          Theme.of(context).brightness == Brightness.dark;
                       final isResolved = status == 'RESOLVED';
                       final inProgress = status == 'IN_PROGRESS';
                       final color = isResolved
-                          ? const Color(0xFF15803D)
+                          ? (isDark
+                                ? const Color(0xFF34D399)
+                                : const Color(0xFF15803D))
                           : (inProgress
-                                ? const Color(0xFF1D4ED8)
-                                : const Color(0xFFB45309));
-                      final bg = isResolved
-                          ? const Color(0xFFDCFCE7)
-                          : (inProgress
-                                ? const Color(0xFFDBEAFE)
-                                : const Color(0xFFFEF3C7));
+                                ? (isDark
+                                      ? const Color(0xFF60A5FA)
+                                      : const Color(0xFF1D4ED8))
+                                : (isDark
+                                      ? const Color(0xFFFBBF24)
+                                      : const Color(0xFFB45309)));
+                      final bg = color.withValues(alpha: isDark ? 0.18 : 0.14);
 
                       return Card(
                         elevation: 0,
+                        color: SaaSColors.surface(isDark),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                          side: BorderSide(color: SaaSColors.border(isDark)),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(14),
@@ -567,7 +615,9 @@ class _TicketsSubViewState extends State<_TicketsSubView> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
+                                    color: isDark
+                                        ? SaaSColors.deepNavy
+                                        : const Color(0xFFF8FAFC),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
@@ -640,6 +690,7 @@ class _VisitorsSubView extends StatefulWidget {
 
 class _VisitorsSubViewState extends State<_VisitorsSubView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _visitors = [];
 
   @override
@@ -649,7 +700,10 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listVisitors(widget.condominiumId);
       if (mounted) {
@@ -658,8 +712,13 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -672,7 +731,8 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
     DateTime validFrom = DateTime.now();
     DateTime validUntil = DateTime.now().add(const Duration(hours: 24));
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setDState) => AlertDialog(
@@ -826,21 +886,37 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
       ),
     );
 
-    if (ok == true && name.text.isNotEmpty) {
-      final created = await widget.api.createVisitor(
-        condoId: widget.condominiumId,
-        visitorName: name.text.trim(),
-        documentNumber: doc.text.trim().isEmpty ? null : doc.text.trim(),
-        vehiclePlate: plate.text.trim().isEmpty ? null : plate.text.trim(),
-        visitorType: type,
-        validFrom: validFrom.toIso8601String(),
-        validUntil: validUntil.toIso8601String(),
-        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
-      );
-      await _load();
-      if (mounted && created.isNotEmpty) {
-        _showQrInviteDialog(created);
+      final nameVal = name.text.trim();
+      final docVal = doc.text.trim();
+      final plateVal = plate.text.trim();
+      final notesVal = notes.text.trim();
+      if (ok == true && nameVal.isNotEmpty) {
+        try {
+          final created = await widget.api.createVisitor(
+            condoId: widget.condominiumId,
+            visitorName: nameVal,
+            documentNumber: docVal.isEmpty ? null : docVal,
+            vehiclePlate: plateVal.isEmpty ? null : plateVal,
+            visitorType: type,
+            validFrom: validFrom.toIso8601String(),
+            validUntil: validUntil.toIso8601String(),
+            notes: notesVal.isEmpty ? null : notesVal,
+          );
+          await _load();
+          if (mounted && created.isNotEmpty) {
+            _showQrInviteDialog(created);
+          }
+        } catch (e) {
+          if (mounted) {
+            SaaSFeedback.showError(context, 'Erro ao autorizar visitante: $e');
+          }
+        }
       }
+    } finally {
+      name.dispose();
+      doc.dispose();
+      plate.dispose();
+      notes.dispose();
     }
   }
 
@@ -970,6 +1046,11 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
                       ),
                     ),
                   )
+                : _error != null
+                ? SaaSErrorState(
+                    message: 'Falha ao carregar visitantes: $_error',
+                    onRetry: _load,
+                  )
                 : _visitors.isEmpty
                 ? const SaaSEmptyState(
                     icon: Icons.person_add_disabled_outlined,
@@ -981,27 +1062,34 @@ class _VisitorsSubViewState extends State<_VisitorsSubView> {
                     itemCount: _visitors.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, idx) {
+                      final isDark =
+                          Theme.of(context).brightness == Brightness.dark;
                       final v = _visitors[idx];
                       final code = v['accessCode']?.toString() ?? '';
                       final status = v['status']?.toString() ?? 'AUTHORIZED';
 
                       return Card(
                         elevation: 0,
+                        color: SaaSColors.surface(isDark),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                          side: BorderSide(color: SaaSColors.border(isDark)),
                         ),
                         child: ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: const Color(0xFFE0E7FF),
+                            backgroundColor: SaaSColors.primary.withValues(
+                              alpha: isDark ? 0.22 : 0.14,
+                            ),
                             child: Text(
                               code.isNotEmpty
                                   ? code.substring(0, code.length.clamp(0, 3))
                                   : 'OK',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF2F3FB0),
+                                color: isDark
+                                    ? const Color(0xFF93C5FD)
+                                    : const Color(0xFF2F3FB0),
                               ),
                             ),
                           ),
@@ -1140,6 +1228,7 @@ class _PollsSubView extends StatefulWidget {
 
 class _PollsSubViewState extends State<_PollsSubView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _polls = [];
 
   Future<void> _openNewPollDialog() async {
@@ -1150,7 +1239,8 @@ class _PollsSubViewState extends State<_PollsSubView> {
     final extraOptions = <TextEditingController>[];
     int durationDays = 7;
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setDState) => AlertDialog(
@@ -1283,41 +1373,52 @@ class _PollsSubViewState extends State<_PollsSubView> {
       ),
     );
 
-    if (ok == true && titleCtrl.text.trim().isNotEmpty) {
-      final options = [
-        opt1Ctrl.text.trim(),
-        opt2Ctrl.text.trim(),
-        ...extraOptions.map((e) => e.text.trim()).where((e) => e.isNotEmpty),
-      ].where((e) => e.isNotEmpty).toList();
+      final titleVal = titleCtrl.text.trim();
+      final descVal = descCtrl.text.trim();
+      if (ok == true && titleVal.isNotEmpty) {
+        final options = [
+          opt1Ctrl.text.trim(),
+          opt2Ctrl.text.trim(),
+          ...extraOptions.map((e) => e.text.trim()).where((e) => e.isNotEmpty),
+        ].where((e) => e.isNotEmpty).toList();
 
-      if (options.length < 2) {
-        options.addAll(['Sim', 'Não']);
-      }
+        if (options.length < 2) {
+          options.addAll(['Sim', 'Não']);
+        }
 
-      final endsAt = DateTime.now().add(Duration(days: durationDays));
-      try {
-        await widget.api.createPoll(
-          condoId: widget.condominiumId,
-          title: titleCtrl.text.trim(),
-          description: descCtrl.text.trim(),
-          options: options,
-          endsAt: endsAt,
-        );
-        _load();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Votação criada com sucesso!'),
-              backgroundColor: Color(0xFF15803D),
-            ),
+        final endsAt = DateTime.now().add(Duration(days: durationDays));
+        try {
+          await widget.api.createPoll(
+            condoId: widget.condominiumId,
+            title: titleVal,
+            description: descVal,
+            options: options,
+            endsAt: endsAt,
           );
+          _load();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Votação criada com sucesso!'),
+                backgroundColor: Color(0xFF15803D),
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Erro ao criar votação: $e')));
+          }
         }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Erro ao criar votação: $e')));
-        }
+      }
+    } finally {
+      titleCtrl.dispose();
+      descCtrl.dispose();
+      opt1Ctrl.dispose();
+      opt2Ctrl.dispose();
+      for (final c in extraOptions) {
+        c.dispose();
       }
     }
   }
@@ -1329,7 +1430,10 @@ class _PollsSubViewState extends State<_PollsSubView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listPolls(widget.condominiumId);
       if (mounted) {
@@ -1338,46 +1442,86 @@ class _PollsSubViewState extends State<_PollsSubView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
   Future<void> _vote(num pollId, num optionId) async {
     try {
-      await widget.api.votePoll(pollId: pollId, optionId: optionId);
-      _load();
+      final updated = await widget.api.votePoll(
+        pollId: pollId,
+        optionId: optionId,
+      );
+      if (!mounted) return;
+      if (updated.isNotEmpty) {
+        setState(() {
+          final idx = _polls.indexWhere((p) => p['id'] == pollId);
+          if (idx != -1) _polls[idx] = updated;
+        });
+      } else {
+        await _load();
+      }
+      if (mounted) {
+        SaaSFeedback.showSuccess(context, 'Voto registrado com sucesso!');
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+        SaaSFeedback.showError(context, 'Erro ao registrar voto: $e');
+      }
+    }
+  }
+
+  Future<void> _closePoll(num pollId) async {
+    try {
+      await widget.api.closePoll(pollId);
+      if (!mounted) return;
+      SaaSFeedback.showSuccess(context, 'Votação encerrada.');
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        SaaSFeedback.showError(context, 'Não foi possível encerrar: $e');
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Votações & Assembleias (${_polls.length})',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+              Expanded(
+                child: Text(
+                  'Votações & Enquetes (${_polls.length})',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: SaaSColors.textPrimary(isDark),
+                  ),
                 ),
               ),
-              if (widget.canManage)
+              IconButton(
+                tooltip: 'Atualizar enquetes',
+                onPressed: _load,
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+              ),
+              if (widget.canManage) ...[
+                const SizedBox(width: 6),
                 FilledButton.icon(
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Nova Votação'),
                   onPressed: _openNewPollDialog,
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
@@ -1390,6 +1534,13 @@ class _PollsSubViewState extends State<_PollsSubView> {
                         message:
                             'Carregando votações e assembleias virtuais...',
                       ),
+                    ),
+                  )
+                : _error != null
+                ? Center(
+                    child: SaaSErrorState(
+                      message: 'Erro ao carregar enquetes: $_error',
+                      onRetry: _load,
                     ),
                   )
                 : _polls.isEmpty
@@ -1405,134 +1556,157 @@ class _PollsSubViewState extends State<_PollsSubView> {
                     itemBuilder: (context, idx) {
                       final p = _polls[idx];
                       final options = (p['options'] as List? ?? [])
-                          .whereType<Map<String, dynamic>>()
+                          .whereType<Map>()
+                          .map((e) => Map<String, dynamic>.from(e))
                           .toList();
                       final totalVotes =
                           (p['totalVotes'] as num?)?.toInt() ?? 0;
-                      final myOptionId = p['myOptionId'];
-                      final isClosed = p['closed'] == true;
+                      final myOptionId =
+                          p['myOptionId'] ?? p['userVotedOptionId'];
+                      final isClosed =
+                          p['active'] == false || p['closed'] == true;
 
-                      return Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: SaaSColors.surface(isDark),
                           borderRadius: BorderRadius.circular(14),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                          border: Border.all(color: SaaSColors.border(isDark)),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      p['title'] ?? '',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    p['title']?.toString() ?? 'Enquete',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: SaaSColors.textPrimary(isDark),
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isClosed
-                                          ? const Color(0xFFF1F5F9)
-                                          : const Color(0xFFDCFCE7),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      isClosed ? 'Encerrada' : 'Em Votação',
-                                      style: TextStyle(
-                                        color: isClosed
-                                            ? const Color(0xFF64748B)
-                                            : const Color(0xFF15803D),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 11,
-                                      ),
+                                ),
+                                const SizedBox(width: 8),
+                                SaaSBadge(
+                                  label: isClosed ? 'Encerrada' : 'Em Votação',
+                                  variant: isClosed
+                                      ? SaaSBadgeVariant.neutral
+                                      : SaaSBadgeVariant.success,
+                                ),
+                                if (widget.canManage && !isClosed && p['id'] is num) ...[
+                                  const SizedBox(width: 6),
+                                  IconButton(
+                                    tooltip: 'Encerrar votação',
+                                    onPressed: () => _closePoll(p['id'] as num),
+                                    icon: Icon(
+                                      Icons.lock_outline_rounded,
+                                      size: 18,
+                                      color: SaaSColors.textSecondary(isDark),
                                     ),
                                   ),
                                 ],
-                              ),
-                              const SizedBox(height: 4),
-                              Wrap(
-                                spacing: 8,
-                                children: [
-                                  if (p['createdByName'] != null &&
-                                      p['createdByName'].toString().isNotEmpty)
-                                    Text(
-                                      'Criada por: ${p['createdByName']}',
-                                      style: const TextStyle(
-                                        fontSize: 11.5,
-                                        color: Color(0xFF64748B),
-                                      ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                if (p['createdByName'] != null &&
+                                    p['createdByName'].toString().isNotEmpty)
+                                  Text(
+                                    'Criada por: ${p['createdByName']}',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: SaaSColors.textSecondary(isDark),
                                     ),
-                                  if (p['createdAt'] != null)
-                                    Text(
-                                      '• ${formatDate(p['createdAt'])}',
-                                      style: const TextStyle(
-                                        fontSize: 11.5,
-                                        color: Color(0xFF94A3B8),
-                                      ),
+                                  ),
+                                if (p['createdAt'] != null)
+                                  Text(
+                                    '• ${formatDate(p['createdAt'])}',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: SaaSColors.textSecondary(isDark),
                                     ),
-                                ],
-                              ),
+                                  ),
+                                Text(
+                                  '• $totalVotes voto(s)',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: SaaSColors.textSecondary(isDark),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if ((p['description']?.toString() ?? '')
+                                .isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(
-                                p['description'] ?? '',
-                                style: const TextStyle(
-                                  color: Color(0xFF475569),
+                                p['description'].toString(),
+                                style: TextStyle(
+                                  color: SaaSColors.textSecondary(isDark),
                                   fontSize: 13,
                                 ),
                               ),
-                              const SizedBox(height: 14),
-                              ...options.map((opt) {
-                                final optId = opt['id'];
-                                final votes =
-                                    (opt['voteCount'] as num?)?.toInt() ?? 0;
-                                final pct = totalVotes > 0
-                                    ? (votes / totalVotes)
-                                    : 0.0;
-                                final isSelected = myOptionId == optId;
+                            ],
+                            const SizedBox(height: 14),
+                            ...options.map((opt) {
+                              final optId = opt['id'];
+                              final optionLabel =
+                                  opt['label']?.toString() ??
+                                  opt['optionText']?.toString() ??
+                                  opt['text']?.toString() ??
+                                  'Opção';
+                              final votes =
+                                  (opt['votes'] as num?)?.toInt() ??
+                                  (opt['voteCount'] as num?)?.toInt() ??
+                                  0;
+                              final pct = totalVotes > 0
+                                  ? (votes / totalVotes)
+                                  : 0.0;
+                              final isSelected =
+                                  myOptionId != null && myOptionId == optId;
 
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: InkWell(
-                                    onTap: (!isClosed)
-                                        ? () => _vote(p['id'], optId)
-                                        : null,
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
-                                      decoration: BoxDecoration(
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: InkWell(
+                                  onTap: (!isClosed &&
+                                          p['id'] is num &&
+                                          optId is num)
+                                      ? () => _vote(
+                                            p['id'] as num,
+                                            optId,
+                                          )
+                                      : null,
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? SaaSColors.primary.withValues(
+                                              alpha: isDark ? 0.2 : 0.1,
+                                            )
+                                          : SaaSColors.surfaceSubtle(isDark),
+                                      border: Border.all(
                                         color: isSelected
-                                            ? const Color(0xFFEEF2FF)
-                                            : const Color(0xFFF8FAFC),
-                                        border: Border.all(
-                                          color: isSelected
-                                              ? const Color(0xFF4F46E5)
-                                              : const Color(0xFFE2E8F0),
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
+                                            ? SaaSColors.primary
+                                            : SaaSColors.border(isDark),
                                       ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Row(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Row(
                                                 children: [
                                                   Icon(
                                                     isSelected
@@ -1542,64 +1716,67 @@ class _PollsSubViewState extends State<_PollsSubView> {
                                                               .radio_button_unchecked,
                                                     size: 18,
                                                     color: isSelected
-                                                        ? const Color(
-                                                            0xFF4F46E5,
-                                                          )
-                                                        : const Color(
-                                                            0xFF94A3B8,
+                                                        ? SaaSColors.primary
+                                                        : SaaSColors.textSecondary(
+                                                            isDark,
                                                           ),
                                                   ),
                                                   const SizedBox(width: 8),
-                                                  Text(
-                                                    opt['optionText'] ?? '',
-                                                    style: TextStyle(
-                                                      fontWeight: isSelected
-                                                          ? FontWeight.bold
-                                                          : FontWeight.w500,
+                                                  Expanded(
+                                                    child: Text(
+                                                      optionLabel,
+                                                      style: TextStyle(
+                                                        fontWeight: isSelected
+                                                            ? FontWeight.bold
+                                                            : FontWeight.w500,
+                                                        color:
+                                                            SaaSColors.textPrimary(
+                                                              isDark,
+                                                            ),
+                                                      ),
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                              Text(
-                                                '$votes votos (${(pct * 100).toStringAsFixed(1)}%)',
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Color(0xFF64748B),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              '$votes voto(s) (${(pct * 100).toStringAsFixed(0)}%)',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: SaaSColors.textSecondary(
+                                                  isDark,
                                                 ),
                                               ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 6),
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              4,
                                             ),
-                                            child: LinearProgressIndicator(
-                                              value: pct,
-                                              backgroundColor: const Color(
-                                                0xFFE2E8F0,
-                                              ),
-                                              valueColor:
-                                                  AlwaysStoppedAnimation(
-                                                    isSelected
-                                                        ? const Color(
-                                                            0xFF4F46E5,
-                                                          )
-                                                        : const Color(
-                                                            0xFF94A3B8,
-                                                          ),
-                                                  ),
-                                              minHeight: 6,
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                          child: LinearProgressIndicator(
+                                            value: pct,
+                                            backgroundColor:
+                                                SaaSColors.border(isDark),
+                                            valueColor: AlwaysStoppedAnimation(
+                                              isSelected
+                                                  ? SaaSColors.primary
+                                                  : SaaSColors.textSecondary(
+                                                      isDark,
+                                                    ),
                                             ),
+                                            minHeight: 6,
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                );
-                              }),
-                            ],
-                          ),
+                                ),
+                              );
+                            }),
+                          ],
                         ),
                       );
                     },
@@ -1630,6 +1807,7 @@ class _ClassifiedsSubView extends StatefulWidget {
 
 class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _ads = [];
 
   @override
@@ -1639,7 +1817,10 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listClassifieds(widget.condominiumId);
       if (mounted) {
@@ -1648,8 +1829,13 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -1660,7 +1846,8 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
     final phone = TextEditingController();
     String cat = 'PARKING_RENTAL';
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
@@ -1737,53 +1924,80 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
       ),
     );
 
-    if (ok == true && title.text.isNotEmpty && desc.text.isNotEmpty) {
-      await widget.api.createClassified(
-        condoId: widget.condominiumId,
-        category: cat,
-        title: title.text.trim(),
-        description: desc.text.trim(),
-        price: price.text.trim().isEmpty ? null : price.text.trim(),
-        contactPhone: phone.text.trim().isEmpty ? null : phone.text.trim(),
-      );
-      _load();
+      final titleVal = title.text.trim();
+      final descVal = desc.text.trim();
+      final priceVal = price.text.trim();
+      final phoneVal = phone.text.trim();
+      if (ok == true && titleVal.isNotEmpty && descVal.isNotEmpty) {
+        try {
+          await widget.api.createClassified(
+            condoId: widget.condominiumId,
+            category: cat,
+            title: titleVal,
+            description: descVal,
+            price: priceVal.isEmpty ? null : priceVal,
+            contactPhone: phoneVal.isEmpty ? null : phoneVal,
+          );
+          _load();
+        } catch (e) {
+          if (mounted) {
+            SaaSFeedback.showError(context, 'Erro ao publicar anúncio: $e');
+          }
+        }
+      }
+    } finally {
+      title.dispose();
+      price.dispose();
+      desc.dispose();
+      phone.dispose();
     }
   }
 
   Future<void> _sendInterest(num adId) async {
     final msg = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Demonstrar Interesse'),
-        content: TextField(
-          controller: msg,
-          decoration: const InputDecoration(
-            labelText: 'Mensagem para o anunciante',
-            hintText: 'Tenho interesse! Ainda está disponível?',
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Demonstrar Interesse'),
+          content: TextField(
+            controller: msg,
+            decoration: const InputDecoration(
+              labelText: 'Mensagem para o anunciante',
+              hintText: 'Tenho interesse! Ainda está disponível?',
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Enviar Mensagem'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Enviar Mensagem'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && msg.text.isNotEmpty) {
-      await widget.api.sendClassifiedInterest(adId, msg.text.trim());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Mensagem de interesse enviada ao anunciante!'),
-          ),
-        );
+      );
+      final msgVal = msg.text.trim();
+      if (ok == true && msgVal.isNotEmpty) {
+        try {
+          await widget.api.sendClassifiedInterest(adId, msgVal);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Mensagem de interesse enviada ao anunciante!'),
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            SaaSFeedback.showError(context, 'Erro ao enviar interesse: $e');
+          }
+        }
       }
+    } finally {
+      msg.dispose();
     }
   }
 
@@ -1821,6 +2035,11 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
                       ),
                     ),
                   )
+                : _error != null
+                ? SaaSErrorState(
+                    message: 'Falha ao carregar classificados: $_error',
+                    onRetry: _load,
+                  )
                 : _ads.isEmpty
                 ? const SaaSEmptyState(
                     icon: Icons.storefront_outlined,
@@ -1832,12 +2051,15 @@ class _ClassifiedsSubViewState extends State<_ClassifiedsSubView> {
                     itemCount: _ads.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, idx) {
+                      final isDark =
+                          Theme.of(context).brightness == Brightness.dark;
                       final a = _ads[idx];
                       return Card(
                         elevation: 0,
+                        color: SaaSColors.surface(isDark),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                          side: BorderSide(color: SaaSColors.border(isDark)),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(14),

@@ -138,14 +138,122 @@ class _EmergencySOSDialogState extends State<EmergencySOSDialog> {
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
                 isExpanded: true,
-                value: _emergencyType,
+                initialValue: _emergencyType,
                 items: const [
-                  DropdownMenuItem(value: 'MEDICAL', child: Text('🚑 Emergência Médica / Ambulância')),
-                  DropdownMenuItem(value: 'FIRE', child: Text('🔥 Fogo / Princípio de Incêndio')),
-                  DropdownMenuItem(value: 'GAS_LEAK', child: Text('⚠️ Suspeita de Vazamento de Gás')),
-                  DropdownMenuItem(value: 'ELEVATOR', child: Text('🛗 Passageiro Preso no Elevador')),
-                  DropdownMenuItem(value: 'SECURITY_BREACH', child: Text('🚨 Segurança / Suspeita de Invasão')),
-                  DropdownMenuItem(value: 'OTHER', child: Text('❗ Outra Emergência Crítica')),
+                  DropdownMenuItem(
+                    value: 'MEDICAL',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.local_hospital_rounded,
+                          size: 18,
+                          color: Color(0xFFEF4444),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Emergência Médica / Ambulância',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'FIRE',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.local_fire_department_rounded,
+                          size: 18,
+                          color: Color(0xFFF97316),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Fogo / Princípio de Incêndio',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'GAS_LEAK',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          size: 18,
+                          color: Color(0xFFF59E0B),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Suspeita de Vazamento de Gás',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'ELEVATOR',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.elevator_rounded,
+                          size: 18,
+                          color: Color(0xFF3B82F6),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Passageiro Preso no Elevador',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'SECURITY_BREACH',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.security_rounded,
+                          size: 18,
+                          color: Color(0xFFEF4444),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Segurança / Suspeita de Invasão',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'OTHER',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_rounded,
+                          size: 18,
+                          color: Color(0xFFEF4444),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Outra Emergência Crítica',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
                 onChanged: (val) {
                   if (val != null) setState(() => _emergencyType = val);

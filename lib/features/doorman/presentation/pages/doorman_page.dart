@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../../../../core/design_system/motion_system.dart';
 import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
@@ -11,10 +11,14 @@ import '../../../../core/widgets/command_palette.dart';
 import '../../../../core/widgets/custom_menus.dart';
 import '../../../../core/widgets/emergency_sos_banner.dart';
 import '../../../../core/widgets/role_switcher_pill.dart';
+import '../../../../core/widgets/saas_dashboard_widgets.dart';
+import '../../../../core/widgets/smart_image.dart';
+import '../../../../core/widgets/subscription_status_banner.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../announcements/presentation/announcement_composer.dart';
 import '../../../auth/presentation/pages/user_profile_page.dart';
 import '../../../community/data/community_api.dart';
+import '../../../community/presentation/dialogs/emergency_sos_dialog.dart';
 import '../../../community/presentation/views/doorman_chat_view.dart';
 import '../../../community/presentation/views/doorman_community_views.dart';
 import '../../../directory/presentation/unit_directory.dart';
@@ -35,6 +39,7 @@ class DoormanPage extends StatefulWidget {
     this.currentRole,
     this.availableRoles = const [],
     this.onSwitchRole,
+    this.api,
   });
 
   final String? token;
@@ -49,6 +54,7 @@ class DoormanPage extends StatefulWidget {
   final String? currentRole;
   final List<String> availableRoles;
   final ValueChanged<String>? onSwitchRole;
+  final HomeService? api;
 
   @override
   State<DoormanPage> createState() => _DoormanPageState();
@@ -62,30 +68,60 @@ class _DoormanPageState extends State<DoormanPage>
   late CommunityApi _communityApi;
   List<Map<String, dynamic>> _condominiums = [];
   Map<String, dynamic>? _selectedCondominium;
+  Map<String, dynamic>? _subscription;
+  SubscriptionAccessState get _subAccess => SubscriptionAccessState.fromMaps(
+    condominium: _selectedCondominium,
+    subscription: _subscription,
+  );
+  bool _hasFeature(String code) => _subAccess.hasFeature(code);
   List<Map<String, dynamic>> _packages = [];
+  List<Map<String, dynamic>> _visitors = [];
+  List<Map<String, dynamic>> _conversations = [];
+  List<Map<String, dynamic>> _shiftLogs = [];
   Map<String, dynamic> _profile = {};
   bool _loadingCondominiums = true;
   bool _loadingPackages = true;
   String? _error;
   String? _packageError;
   String _query = '';
+  String _packageStatusFilter = 'ALL'; // ALL, PENDING, DELIVERED
+  int _navIndex = 0;
   StreamSubscription<RealtimeEvent>? _sseSub;
+
+  void _subscribeRealtime() {
+    _sseSub?.cancel();
+    _sseSub = RealtimeService.instance.events.listen((event) {
+      final selectedId = (_selectedCondominium?['id'] as num?)?.toInt();
+      if (event.condominiumId != null &&
+          selectedId != null &&
+          event.condominiumId != selectedId) {
+        return;
+      }
+      if (event.type == RealtimeEventTypes.packageUpdated ||
+          event.type == RealtimeEventTypes.visitorUpdated ||
+          event.type == RealtimeEventTypes.chatMessage ||
+          event.type == RealtimeEventTypes.subscriptionUpdated) {
+        _loadPackages(silent: true);
+      }
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _tabs.addListener(() {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {
+        if (_navIndex < 8 || _tabs.indexIsChanging) {
+          _navIndex = _tabs.index;
+        }
+      });
     });
-    _api = HomeService(token: widget.token);
+    _api = widget.api ?? HomeService(token: widget.token);
     _communityApi = CommunityApi(api: _api);
     if (widget.token != null && widget.token!.isNotEmpty) {
       RealtimeService.instance.setToken(widget.token);
-      _sseSub = RealtimeService.instance.events.listen((event) {
-        if (event.type == 'PACKAGE_UPDATED') {
-          _loadPackages();
-        }
-      });
+      _subscribeRealtime();
     }
     _loadInitialData();
   }
@@ -93,20 +129,19 @@ class _DoormanPageState extends State<DoormanPage>
   @override
   void didUpdateWidget(covariant DoormanPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.token != widget.token) {
-      _api = HomeService(token: widget.token);
+    if (oldWidget.token != widget.token || oldWidget.api != widget.api) {
+      if (oldWidget.api == null && widget.api == null) {
+        _api.dispose();
+      }
+      _api = widget.api ?? HomeService(token: widget.token);
       _communityApi = CommunityApi(api: _api);
       final selectedId = (_selectedCondominium?['id'] as num?)?.toInt();
       _directory = selectedId == null
           ? null
           : DirectoryApi(api: _api, condominiumId: selectedId);
       RealtimeService.instance.setToken(widget.token);
-      if (widget.token != null && widget.token!.isNotEmpty && _sseSub == null) {
-        _sseSub = RealtimeService.instance.events.listen((event) {
-          if (event.type == 'PACKAGE_UPDATED') {
-            _loadPackages();
-          }
-        });
+      if (widget.token != null && widget.token!.isNotEmpty) {
+        _subscribeRealtime();
       }
       _loadInitialData();
     }
@@ -152,6 +187,9 @@ class _DoormanPageState extends State<DoormanPage>
   void dispose() {
     _sseSub?.cancel();
     _tabs.dispose();
+    if (widget.api == null) {
+      _api.dispose();
+    }
     super.dispose();
   }
 
@@ -188,8 +226,17 @@ class _DoormanPageState extends State<DoormanPage>
           ? memberships.whereType<Map<String, dynamic>>().toList()
           : <Map<String, dynamic>>[];
 
+      final seenCondoIds = <String>{};
+      final doormanMemberships = list.where((m) {
+        final cid = m['condominiumId']?.toString();
+        if (cid == null || cid.isEmpty) return false;
+        final auth = (m['authority'] ?? m['role'] ?? '').toString();
+        if (auth.isNotEmpty && auth != 'ROLE_DOORMAN') return false;
+        return seenCondoIds.add(cid);
+      }).toList();
+
       final condos = await Future.wait<Map<String, dynamic>?>(
-        list.where((m) => m['condominiumId'] != null).map((membership) async {
+        doormanMemberships.map((membership) async {
           try {
             final condo = await _api.get(
               '/condominiums/${membership['condominiumId']}',
@@ -223,39 +270,75 @@ class _DoormanPageState extends State<DoormanPage>
     }
   }
 
-  Future<void> _loadPackages() async {
+  Future<dynamic> _safeGet(String path) async {
+    try {
+      return await _api.get(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<Map<String, dynamic>> _extractList(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    if (raw is Map && raw['content'] is List) {
+      return (raw['content'] as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<void> _loadPackages({bool silent = false}) async {
     if (!mounted) return;
     if (_selectedCondominium == null) {
       if (mounted) {
         setState(() {
           _loadingPackages = false;
           _packages = [];
+          _visitors = [];
+          _conversations = [];
+          _shiftLogs = [];
         });
       }
       return;
     }
-    setState(() {
-      _loadingPackages = true;
-      _packageError = null;
-    });
+    if (!silent) {
+      setState(() {
+        _loadingPackages = true;
+        _packageError = null;
+      });
+    }
     try {
       final condoId = _selectedCondominium!['id'];
-      final response = await _api.get(
-        '/packages?condominiumId=$condoId&page=0&size=100&sort=id,desc',
-      );
+      final responses = await Future.wait([
+        _safeGet('/packages?condominiumId=$condoId&page=0&size=100&sort=id,desc'),
+        _safeGet('/condominiums/$condoId/visitors'),
+        _safeGet('/condominiums/$condoId/doorman-chat/conversations'),
+        _safeGet('/condominiums/$condoId/shift-logs'),
+        _safeGet('/condominiums/$condoId/subscription'),
+      ]);
 
-      List<Map<String, dynamic>> packages = [];
-      if (response is Map && response['content'] is List) {
-        packages = (response['content'] as List)
-            .whereType<Map<String, dynamic>>()
-            .toList();
-      } else if (response is List) {
-        packages = response.whereType<Map<String, dynamic>>().toList();
-      }
+      final packages = _extractList(responses[0]);
+      final visitors = _extractList(responses[1]);
+      final conversations = _extractList(responses[2]);
+      final shiftLogs = _extractList(responses[3]);
+      final subMap = responses[4] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(responses[4] as Map)
+          : null;
 
       if (mounted) {
         setState(() {
           _packages = packages;
+          _visitors = visitors;
+          _conversations = conversations;
+          _shiftLogs = shiftLogs;
+          _subscription = subMap;
           _loadingPackages = false;
         });
       }
@@ -577,103 +660,16 @@ class _DoormanPageState extends State<DoormanPage>
     return formatDateTime(raw, fallback: raw.toString());
   }
 
-  Widget _buildStatusActions(Map<String, dynamic> pkg) {
-    final status = pkg['status'] as String?;
-    final id = (pkg['id'] as num).toInt();
-
-    if (status == 'EXPECTED') {
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          FilledButton.tonalIcon(
-            onPressed: () => _updatePackageStatus(id, 'receive'),
-            icon: const Icon(Icons.download_done_rounded, size: 18),
-            label: const Text('Confirmar chegada'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () => _updatePackageStatus(id, 'cancel'),
-            icon: const Icon(Icons.close_rounded, size: 18),
-            label: const Text('Cancelar'),
-          ),
-        ],
-      );
-    } else if (status == 'RECEIVED') {
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          FilledButton.tonalIcon(
-            onPressed: () => _updatePackageStatus(id, 'notify'),
-            icon: const Icon(Icons.notifications_active_outlined, size: 18),
-            label: const Text('Avisar morador'),
-          ),
-          FilledButton.icon(
-            onPressed: () => _updatePackageStatus(id, 'pickup'),
-            icon: const Icon(Icons.check_circle_outline, size: 18),
-            label: const Text('Registrar entrega'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () => _updatePackageStatus(id, 'return'),
-            icon: const Icon(Icons.keyboard_return_rounded, size: 18),
-            label: const Text('Devolver'),
-          ),
-        ],
-      );
-    } else if (status == 'NOTIFIED') {
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          FilledButton.icon(
-            onPressed: () => _updatePackageStatus(id, 'pickup'),
-            icon: const Icon(Icons.check_circle_outline, size: 18),
-            label: const Text('Registrar entrega'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () => _updatePackageStatus(id, 'return'),
-            icon: const Icon(Icons.keyboard_return_rounded, size: 18),
-            label: const Text('Devolver'),
-          ),
-        ],
-      );
-    }
-    return const SizedBox.shrink();
-  }
-
-  Tab _buildTabItem(String label, IconData icon, bool hasNew) {
-    return Tab(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18),
-          const SizedBox(width: 7),
-          Text(label),
-          if (hasNew) ...[
-            const SizedBox(width: 5),
-            Container(
-              width: 7,
-              height: 7,
-              decoration: const BoxDecoration(
-                color: Color(0xFFEF4444),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   String _tabLabel(int index) => switch (index) {
     0 => 'Encomendas',
     1 => 'Visitantes',
     2 => 'Consulta de Placas',
-    3 => 'Eventos e Convidados',
-    4 => 'Unidades e Achados',
-    5 => 'Reservas e Áreas',
+    3 => 'Eventos & Convidados',
+    4 => 'Unidades & Achados',
+    5 => 'Reservas & Áreas',
     6 => 'Smart Lockers',
-    7 => 'Chat com moradores',
+    7 => 'Chat Moradores',
+    8 => 'Notificações',
     _ => 'Área',
   };
 
@@ -686,365 +682,100 @@ class _DoormanPageState extends State<DoormanPage>
     5 => Icons.event_available_outlined,
     6 => Icons.lock_clock_outlined,
     7 => Icons.chat_bubble_outline_rounded,
+    8 => Icons.notifications_outlined,
     _ => Icons.dashboard_outlined,
   };
 
-  Widget _buildDoormanHeader(bool isDesktop, bool isDark) {
-    final condoName =
-        _selectedCondominium?['name']?.toString() ?? 'Central da Portaria';
-    final condoImg = _selectedCondominium?['imageUrl'] as String?;
-
-    if (isDesktop) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0F172A) : Colors.white,
-          border: Border(
-            bottom: BorderSide(
-              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-              width: 1,
-            ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.02),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                width: 40,
-                height: 40,
-                color: isDark
-                    ? const Color(0xFF1E293B)
-                    : const Color(0xFFEFF6FF),
-                alignment: Alignment.center,
-                child: (condoImg != null && condoImg.isNotEmpty)
-                    ? (condoImg.startsWith('data:')
-                          ? Image.memory(
-                              base64Decode(condoImg.split(',').last),
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.shield_outlined,
-                                color: SaaSColors.primary,
-                                size: 22,
-                              ),
-                            )
-                          : Image.network(
-                              condoImg,
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.shield_outlined,
-                                color: SaaSColors.primary,
-                                size: 22,
-                              ),
-                            ))
-                    : const Icon(
-                        Icons.shield_outlined,
-                        color: SaaSColors.primary,
-                        size: 22,
-                      ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  condoName,
-                  style: TextStyle(
-                    color: SaaSColors.textPrimary(isDark),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                Text(
-                  'Portaria & Acesso • Olá, ${firstNameOf(widget.userName, fallback: 'Portaria')}!',
-                  style: TextStyle(
-                    color: SaaSColors.textSecondary(isDark),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            if (_condominiums.length > 1) ...[
-              const SizedBox(width: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF1E293B)
-                      : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFCBD5E1),
-                  ),
-                ),
-                child: AncoraDropdown<Map<String, dynamic>>(
-                  value: _selectedCondominium,
-                  compact: true,
-                  prefixIcon: Icons.apartment_rounded,
-                  items: _condominiums
-                      .map(
-                        (c) => AncoraMenuOption<Map<String, dynamic>>(
-                          value: c,
-                          label: c['name']?.toString() ?? 'Sem nome',
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() => _selectCondominium(value));
-                    _loadPackages();
-                  },
-                ),
-              ),
-            ],
-            const SizedBox(width: 16),
-
-            _doormanHeaderAction(
-              icon: Icons.qr_code_scanner_rounded,
-              label: 'Baixa (PIN)',
-              onTap: _selectedCondominium == null ? null : _quickPickupByPin,
-              isDark: isDark,
-            ),
-            _doormanHeaderAction(
-              icon: Icons.campaign_outlined,
-              label: 'Comunicado',
-              onTap: _selectedCondominium == null ? null : _sendAnnouncement,
-              isDark: isDark,
-            ),
-
-            const Spacer(),
-
-            if (widget.currentRole != null && widget.onSwitchRole != null) ...[
-              RoleSwitcherPill(
-                currentRole: widget.currentRole!,
-                availableRoles: widget.availableRoles,
-                onSwitchRole: widget.onSwitchRole!,
-                isLight: !isDark,
-              ),
-              const SizedBox(width: 8),
-            ],
-
-            IconButton(
-              tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
-              onPressed: _toggleTheme,
-              icon: Icon(
-                isDark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
-                color: isDark ? Colors.white70 : const Color(0xFF475569),
-                size: 20,
-              ),
-            ),
-
-            IconButton(
-              tooltip: 'Notificações e convites',
-              onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => NotificationsPage(
-                      api: _api,
-                      condominiumId: (_selectedCondominium?['id'] as num?)
-                          ?.toInt(),
-                      onInvitationChanged: _loadCondominiums,
-                    ),
-                  ),
-                );
-                if (mounted) _loadCondominiums();
-              },
-              icon: Icon(
-                Icons.notifications_none_rounded,
-                color: isDark ? Colors.white70 : const Color(0xFF475569),
-                size: 20,
-              ),
-            ),
-
-            IconButton(
-              tooltip: 'Atualizar encomendas',
-              onPressed: _loadPackages,
-              icon: Icon(
-                Icons.refresh_rounded,
-                color: isDark ? Colors.white70 : const Color(0xFF475569),
-                size: 20,
-              ),
-            ),
-
-            const SizedBox(width: 8),
-
-            UserAvatar(
-              imageSource: _profile['profileImage']?.toString(),
-              name: _profile['firstName']?.toString() ?? widget.userName,
-              radius: 18,
-              onTap: _openProfile,
-              tooltip: 'Meu Perfil',
-            ),
-            IconButton(
-              tooltip: 'Sair da conta',
-              onPressed: widget.onLogout,
-              icon: const Icon(Icons.logout_rounded, color: Colors.red),
-            ),
-          ],
-        ),
-      );
+  String get _shiftLabel {
+    if (_shiftLogs.isNotEmpty) {
+      final latest = _shiftLogs.first;
+      final period = latest['shiftPeriod']?.toString() ?? latest['shiftType']?.toString();
+      if (period != null && period.trim().isNotEmpty) {
+        return switch (period.toUpperCase()) {
+          'DAY' || 'MORNING' || 'DIURNO' => 'Turno Dia',
+          'AFTERNOON' || 'TARDE' => 'Turno Tarde',
+          'NIGHT' || 'NOTURNO' => 'Turno Noite',
+          _ => period,
+        };
+      }
     }
+    final hour = DateTime.now().hour;
+    if (hour >= 6 && hour < 14) return 'Turno Dia';
+    if (hour >= 14 && hour < 22) return 'Turno Tarde';
+    return 'Turno Noite';
+  }
 
-    // Mobile / Tablet Header
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0F172A) : const Color(0xFF1E3A8A),
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFF1D4ED8),
-            width: 1,
+  Future<void> _quickReleaseVisitor() async {
+    final condoId = _selectedCondominium?['id'] as num?;
+    if (condoId == null) return;
+    final codeCtrl = TextEditingController();
+    final ok = await showAncoraDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.qr_code_scanner_rounded, color: SaaSColors.primary),
+            SizedBox(width: 10),
+            Expanded(child: Text('Liberar Visitante / Validar QR')),
+          ],
+        ),
+        content: TextField(
+          controller: codeCtrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Código de acesso ou QR Code',
+            hintText: 'Ex.: AC-9F2A10 ou payload QR',
+            prefixIcon: Icon(Icons.badge_outlined),
           ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  color: Colors.white24,
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.shield_outlined,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      condoName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    Text(
-                      'Portaria • ${firstNameOf(widget.userName, fallback: 'Portaria')}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (widget.currentRole != null && widget.onSwitchRole != null)
-                RoleSwitcherPill(
-                  currentRole: widget.currentRole!,
-                  availableRoles: widget.availableRoles,
-                  onSwitchRole: widget.onSwitchRole!,
-                  isLight: false,
-                ),
-              const SizedBox(width: 6),
-              UserAvatar(
-                imageSource: _profile['profileImage']?.toString(),
-                name: _profile['firstName']?.toString() ?? widget.userName,
-                radius: 16,
-                onTap: _openProfile,
-                tooltip: 'Meu Perfil',
-              ),
-            ],
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx, false);
+              _tabs.animateTo(1);
+            },
+            child: const Text('Ver fila de visitantes'),
           ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _doormanMobileActionButton(
-                  icon: Icons.qr_code_scanner_rounded,
-                  label: 'Baixa (PIN)',
-                  onTap: _selectedCondominium == null
-                      ? null
-                      : _quickPickupByPin,
-                ),
-                const SizedBox(width: 6),
-                _doormanMobileActionButton(
-                  icon: Icons.campaign_outlined,
-                  label: 'Comunicado',
-                  onTap: _selectedCondominium == null
-                      ? null
-                      : _sendAnnouncement,
-                ),
-                const SizedBox(width: 6),
-                _doormanMobileActionButton(
-                  icon: Icons.refresh_rounded,
-                  label: 'Atualizar',
-                  onTap: _loadPackages,
-                ),
-                const SizedBox(width: 6),
-                _doormanMobileActionButton(
-                  icon: Icons.notifications_none_rounded,
-                  label: 'Notificações',
-                  onTap: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => NotificationsPage(
-                          api: _api,
-                          condominiumId: (_selectedCondominium?['id'] as num?)
-                              ?.toInt(),
-                          onInvitationChanged: _loadCondominiums,
-                        ),
-                      ),
-                    );
-                    if (mounted) _loadCondominiums();
-                  },
-                ),
-                const SizedBox(width: 6),
-                _doormanMobileActionButton(
-                  icon: isDark
-                      ? Icons.light_mode_rounded
-                      : Icons.dark_mode_outlined,
-                  label: isDark ? 'Modo Claro' : 'Modo Noturno',
-                  onTap: _toggleTheme,
-                ),
-                const SizedBox(width: 6),
-                _doormanMobileActionButton(
-                  icon: Icons.logout_rounded,
-                  label: 'Sair',
-                  onTap: () {
-                    widget.onLogout();
-                  },
-                  isDestructive: true,
-                ),
-              ],
-            ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.verified_user_outlined, size: 17),
+            label: const Text('Liberar Entrada'),
           ),
         ],
+      ),
+    );
+    final raw = codeCtrl.text.trim();
+    codeCtrl.dispose();
+    if (ok == true && raw.isNotEmpty) {
+      try {
+        final res = await _communityApi.validateVisitorQr(
+          condoId,
+          qrCodeOrAccessCode: raw,
+          autoCheckIn: true,
+        );
+        if (!mounted) return;
+        SaaSFeedback.showSuccess(
+          context,
+          'Entrada liberada para ${res['visitorName'] ?? 'visitante'}!',
+        );
+        _loadPackages();
+      } catch (e) {
+        if (mounted) {
+          SaaSFeedback.showError(context, 'Código inválido ou expirado: $e');
+        }
+      }
+    }
+  }
+
+  Future<void> _registerUrgentOccurrence() async {
+    final condoId = _selectedCondominium?['id'] as num?;
+    if (condoId == null) return;
+    await showAncoraDialog<void>(
+      context: context,
+      builder: (_) => EmergencySOSDialog(
+        condominiumId: condoId,
+        api: _communityApi,
+        onAlertSent: _loadPackages,
       ),
     );
   }
@@ -1093,70 +824,44 @@ class _DoormanPageState extends State<DoormanPage>
     );
   }
 
-  Widget _doormanMobileActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onTap,
-    bool isDestructive = false,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: isDestructive
-                ? const Color(0xFFEF4444).withValues(alpha: 0.25)
-                : Colors.white12,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isDestructive ? const Color(0xFFEF4444) : Colors.white24,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 15, color: Colors.white),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isDesktop = MediaQuery.of(context).size.width >= 980;
+    final tokens = AncoraThemeTokens.of(context);
+    final condoName =
+        _selectedCondominium?['name']?.toString() ?? 'Central da Portaria';
+    final condoImg = _selectedCondominium?['imageUrl']?.toString();
+    final condoIdNum = _selectedCondominium?['id'] as num?;
+    final firstName = firstNameOf(
+      _profile['firstName']?.toString() ?? widget.userName,
+      fallback: 'Portaria',
+    );
     final visiblePackages = _packages
         .where((item) => recordMatchesQuery(item, _query))
         .toList();
 
-    final hasPendingPackages = _packages.any(
-      (p) =>
-          p['status'] == 'RECEIVED' ||
-          p['status'] == 'NOTIFIED' ||
-          p['status'] == 'WAITING_PICKUP',
-    );
+    final pendingPackagesCount = _packages
+        .where(
+          (p) =>
+              p['status'] == 'RECEIVED' ||
+              p['status'] == 'NOTIFIED' ||
+              p['status'] == 'EXPECTED' ||
+              p['status'] == 'WAITING_PICKUP',
+        )
+        .length;
 
     final commandActions = <AncoraCommandAction>[
-      for (var index = 0; index < 8; index++)
+      for (var index = 0; index < 9; index++)
         AncoraCommandAction(
           id: 'tab-$index',
           title: 'Abrir ${_tabLabel(index)}',
           icon: _tabIcon(index),
-          onExecute: () => _tabs.animateTo(index),
+          onExecute: () {
+            if (index < 8) {
+              _tabs.animateTo(index);
+            }
+            setState(() => _navIndex = index);
+          },
           category: 'Navegação',
         ),
       AncoraCommandAction(
@@ -1182,11 +887,243 @@ class _DoormanPageState extends State<DoormanPage>
       ),
     ];
 
+    final destinations = <AncoraNavDestination>[
+      AncoraNavDestination(
+        id: 'packages',
+        label: 'Encomendas',
+        icon: Icons.inventory_2_outlined,
+        badgeCount: pendingPackagesCount,
+        showInBottomNav: true,
+        section: 'Portaria',
+      ),
+      const AncoraNavDestination(
+        id: 'visitors',
+        label: 'Visitantes',
+        icon: Icons.badge_outlined,
+        showInBottomNav: true,
+        section: 'Portaria',
+      ),
+      const AncoraNavDestination(
+        id: 'plates',
+        label: 'Consulta de Placas',
+        icon: Icons.directions_car_outlined,
+        section: 'Portaria',
+      ),
+      const AncoraNavDestination(
+        id: 'guests',
+        label: 'Eventos & Convidados',
+        icon: Icons.people_outline_rounded,
+        section: 'Portaria',
+      ),
+      const AncoraNavDestination(
+        id: 'units',
+        label: 'Unidades & Achados',
+        icon: Icons.apartment_rounded,
+        section: 'Condomínio',
+      ),
+      const AncoraNavDestination(
+        id: 'reservations',
+        label: 'Reservas & Áreas',
+        icon: Icons.event_available_outlined,
+        section: 'Condomínio',
+      ),
+      const AncoraNavDestination(
+        id: 'lockers',
+        label: 'Smart Lockers',
+        icon: Icons.lock_clock_outlined,
+        section: 'Condomínio',
+      ),
+      const AncoraNavDestination(
+        id: 'chat',
+        label: 'Chat Moradores',
+        icon: Icons.chat_bubble_outline_rounded,
+        showInBottomNav: true,
+        section: 'Comunicação',
+      ),
+      const AncoraNavDestination(
+        id: 'notifications',
+        label: 'Notificações',
+        icon: Icons.notifications_outlined,
+        showInBottomNav: true,
+        section: 'Comunicação',
+      ),
+    ];
+
+    final Widget mainContent;
+    if (_loadingCondominiums) {
+      mainContent = const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: SaaSLoadingState(message: 'Carregando painel da portaria...'),
+        ),
+      );
+    } else if (_error != null) {
+      mainContent = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: SaaSErrorState(message: _error!, onRetry: _loadCondominiums),
+        ),
+      );
+    } else if (_condominiums.isEmpty) {
+      mainContent = const SaaSEmptyState(
+        icon: Icons.meeting_room_outlined,
+        title: 'Nenhum condomínio associado',
+        subtitle:
+            'Nenhum condomínio associado no momento. Verifique suas notificações para aceitar convites de portaria.',
+      );
+    } else if (_navIndex == 8) {
+      mainContent = NotificationsPage(
+        api: _api,
+        condominiumId: condoIdNum?.toInt(),
+        onInvitationChanged: _loadCondominiums,
+        isEmbedded: true,
+      );
+    } else {
+      Widget gateTab(String featureCode, String label, Widget child) {
+        if (_hasFeature(featureCode)) return child;
+        return FeatureLockedPlaceholder(
+          featureLabel: label,
+          planName: _subAccess.planName,
+          isSuspended: _subAccess.isSuspendedOrCancelled,
+        );
+      }
+
+      mainContent = Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: SubscriptionStatusBanner(access: _subAccess),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                gateTab('PACKAGES', 'Encomendas', _packagesTab(visiblePackages)),
+                gateTab(
+                  'VISITORS',
+                  'Visitantes',
+                  DoormanVisitorsView(
+                    key: ValueKey('visitors_${_selectedCondominium!['id']}'),
+                    api: _communityApi,
+                    condominiumId: _selectedCondominium!['id'],
+                  ),
+                ),
+                gateTab(
+                  'CONCIERGE_OPERATIONS',
+                  'Consulta de Placas',
+                  DoormanPlateCheckView(
+                    key: ValueKey('plate_${_selectedCondominium!['id']}'),
+                    api: _communityApi,
+                    condominiumId: _selectedCondominium!['id'],
+                  ),
+                ),
+                gateTab(
+                  'VISITORS',
+                  'Eventos & Convidados',
+                  DoormanGuestListsView(
+                    key: ValueKey('guests_${_selectedCondominium!['id']}'),
+                    api: _communityApi,
+                    condominiumId: _selectedCondominium!['id'],
+                  ),
+                ),
+                Column(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: _directory != null
+                          ? UnitDirectoryView(
+                              key: ValueKey(_directory!.condominiumId),
+                              directory: _directory!,
+                              onRegisterPackage: (unit, resident) {
+                                if (!_hasFeature('PACKAGES')) {
+                                  SaaSFeedback.showWarning(
+                                    context,
+                                    'Módulo de encomendas bloqueado no plano atual ou assinatura inativa.',
+                                  );
+                                  return;
+                                }
+                                _registerReceivedPackage(
+                                  unit: unit,
+                                  resident: resident,
+                                );
+                              },
+                              onAnnounce: (unit) => _sendAnnouncement(unit: unit),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      flex: 2,
+                      child: gateTab(
+                        'CONCIERGE_OPERATIONS',
+                        'Achados e Perdidos',
+                        DoormanLostFoundView(
+                          key: ValueKey('lost_found_${_selectedCondominium!['id']}'),
+                          api: _communityApi,
+                          condominiumId: _selectedCondominium!['id'],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                gateTab(
+                  'RESERVATIONS',
+                  'Reservas & Áreas',
+                  DoormanReservationsView(
+                    key: ValueKey('reservations_${_selectedCondominium!['id']}'),
+                    api: _communityApi,
+                    condominiumId: _selectedCondominium!['id'],
+                  ),
+                ),
+                gateTab(
+                  'SMART_LOCKERS',
+                  'Smart Lockers',
+                  DoormanSmartLockersView(
+                    key: ValueKey('lockers_${_selectedCondominium!['id']}'),
+                    api: _communityApi,
+                    condominiumId: _selectedCondominium!['id'],
+                  ),
+                ),
+                gateTab(
+                  'DOORMAN_CHAT',
+                  'Chat Moradores',
+                  DoormanChatView(
+                    key: ValueKey('doorman_chat_${_selectedCondominium!['id']}'),
+                    api: _communityApi,
+                    condominiumId: _selectedCondominium!['id'],
+                    isDoormanMode: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     return AncoraCommandShortcutWrapper(
       actions: commandActions,
-      child: Scaffold(
-        backgroundColor: SaaSColors.background(isDark),
-        floatingActionButton: (_selectedCondominium != null && _tabs.index == 0)
+      child: AncoraNavigationShell(
+        title: 'Âncora Gestão',
+        subtitle: 'Portaria • $condoName',
+        topBarTitleOverride: '$condoName • $_shiftLabel',
+        brandIcon: Icons.shield_outlined,
+        destinations: destinations,
+        selectedIndex: _navIndex,
+        onSelect: (idx) {
+          if (idx < 8) {
+            _tabs.animateTo(idx);
+          }
+          setState(() => _navIndex = idx);
+        },
+        onOpenCommandPalette: () =>
+            AncoraCommandShortcutWrapper.open(context, commandActions),
+        banner: condoIdNum != null && _hasFeature('EMERGENCY_SOS')
+            ? EmergencySosBanner(api: _api, condominiumId: condoIdNum)
+            : null,
+        floatingActionButton: (_selectedCondominium != null &&
+                _navIndex == 0 &&
+                _hasFeature('PACKAGES'))
             ? FloatingActionButton.extended(
                 backgroundColor: SaaSColors.primary,
                 foregroundColor: Colors.white,
@@ -1195,421 +1132,841 @@ class _DoormanPageState extends State<DoormanPage>
                 label: const Text('Registrar encomenda'),
               )
             : null,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildDoormanHeader(isDesktop, isDark),
-              if (_selectedCondominium?['id'] is num)
-                EmergencySosBanner(
-                  api: _api,
-                  condominiumId: _selectedCondominium!['id'] as num,
-                ),
-              Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF0F172A) : Colors.white,
-                  border: Border(
-                    bottom: BorderSide(
-                      color: isDark
-                          ? const Color(0xFF1E293B)
-                          : const Color(0xFFE2E8F0),
-                      width: 1,
-                    ),
+        sidebarHeaderExtra: _condominiums.isEmpty
+            ? null
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: (condoImg != null && condoImg.isNotEmpty)
+                              ? SmartImage(
+                                  source: condoImg,
+                                  width: 36,
+                                  height: 36,
+                                  fit: BoxFit.cover,
+                                  placeholderIcon: Icons.apartment_rounded,
+                                )
+                              : Container(
+                                  color: tokens.surfaceSubtle,
+                                  child: Icon(
+                                    Icons.apartment_rounded,
+                                    size: 18,
+                                    color: tokens.accent,
+                                  ),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              condoName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: tokens.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              'Portaria Central • $_shiftLabel',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: tokens.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                child: TabBar(
-                  controller: _tabs,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.center,
-                  labelColor: isDark
-                      ? const Color(0xFF60A5FA)
-                      : SaaSColors.primary,
-                  unselectedLabelColor: isDark
-                      ? const Color(0xFF94A3B8)
-                      : const Color(0xFF64748B),
-                  indicatorColor: isDark
-                      ? const Color(0xFF60A5FA)
-                      : SaaSColors.primary,
-                  indicatorWeight: 3,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  labelStyle: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  tabs: [
-                    _buildTabItem(
-                      'Encomendas',
-                      Icons.inventory_2_outlined,
-                      hasPendingPackages,
+                  if (_condominiums.length > 1) ...[
+                    const SizedBox(height: 10),
+                    AncoraDropdown<Map<String, dynamic>>(
+                      value: _selectedCondominium,
+                      compact: true,
+                      prefixIcon: Icons.apartment_rounded,
+                      items: _condominiums
+                          .map(
+                            (c) => AncoraMenuOption<Map<String, dynamic>>(
+                              value: c,
+                              label: c['name']?.toString() ?? 'Sem nome',
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() => _selectCondominium(value));
+                        _loadPackages();
+                      },
                     ),
-                    _buildTabItem('Visitantes', Icons.badge_outlined, false),
-                    _buildTabItem(
-                      'Consulta de Placas',
-                      Icons.directions_car_outlined,
-                      false,
+                  ],
+                ],
+              ),
+        sidebarFooterExtra: Row(
+          children: [
+            UserAvatar(
+              imageSource: _profile['profileImage']?.toString(),
+              name: _profile['firstName']?.toString() ?? widget.userName,
+              radius: 17,
+              onTap: _openProfile,
+              tooltip: 'Meu Perfil',
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: _openProfile,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Olá, $firstName',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: tokens.textPrimary,
+                      ),
                     ),
-                    _buildTabItem(
-                      'Eventos & Convidados',
-                      Icons.people_outline_rounded,
-                      false,
-                    ),
-                    _buildTabItem(
-                      'Unidades & Achados',
-                      Icons.apartment_rounded,
-                      false,
-                    ),
-                    _buildTabItem(
-                      'Reservas & Áreas',
-                      Icons.event_available_outlined,
-                      false,
-                    ),
-                    _buildTabItem(
-                      'Smart Lockers',
-                      Icons.lock_clock_outlined,
-                      false,
-                    ),
-                    _buildTabItem(
-                      'Chat Moradores',
-                      Icons.chat_bubble_outline_rounded,
-                      false,
+                    Text(
+                      _shiftLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
                     ),
                   ],
                 ),
               ),
-              Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1300),
-                    child: Column(
-                      children: [
-                        if (_condominiums.isNotEmpty &&
-                            (!isDesktop || _tabs.index == 0)) ...[
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
-                            child: Row(
-                              children: [
-                                if (!isDesktop && _condominiums.length > 1)
-                                  Expanded(
-                                    child: AncoraDropdown<Map<String, dynamic>>(
-                                      value: _selectedCondominium,
-                                      hint: 'Condomínio em operação',
-                                      prefixIcon: Icons.apartment_rounded,
-                                      items: _condominiums
-                                          .map(
-                                            (c) =>
-                                                AncoraMenuOption<
-                                                  Map<String, dynamic>
-                                                >(
-                                                  value: c,
-                                                  label:
-                                                      c['name']?.toString() ??
-                                                      'Sem nome',
-                                                ),
-                                          )
-                                          .toList(),
-                                      onChanged: (value) {
-                                        setState(
-                                          () => _selectCondominium(value),
-                                        );
-                                        _loadPackages();
-                                      },
-                                    ),
-                                  )
-                                else
-                                  const Spacer(),
-                                const SizedBox(width: 12),
-                                OutlinedButton.icon(
-                                  onPressed: _selectedCondominium == null
-                                      ? null
-                                      : () => _registerReceivedPackage(),
-                                  icon: const Icon(
-                                    Icons.add_box_outlined,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Nova Encomenda'),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 14,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  onPressed: _selectedCondominium == null
-                                      ? null
-                                      : _quickPickupByPin,
-                                  icon: const Icon(
-                                    Icons.qr_code_scanner_rounded,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Baixa (PIN)'),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 14,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        Expanded(
-                          child: _loadingCondominiums
-                              ? const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(32),
-                                    child: SaaSLoadingState(
-                                      message:
-                                          'Carregando painel da portaria...',
-                                    ),
-                                  ),
-                                )
-                              : _error != null
-                              ? Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(24),
-                                    child: SaaSErrorState(
-                                      message: _error!,
-                                      onRetry: _loadCondominiums,
-                                    ),
-                                  ),
-                                )
-                              : _condominiums.isEmpty
-                              ? const SaaSEmptyState(
-                                  icon: Icons.meeting_room_outlined,
-                                  title: 'Nenhum condomínio associado',
-                                  subtitle:
-                                      'Nenhum condomínio associado no momento. Verifique suas notificações para aceitar convites de portaria.',
-                                )
-                              : TabBarView(
-                                  controller: _tabs,
-                                  children: [
-                                    _packagesTab(visiblePackages),
-                                    DoormanVisitorsView(
-                                      key: ValueKey(
-                                        'visitors_${_selectedCondominium!['id']}',
-                                      ),
-                                      api: _communityApi,
-                                      condominiumId:
-                                          _selectedCondominium!['id'],
-                                    ),
-                                    DoormanPlateCheckView(
-                                      key: ValueKey(
-                                        'plate_${_selectedCondominium!['id']}',
-                                      ),
-                                      api: _communityApi,
-                                      condominiumId:
-                                          _selectedCondominium!['id'],
-                                    ),
-                                    DoormanGuestListsView(
-                                      key: ValueKey(
-                                        'guests_${_selectedCondominium!['id']}',
-                                      ),
-                                      api: _communityApi,
-                                      condominiumId:
-                                          _selectedCondominium!['id'],
-                                    ),
-                                    Column(
-                                      children: [
-                                        Expanded(
-                                          flex: 3,
-                                          child: _directory != null
-                                              ? UnitDirectoryView(
-                                                  key: ValueKey(
-                                                    _directory!.condominiumId,
-                                                  ),
-                                                  directory: _directory!,
-                                                  onRegisterPackage:
-                                                      (unit, resident) =>
-                                                          _registerReceivedPackage(
-                                                            unit: unit,
-                                                            resident: resident,
-                                                          ),
-                                                  onAnnounce: (unit) =>
-                                                      _sendAnnouncement(
-                                                        unit: unit,
-                                                      ),
-                                                )
-                                              : const SizedBox.shrink(),
-                                        ),
-                                        const Divider(height: 1),
-                                        Expanded(
-                                          flex: 2,
-                                          child: DoormanLostFoundView(
-                                            key: ValueKey(
-                                              'lost_found_${_selectedCondominium!['id']}',
-                                            ),
-                                            api: _communityApi,
-                                            condominiumId:
-                                                _selectedCondominium!['id'],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    DoormanReservationsView(
-                                      key: ValueKey(
-                                        'reservations_${_selectedCondominium!['id']}',
-                                      ),
-                                      api: _communityApi,
-                                      condominiumId:
-                                          _selectedCondominium!['id'],
-                                    ),
-                                    DoormanSmartLockersView(
-                                      key: ValueKey(
-                                        'lockers_${_selectedCondominium!['id']}',
-                                      ),
-                                      api: _communityApi,
-                                      condominiumId:
-                                          _selectedCondominium!['id'],
-                                    ),
-                                    DoormanChatView(
-                                      key: ValueKey(
-                                        'doorman_chat_${_selectedCondominium!['id']}',
-                                      ),
-                                      api: _communityApi,
-                                      condominiumId:
-                                          _selectedCondominium!['id'],
-                                      isDoormanMode: true,
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+            ),
+            IconButton(
+              tooltip: 'Meu Perfil',
+              onPressed: _openProfile,
+              icon: Icon(
+                Icons.person_outline_rounded,
+                size: 18,
+                color: tokens.textSecondary,
               ),
-            ],
+            ),
+            IconButton(
+              tooltip: 'Sair',
+              onPressed: widget.onLogout,
+              icon: const Icon(
+                Icons.logout_rounded,
+                size: 18,
+                color: SaaSColors.error,
+              ),
+            ),
+          ],
+        ),
+        headerActions: [
+          _doormanHeaderAction(
+            icon: Icons.qr_code_scanner_rounded,
+            label: 'Baixa (PIN)',
+            onTap: _selectedCondominium == null ? null : _quickPickupByPin,
+            isDark: isDark,
+          ),
+          _doormanHeaderAction(
+            icon: Icons.campaign_outlined,
+            label: 'Comunicado',
+            onTap: _selectedCondominium == null ? null : _sendAnnouncement,
+            isDark: isDark,
+          ),
+          if (widget.currentRole != null && widget.onSwitchRole != null)
+            RoleSwitcherPill(
+              currentRole: widget.currentRole!,
+              availableRoles: widget.availableRoles,
+              onSwitchRole: widget.onSwitchRole!,
+              isLight: !isDark,
+            ),
+          IconButton(
+            tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
+            onPressed: _toggleTheme,
+            icon: Icon(
+              isDark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
+              color: isDark ? Colors.white70 : const Color(0xFF475569),
+              size: 20,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Notificações e convites',
+            onPressed: () => setState(() => _navIndex = 8),
+            icon: Icon(
+              Icons.notifications_none_rounded,
+              color: _navIndex == 8
+                  ? tokens.accent
+                  : (isDark ? Colors.white70 : const Color(0xFF475569)),
+              size: 20,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Atualizar encomendas',
+            onPressed: _loadPackages,
+            icon: Icon(
+              Icons.refresh_rounded,
+              color: isDark ? Colors.white70 : const Color(0xFF475569),
+              size: 20,
+            ),
+          ),
+        ],
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1300),
+            child: mainContent,
           ),
         ),
       ),
     );
   }
 
-  Widget _packagesTab(List<Map<String, dynamic>> visiblePackages) => Column(
-    children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
-        child: EnterSearchField(
-          hintText:
-              'Pesquisar encomenda por descrição, unidade ou status (Enter)',
-          onSubmitted: (query) => setState(() => _query = query),
-        ),
-      ),
-      Expanded(
-        child: _loadingPackages
-            ? const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: SaaSLoadingState(message: 'Atualizando encomendas...'),
-                ),
-              )
-            : _packageError != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: SaaSErrorState(
-                    message: _packageError!,
-                    onRetry: _loadPackages,
-                  ),
-                ),
-              )
-            : visiblePackages.isEmpty
-            ? const SaaSEmptyState(
-                icon: Icons.inventory_2_outlined,
-                title: 'Nenhuma encomenda encontrada',
-                subtitle: 'Não há encomendas correspondentes ao filtro atual.',
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 84),
-                itemCount: visiblePackages.length,
-                itemBuilder: (context, index) =>
-                    _packageCard(visiblePackages[index]),
-              ),
-      ),
-    ],
-  );
+  Widget _packagesTab(List<Map<String, dynamic>> visiblePackages) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final now = DateTime.now();
 
-  Widget _packageCard(Map<String, dynamic> pkg) {
-    final (statusLabel, statusBg, statusFg) = _statusBadge(
-      pkg['status']?.toString(),
-    );
-    final actions = _buildStatusActions(pkg);
-    final unitText = [
-      pkg['sectorName'],
-      if (pkg['unitIdentifier'] != null) 'Unidade ${pkg['unitIdentifier']}',
-    ].where((e) => e != null && e.toString().isNotEmpty).join(' • ');
-    final details = [
-      if (pkg['recipientName'] != null) 'Para: ${pkg['recipientName']}',
-      unitText.isEmpty ? 'Unidade não informada' : unitText,
-      if (pkg['receivedAt'] != null) _formatDate(pkg['receivedAt']),
-    ].join(' • ');
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    final pendingPackagesCount = _packages.where((p) {
+      final st = p['status']?.toString();
+      return st == 'RECEIVED' ||
+          st == 'NOTIFIED' ||
+          st == 'EXPECTED' ||
+          st == 'WAITING_PICKUP';
+    }).length;
+
+    final deliveredTodayCount = _packages.where((p) {
+      final st = p['status']?.toString();
+      if (st != 'PICKED_UP' && st != 'DELIVERED') return false;
+      final dt = parseUtcToLocal(p['pickedUpAt']);
+      return dt != null &&
+          dt.year == now.year &&
+          dt.month == now.month &&
+          dt.day == now.day;
+    }).length;
+
+    final activeVisitorsCount = _visitors
+        .where((v) => v['status'] == 'CHECKED_IN')
+        .length;
+
+    final activeProvidersCount = _visitors.where((v) {
+      final type = (v['visitorType']?.toString() ?? '').toUpperCase();
+      final isProvider =
+          type == 'SERVICE_PROVIDER' ||
+          type == 'PRESTADOR' ||
+          type == 'DELIVERY';
+      final st = v['status']?.toString();
+      return isProvider && (st == 'CHECKED_IN' || st == 'AUTHORIZED');
+    }).length;
+
+    final filteredByStatus = visiblePackages.where((p) {
+      final st = p['status']?.toString();
+      if (_packageStatusFilter == 'PENDING') {
+        return st == 'RECEIVED' ||
+            st == 'NOTIFIED' ||
+            st == 'EXPECTED' ||
+            st == 'WAITING_PICKUP';
+      }
+      if (_packageStatusFilter == 'DELIVERED') {
+        return st == 'PICKED_UP' || st == 'DELIVERED';
+      }
+      return true;
+    }).toList();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 1040;
+        final quickActionsBar = Padding(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
               children: [
-                CircleAvatar(
-                  backgroundColor: statusBg,
-                  child: Icon(
-                    Icons.inventory_2_outlined,
-                    color: statusFg,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        pkg['description']?.toString() ??
-                            'Encomenda registrada',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15.5,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        details,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusBg,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: statusFg,
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SaaSColors.primary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 14,
                     ),
                   ),
+                  onPressed: _selectedCondominium == null
+                      ? null
+                      : () => _registerReceivedPackage(),
+                  icon: const Icon(Icons.add_box_rounded, size: 19),
+                  label: const Text('+ Registrar Encomenda'),
+                ),
+                const SizedBox(width: 10),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SaaSColors.success,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 14,
+                    ),
+                  ),
+                  onPressed: _selectedCondominium == null
+                      ? null
+                      : _quickReleaseVisitor,
+                  icon: const Icon(Icons.qr_code_scanner_rounded, size: 19),
+                  label: const Text('+ Liberar Visitante'),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                  ),
+                  onPressed: _selectedCondominium == null
+                      ? null
+                      : _sendAnnouncement,
+                  icon: const Icon(Icons.campaign_outlined, size: 18),
+                  label: const Text('+ Novo Comunicado'),
+                ),
+                const SizedBox(width: 10),
+                FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SaaSColors.error.withValues(alpha: 0.16),
+                    foregroundColor: SaaSColors.error,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                  ),
+                  onPressed: _selectedCondominium == null
+                      ? null
+                      : _registerUrgentOccurrence,
+                  icon: const Icon(Icons.emergency_rounded, size: 18),
+                  label: const Text('Ocorrência Urgente'),
                 ),
               ],
             ),
-            if (actions is! SizedBox) ...[const SizedBox(height: 14), actions],
+          ),
+        );
+
+        final metricsGrid = Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: SaaSMetricGrid(
+            items: [
+              SaaSMetricCard(
+                title: 'Encomendas Pendentes',
+                value: '$pendingPackagesCount',
+                icon: Icons.inventory_2_outlined,
+                iconColor: pendingPackagesCount > 0
+                    ? SaaSColors.warning
+                    : SaaSColors.success,
+                subtitle: 'Aguardando retirada',
+                onTap: () => setState(() => _packageStatusFilter = 'PENDING'),
+              ),
+              SaaSMetricCard(
+                title: 'Entregues Hoje',
+                value: '$deliveredTodayCount',
+                icon: Icons.check_circle_outline_rounded,
+                iconColor: SaaSColors.success,
+                subtitle: 'Baixas realizadas hoje',
+                onTap: () => setState(() => _packageStatusFilter = 'DELIVERED'),
+              ),
+              SaaSMetricCard(
+                title: 'Visitantes Ativos',
+                value: '$activeVisitorsCount',
+                icon: Icons.badge_outlined,
+                iconColor: SaaSColors.primary,
+                subtitle: 'Com entrada ativa (Check-in)',
+                onTap: () => _tabs.animateTo(1),
+              ),
+              SaaSMetricCard(
+                title: 'Prestadores de Serviço',
+                value: '$activeProvidersCount',
+                icon: Icons.engineering_outlined,
+                iconColor: SaaSColors.purple,
+                subtitle: 'Autorizados ou no local',
+                onTap: () => _tabs.animateTo(1),
+              ),
+            ],
+          ),
+        );
+
+        final searchAndFilters = Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 240, maxWidth: 520),
+                child: EnterSearchField(
+                  hintText:
+                      'Filtrar por Unidade, Nome, Descrição ou Transportadora (Enter)',
+                  onSubmitted: (query) => setState(() => _query = query),
+                ),
+              ),
+              ChoiceChip(
+                label: Text('Todas (${visiblePackages.length})'),
+                selected: _packageStatusFilter == 'ALL',
+                onSelected: (_) =>
+                    setState(() => _packageStatusFilter = 'ALL'),
+              ),
+              ChoiceChip(
+                label: Text('Pendentes ($pendingPackagesCount)'),
+                selected: _packageStatusFilter == 'PENDING',
+                onSelected: (_) =>
+                    setState(() => _packageStatusFilter = 'PENDING'),
+              ),
+              ChoiceChip(
+                label: const Text('Entregues'),
+                selected: _packageStatusFilter == 'DELIVERED',
+                onSelected: (_) =>
+                    setState(() => _packageStatusFilter = 'DELIVERED'),
+              ),
+            ],
+          ),
+        );
+
+        Widget buildPackagesBody({required bool shrinkWrap}) {
+          if (_loadingPackages) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: SaaSLoadingState(message: 'Atualizando encomendas...'),
+              ),
+            );
+          }
+          if (_packageError != null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SaaSErrorState(
+                  message: _packageError!,
+                  onRetry: _loadPackages,
+                ),
+              ),
+            );
+          }
+          if (filteredByStatus.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              child: SaaSEmptyState(
+                icon: Icons.inventory_2_outlined,
+                title: 'Nenhuma encomenda encontrada',
+                subtitle: 'Não há encomendas correspondentes ao filtro atual.',
+              ),
+            );
+          }
+          return ListView.builder(
+            shrinkWrap: shrinkWrap,
+            physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 84),
+            itemCount: filteredByStatus.length,
+            itemBuilder: (context, index) =>
+                _packageCard(filteredByStatus[index]),
+          );
+        }
+
+        if (!isWide) {
+          return ListView(
+            padding: const EdgeInsets.only(bottom: 84),
+            children: [
+              quickActionsBar,
+              metricsGrid,
+              searchAndFilters,
+              buildPackagesBody(shrinkWrap: true),
+              _buildDoormanSidePanel(isDark, shrinkWrap: true),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 8,
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 24),
+                children: [
+                  quickActionsBar,
+                  metricsGrid,
+                  searchAndFilters,
+                  buildPackagesBody(shrinkWrap: true),
+                ],
+              ),
+            ),
+            Container(
+              width: 360,
+              decoration: BoxDecoration(
+                border: Border(
+                  left: BorderSide(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                ),
+              ),
+              child: _buildDoormanSidePanel(isDark),
+            ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDoormanSidePanel(bool isDark, {bool shrinkWrap = false}) {
+    final liveVisitors = _visitors
+        .where(
+          (v) =>
+              v['status'] == 'CHECKED_IN' ||
+              v['status'] == 'AUTHORIZED' ||
+              v['status'] == 'INSIDE',
+        )
+        .toList();
+
+    return ListView(
+      shrinkWrap: shrinkWrap,
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+      padding: const EdgeInsets.all(16),
+      children: [
+        SaaSGlassCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaaSSectionHeader(
+                title: 'Fluxo de Visitantes',
+                badge: SaaSBadge(
+                  label: '${liveVisitors.length}',
+                  variant: SaaSBadgeVariant.primary,
+                ),
+                action: TextButton(
+                  onPressed: () => _tabs.animateTo(1),
+                  child: const Text('Gerenciar'),
+                ),
+              ),
+              if (liveVisitors.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: SaaSEmptyState(
+                    icon: Icons.badge_outlined,
+                    title: 'Sem fluxo ativo',
+                    subtitle: 'Nenhum visitante autorizado ou em visita agora.',
+                  ),
+                )
+              else
+                ...liveVisitors.take(4).map((v) {
+                  final isIn = v['status'] == 'CHECKED_IN';
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: SaaSColors.surfaceSubtle(isDark),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.05)
+                            : SaaSColors.border(isDark),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                v['visitorName']?.toString() ?? 'Visitante',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                '${v['unitLabel'] ?? 'Unidade'} • ${v['visitorType'] ?? 'VISITANTE'}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: SaaSColors.textSecondary(isDark),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (v['id'] is num)
+                          FilledButton.tonal(
+                            onPressed: () async {
+                              if (isIn) {
+                                await _communityApi.checkOutVisitor(
+                                  v['id'] as num,
+                                );
+                              } else {
+                                await _communityApi.checkInVisitor(
+                                  v['id'] as num,
+                                );
+                              }
+                              _loadPackages();
+                            },
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                            ),
+                            child: Text(
+                              isIn ? 'Check-out' : 'Check-in',
+                              style: const TextStyle(fontSize: 11.5),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
         ),
+        const SizedBox(height: 14),
+        SaaSGlassCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaaSSectionHeader(
+                title: 'Intercom / Chat',
+                badge: SaaSBadge(
+                  label: '${_conversations.length}',
+                  variant: _conversations.isNotEmpty
+                      ? SaaSBadgeVariant.success
+                      : SaaSBadgeVariant.neutral,
+                ),
+                action: TextButton(
+                  onPressed: () => _tabs.animateTo(7),
+                  child: const Text('Abrir Chat'),
+                ),
+              ),
+              if (_conversations.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: SaaSEmptyState(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    title: 'Sem conversas ativas',
+                    subtitle: 'Mensagens de moradores aparecerão aqui.',
+                  ),
+                )
+              else
+                ..._conversations.take(4).map((c) {
+                  final unread = (c['unreadCount'] as num?)?.toInt() ?? 0;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 17,
+                      backgroundColor: SaaSColors.primary.withValues(alpha: 0.16),
+                      child: const Icon(
+                        Icons.person_outline_rounded,
+                        size: 18,
+                        color: SaaSColors.primary,
+                      ),
+                    ),
+                    title: Text(
+                      c['userName']?.toString() ?? 'Morador',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      c['lastMessage']?.toString() ??
+                          c['unitLabel']?.toString() ??
+                          'Conversar',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11.5),
+                    ),
+                    trailing: unread > 0
+                        ? SaaSBadge(
+                            label: '$unread',
+                            variant: SaaSBadgeVariant.error,
+                          )
+                        : const Icon(Icons.chevron_right_rounded, size: 18),
+                    onTap: () => _tabs.animateTo(7),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _packageCard(Map<String, dynamic> pkg) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final status = pkg['status']?.toString();
+    final (statusLabel, statusBg, statusFg) = _statusBadge(status);
+    final carrier = CarrierVisual.fromDescription(pkg['description']?.toString());
+    final badgeVariant = switch (status) {
+      'PICKED_UP' || 'DELIVERED' => SaaSBadgeVariant.success,
+      'RECEIVED' || 'NOTIFIED' || 'EXPECTED' || 'WAITING_PICKUP' =>
+        SaaSBadgeVariant.warning,
+      'CANCELLED' || 'RETURNED' => SaaSBadgeVariant.error,
+      _ => SaaSBadgeVariant.neutral,
+    };
+
+    final unitBadgeText = [
+      if (pkg['sectorName'] != null && pkg['sectorName'].toString().isNotEmpty)
+        pkg['sectorName'].toString(),
+      if (pkg['unitIdentifier'] != null &&
+          pkg['unitIdentifier'].toString().isNotEmpty)
+        'AP ${pkg['unitIdentifier']}',
+    ].join(' • ');
+
+    final id = (pkg['id'] as num?)?.toInt();
+    final isPending =
+        status == 'RECEIVED' ||
+        status == 'NOTIFIED' ||
+        status == 'WAITING_PICKUP';
+
+    return SaaSGlassCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: carrier.color.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(carrier.icon, color: carrier.color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (unitBadgeText.isNotEmpty) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: SaaSColors.primary.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              unitBadgeText.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: isDark
+                                    ? const Color(0xFF93C5FD)
+                                    : SaaSColors.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Flexible(
+                          child: Text(
+                            carrier.label,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: SaaSColors.textSecondary(isDark),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      pkg['description']?.toString() ?? 'Encomenda registrada',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      [
+                        if (pkg['recipientName'] != null)
+                          'Para: ${pkg['recipientName']}',
+                        if (pkg['receivedAt'] != null)
+                          'Recebida: ${_formatDate(pkg['receivedAt'])}',
+                      ].join(' • '),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: SaaSColors.textSecondary(isDark),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              SaaSBadge(label: statusLabel, variant: badgeVariant),
+            ],
+          ),
+          if (id != null && (isPending || status == 'EXPECTED')) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (isPending)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: SaaSColors.success,
+                    ),
+                    onPressed: () => _updatePackageStatus(id, 'pickup'),
+                    icon: const Icon(Icons.pin_outlined, size: 17),
+                    label: const Text('Dar Baixa (PIN)'),
+                  ),
+                if (status == 'RECEIVED')
+                  FilledButton.tonalIcon(
+                    onPressed: () => _updatePackageStatus(id, 'notify'),
+                    icon: const Icon(Icons.notifications_active_outlined, size: 17),
+                    label: const Text('Notificar Morador'),
+                  ),
+                if (status == 'EXPECTED') ...[
+                  FilledButton.tonalIcon(
+                    onPressed: () => _updatePackageStatus(id, 'receive'),
+                    icon: const Icon(Icons.download_done_rounded, size: 17),
+                    label: const Text('Confirmar chegada'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _updatePackageStatus(id, 'cancel'),
+                    icon: const Icon(Icons.close_rounded, size: 17),
+                    label: const Text('Cancelar'),
+                  ),
+                ] else if (isPending)
+                  OutlinedButton.icon(
+                    onPressed: () => _updatePackageStatus(id, 'return'),
+                    icon: const Icon(Icons.keyboard_return_rounded, size: 17),
+                    label: const Text('Devolver'),
+                  ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

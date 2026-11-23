@@ -236,13 +236,23 @@ class _InfractionsSubViewState extends State<_InfractionsSubView> {
       ),
     );
 
-    if (ok == true && def.text.isNotEmpty) {
-      await widget.api.submitDefense(id, def.text.trim());
-      _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Defesa enviada à administração!')),
-        );
+    final defenseText = def.text.trim();
+    def.dispose();
+    if (ok == true && defenseText.isNotEmpty) {
+      try {
+        await widget.api.submitDefense(id, defenseText);
+        _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Defesa enviada à administração!')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao enviar defesa: $e')),
+          );
+        }
       }
     }
   }
@@ -288,13 +298,23 @@ class _InfractionsSubViewState extends State<_InfractionsSubView> {
         ],
       ),
     );
+    final notesText = notes.text.trim();
+    notes.dispose();
     if (ok == true) {
-      await widget.api.judgeInfraction(id, status, notes.text.trim());
-      _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Decisão registrada com sucesso!')),
-        );
+      try {
+        await widget.api.judgeInfraction(id, status, notesText);
+        _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Decisão registrada com sucesso!')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao registrar decisão: $e')),
+          );
+        }
       }
     }
   }
@@ -781,13 +801,23 @@ class _LockersSubViewState extends State<_LockersSubView> {
       ),
     );
 
-    if (ok == true && pin.text.isNotEmpty) {
-      await widget.api.retrieveLocker(lockerId, pin.text.trim());
-      _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Armário destravado com sucesso!')),
-        );
+    final pinText = pin.text.trim();
+    pin.dispose();
+    if (ok == true && pinText.isNotEmpty) {
+      try {
+        await widget.api.retrieveLocker(lockerId, pinText);
+        _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Armário destravado com sucesso!')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao destravar armário: $e')),
+          );
+        }
       }
     }
   }
@@ -1524,17 +1554,26 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
       ),
     );
 
+    final nameVal = nameCtrl.text.trim();
+    final locVal = locationCtrl.text.trim();
+    final recDays = int.tryParse(recurrenceCtrl.text.trim()) ?? 30;
+    final respVal = respCtrl.text.trim();
+    nameCtrl.dispose();
+    locationCtrl.dispose();
+    recurrenceCtrl.dispose();
+    respCtrl.dispose();
+
     if (ok == true) {
       final dateStr =
           '${nextDate.year.toString().padLeft(4, '0')}-${nextDate.month.toString().padLeft(2, '0')}-${nextDate.day.toString().padLeft(2, '0')}';
       await widget.api.createMaintenanceEquipment(
         widget.condominiumId,
-        name: nameCtrl.text.trim(),
+        name: nameVal,
         category: category,
-        location: locationCtrl.text.trim(),
-        recurrenceDays: int.tryParse(recurrenceCtrl.text.trim()) ?? 30,
+        location: locVal,
+        recurrenceDays: recDays,
         nextMaintenanceDate: dateStr,
-        responsibleName: respCtrl.text.trim(),
+        responsibleName: respVal,
         preferredSupplierId: preferredSupplierId,
       );
       _load();
@@ -1656,15 +1695,26 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
       ),
     );
 
+    final companyVal = companyCtrl.text.trim();
+    final contactVal = contactCtrl.text.trim();
+    final phoneVal = phoneCtrl.text.trim();
+    final emailVal = emailCtrl.text.trim();
+    final docVal = docCtrl.text.trim();
+    companyCtrl.dispose();
+    contactCtrl.dispose();
+    phoneCtrl.dispose();
+    emailCtrl.dispose();
+    docCtrl.dispose();
+
     if (ok == true) {
       await widget.api.createSupplier(
         widget.condominiumId,
-        companyName: companyCtrl.text.trim(),
+        companyName: companyVal,
         serviceCategory: category,
-        contactName: contactCtrl.text.trim(),
-        phone: phoneCtrl.text.trim(),
-        email: emailCtrl.text.trim(),
-        documentNumber: docCtrl.text.trim(),
+        contactName: contactVal,
+        phone: phoneVal,
+        email: emailVal,
+        documentNumber: docVal,
       );
       _load();
     }
@@ -1938,26 +1988,35 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
       ),
     );
 
+    final titleVal = title.text.trim();
+    final descVal = desc.text.trim();
+    final contractorVal = contractor.text.trim();
+    final contactVal = contact.text.trim();
+    final parsedCost = double.tryParse(cost.text.replaceAll(',', '.'));
+    final notesVal = notes.text.trim();
+    title.dispose();
+    desc.dispose();
+    contractor.dispose();
+    contact.dispose();
+    cost.dispose();
+    notes.dispose();
+
     if (ok == true) {
       try {
         await widget.api.createMaintenanceOrder(
           widget.condominiumId,
-          title: title.text.trim(),
-          description: desc.text.trim(),
+          title: titleVal,
+          description: descVal,
           category: category,
           type: type,
           priority: priority,
           equipmentId: selectedEquipmentId,
           supplierId: selectedSupplierId,
-          contractorName: contractor.text.trim().isNotEmpty
-              ? contractor.text.trim()
-              : null,
-          contractorContact: contact.text.trim().isNotEmpty
-              ? contact.text.trim()
-              : null,
+          contractorName: contractorVal.isNotEmpty ? contractorVal : null,
+          contractorContact: contactVal.isNotEmpty ? contactVal : null,
           scheduledDate: scheduledDate,
-          estimatedCost: double.tryParse(cost.text.replaceAll(',', '.')),
-          notes: notes.text.trim().isNotEmpty ? notes.text.trim() : null,
+          estimatedCost: parsedCost,
+          notes: notesVal.isNotEmpty ? notesVal : null,
         );
         _load();
       } catch (e) {
@@ -2083,20 +2142,27 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
       ),
     );
 
+    final statusText = statusCtrl.text;
+    final parsedActualCost = double.tryParse(actualCost.text.replaceAll(',', '.'));
+    final notesText = notes.text.trim();
+    final feedbackText = feedbackCtrl.text.trim();
+    statusCtrl.dispose();
+    actualCost.dispose();
+    notes.dispose();
+    feedbackCtrl.dispose();
+
     if (ok == true) {
       try {
         await widget.api.updateMaintenanceOrderStatus(
           order['id'] as num,
-          status: statusCtrl.text,
-          actualCost: double.tryParse(actualCost.text.replaceAll(',', '.')),
-          notes: notes.text.trim().isNotEmpty ? notes.text.trim() : null,
+          status: statusText,
+          actualCost: parsedActualCost,
+          notes: notesText.isNotEmpty ? notesText : null,
           supplierRating:
-              (statusCtrl.text == 'COMPLETED' && order['supplierId'] != null)
+              (statusText == 'COMPLETED' && order['supplierId'] != null)
               ? rating
               : null,
-          supplierFeedback: feedbackCtrl.text.trim().isNotEmpty
-              ? feedbackCtrl.text.trim()
-              : null,
+          supplierFeedback: feedbackText.isNotEmpty ? feedbackText : null,
         );
         _load();
       } catch (e) {

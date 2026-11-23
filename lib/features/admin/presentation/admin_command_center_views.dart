@@ -298,6 +298,70 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                       ),
                     ),
                   ),
+                  if (item['reason'] != null &&
+                      item['reason'].toString().trim().isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                      'Motivo Operacional',
+                      item['reason'].toString(),
+                    ),
+                  ],
+                  if (item['beforeState'] != null &&
+                      item['beforeState'].toString().trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Estado Anterior (Before):',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12.5,
+                        color: Color(0xFFEF4444),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: SelectableText(
+                        item['beforeState'].toString(),
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5),
+                      ),
+                    ),
+                  ],
+                  if (item['afterState'] != null &&
+                      item['afterState'].toString().trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Novo Estado (After):',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12.5,
+                        color: Color(0xFF10B981),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: SelectableText(
+                        item['afterState'].toString(),
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -457,7 +521,7 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                       ),
                       children: const [
                         TextSpan(
-                          text: '🔒 Trilha de Auditoria Imutável: ',
+                          text: 'Trilha de Auditoria Imutável: ',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         TextSpan(
@@ -1821,6 +1885,7 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
   String? _error;
   Map<String, dynamic>? _data;
   Map<String, dynamic>? _overview;
+  List<Map<String, dynamic>> _subscriptions = [];
 
   @override
   void initState() {
@@ -1837,8 +1902,11 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
     try {
       final matrixFuture = widget.api.get('/admin/permissions-matrix');
       final overviewFuture = widget.api.get('/admin/overview');
+      final subsFuture = widget.api
+          .get('/admin/subscriptions')
+          .catchError((_) => <dynamic>[]);
 
-      final results = await Future.wait([matrixFuture, overviewFuture]);
+      final results = await Future.wait([matrixFuture, overviewFuture, subsFuture]);
 
       if (mounted) {
         setState(() {
@@ -1847,6 +1915,12 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
           }
           if (results[1] is Map<String, dynamic>) {
             _overview = results[1] as Map<String, dynamic>;
+          }
+          if (results[2] is List) {
+            _subscriptions = (results[2] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
           }
           _loading = false;
         });
@@ -2194,8 +2268,302 @@ class _AdminPermissionsViewState extends State<AdminPermissionsView> {
                 );
               }).toList(),
             ),
+
+          const SizedBox(height: 28),
+          const Row(
+            children: [
+              Icon(Icons.subscriptions_outlined, color: Color(0xFF2563EB)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Assinaturas e Ciclo de Vida por Condomínio',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Gerencie planos contratados, status operacional (TRIAL, ACTIVE, PAST_DUE, SUSPENDED, CANCELLED) e renovações.',
+            style: TextStyle(fontSize: 13, color: SaaSColors.muted(context)),
+          ),
+          const SizedBox(height: 12),
+          if (_subscriptions.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: borderColor),
+              ),
+              child: Text(
+                'Nenhuma assinatura ativa listada.',
+                style: TextStyle(color: SaaSColors.muted(context)),
+              ),
+            )
+          else
+            ..._subscriptions.map((sub) {
+              final condoId = sub['condominiumId'] as num?;
+              final condoName = sub['condominiumName']?.toString() ?? 'Condomínio';
+              final planName = sub['billingPlanName']?.toString() ?? 'Essencial';
+              final status = sub['status']?.toString() ?? 'ACTIVE';
+              final cycle = sub['billingCycle']?.toString() ?? 'MONTHLY';
+              final accessAllowed = sub['accessAllowed'] == true;
+              final featuresCount = (sub['enabledFeatures'] as List?)?.length ?? 0;
+
+              Color statusColor;
+              switch (status) {
+                case 'ACTIVE':
+                  statusColor = const Color(0xFF10B981);
+                  break;
+                case 'TRIAL':
+                  statusColor = const Color(0xFF3B82F6);
+                  break;
+                case 'PAST_DUE':
+                  statusColor = const Color(0xFFF59E0B);
+                  break;
+                default:
+                  statusColor = const Color(0xFFEF4444);
+              }
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: cardBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: borderColor),
+                ),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              condoName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: statusColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '$status • ${accessAllowed ? "LIBERADO" : "BLOQUEADO"}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: statusColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Plano: $planName ($cycle) • $featuresCount módulos habilitados',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: SaaSColors.muted(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (condoId != null)
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                            label: const Text('Trocar Plano'),
+                            onPressed: () => _openAdminChangePlanDialog(
+                              condoId,
+                              condoName,
+                              plans,
+                              sub['billingPlanId'] as num?,
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.rule_folder_outlined, size: 16),
+                            label: const Text('Status'),
+                            onPressed: () => _openAdminStatusDialog(
+                              condoId,
+                              condoName,
+                              status,
+                            ),
+                          ),
+                          FilledButton.icon(
+                            icon: const Icon(Icons.autorenew_rounded, size: 16),
+                            label: const Text('Renovar +30d'),
+                            onPressed: () => _renewSubscription(condoId),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              );
+            }),
         ],
       ),
     );
+  }
+
+  Future<void> _renewSubscription(num condoId) async {
+    try {
+      await widget.api.post('/admin/subscriptions/$condoId/renew', {'months': 1});
+      await _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Assinatura renovada por +30 dias.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao renovar: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openAdminChangePlanDialog(
+    num condoId,
+    String condoName,
+    List<dynamic> plans,
+    num? currentPlanId,
+  ) async {
+    num? selectedPlanId = currentPlanId ??
+        (plans.isNotEmpty && plans.first is Map ? plans.first['id'] as num? : null);
+    String billingCycle = 'MONTHLY';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Alterar plano — $condoName'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<num>(
+                initialValue: selectedPlanId,
+                decoration: const InputDecoration(labelText: 'Plano Comercial'),
+                items: plans.whereType<Map>().map((p) {
+                  return DropdownMenuItem<num>(
+                    value: p['id'] as num?,
+                    child: Text('${p['name']} (R\$ ${p['monthlyFee']})'),
+                  );
+                }).toList(),
+                onChanged: (v) => setDialogState(() => selectedPlanId = v),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: billingCycle,
+                decoration: const InputDecoration(labelText: 'Ciclo de Cobrança'),
+                items: const [
+                  DropdownMenuItem(value: 'MONTHLY', child: Text('Mensal (MONTHLY)')),
+                  DropdownMenuItem(value: 'ANNUAL', child: Text('Anual (ANNUAL)')),
+                ],
+                onChanged: (v) =>
+                    setDialogState(() => billingCycle = v ?? 'MONTHLY'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Aplicar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true && selectedPlanId != null) {
+      await widget.api.put('/admin/subscriptions/$condoId/plan', {
+        'planId': selectedPlanId,
+        'billingCycle': billingCycle,
+      });
+      await _loadData();
+    }
+  }
+
+  Future<void> _openAdminStatusDialog(
+    num condoId,
+    String condoName,
+    String currentStatus,
+  ) async {
+    String selectedStatus = currentStatus;
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Status da assinatura — $condoName'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: selectedStatus,
+                decoration: const InputDecoration(labelText: 'Status'),
+                items: const [
+                  DropdownMenuItem(value: 'ACTIVE', child: Text('ACTIVE (Liberado)')),
+                  DropdownMenuItem(value: 'TRIAL', child: Text('TRIAL (Avaliação)')),
+                  DropdownMenuItem(value: 'PAST_DUE', child: Text('PAST_DUE (Aviso de atraso)')),
+                  DropdownMenuItem(value: 'SUSPENDED', child: Text('SUSPENDED (Bloqueia módulos)')),
+                  DropdownMenuItem(value: 'CANCELLED', child: Text('CANCELLED (Cancelada)')),
+                ],
+                onChanged: (v) =>
+                    setDialogState(() => selectedStatus = v ?? currentStatus),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Motivo (registrado na auditoria)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Salvar Status'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed == true) {
+      await widget.api.patch('/admin/subscriptions/$condoId/status', {
+        'status': selectedStatus,
+        if (reason.isNotEmpty) 'reason': reason,
+      });
+      await _loadData();
+    }
   }
 }

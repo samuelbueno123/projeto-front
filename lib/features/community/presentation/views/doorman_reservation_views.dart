@@ -18,6 +18,7 @@ class DoormanReservationsView extends StatefulWidget {
 class _DoormanReservationsViewState extends State<DoormanReservationsView> {
   List<Map<String, dynamic>> _reservations = [];
   bool _loading = true;
+  String? _error;
   String _category = 'SCHEDULED'; // SCHEDULED, PAST, CANCELLED
   String _subFilter = 'ALL'; // ALL, PENDING, CONFIRMED, COUNTER_PROPOSED
 
@@ -28,7 +29,10 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.getCondominiumReservations(
         widget.condominiumId,
@@ -39,8 +43,13 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -197,6 +206,11 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                       ),
                     ),
                   )
+                : _error != null
+                ? SaaSErrorState(
+                    message: 'Falha ao carregar reservas: $_error',
+                    onRetry: _load,
+                  )
                 : _filtered.isEmpty
                 ? SaaSEmptyState(
                     icon: Icons.event_busy_rounded,
@@ -262,155 +276,66 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                                     child: SizedBox(
                                       width: 44,
                                       height: 44,
-                                      child:
-                                          (imgUrl != null && imgUrl.isNotEmpty)
-                                          ? (imgUrl.startsWith('data:')
-                                                ? Image.memory(
-                                                    base64Decode(
-                                                      imgUrl.split(',').last,
-                                                    ),
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, __, ___) => CircleAvatar(
-                                                      backgroundColor:
-                                                          isItemCancelled
-                                                          ? const Color(
-                                                              0xFFFEE2E2,
-                                                            )
-                                                          : status ==
-                                                                'CONFIRMED'
-                                                          ? const Color(
-                                                              0xFFDCFCE7,
-                                                            )
-                                                          : status ==
-                                                                'COUNTER_PROPOSED'
-                                                          ? const Color(
-                                                              0xFFFEF3C7,
-                                                            )
-                                                          : const Color(
-                                                              0xFFDBEAFE,
-                                                            ),
-                                                      child: Icon(
-                                                        isItemCancelled
-                                                            ? Icons
-                                                                  .cancel_outlined
-                                                            : status ==
-                                                                  'CONFIRMED'
-                                                            ? Icons
-                                                                  .check_circle_rounded
-                                                            : status ==
-                                                                  'COUNTER_PROPOSED'
-                                                            ? Icons
-                                                                  .schedule_send_rounded
-                                                            : Icons
-                                                                  .hourglass_top_rounded,
-                                                        color: isItemCancelled
-                                                            ? const Color(
-                                                                0xFFDC2626,
-                                                              )
-                                                            : status ==
-                                                                  'CONFIRMED'
-                                                            ? const Color(
-                                                                0xFF15803D,
-                                                              )
-                                                            : status ==
-                                                                  'COUNTER_PROPOSED'
-                                                            ? const Color(
-                                                                0xFFB45309,
-                                                              )
-                                                            : const Color(
-                                                                0xFF2563EB,
-                                                              ),
-                                                        size: 20,
-                                                      ),
-                                                    ),
-                                                  )
-                                                : Image.network(
-                                                    imgUrl,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, __, ___) => CircleAvatar(
-                                                      backgroundColor:
-                                                          isItemCancelled
-                                                          ? const Color(
-                                                              0xFFFEE2E2,
-                                                            )
-                                                          : status ==
-                                                                'CONFIRMED'
-                                                          ? const Color(
-                                                              0xFFDCFCE7,
-                                                            )
-                                                          : status ==
-                                                                'COUNTER_PROPOSED'
-                                                          ? const Color(
-                                                              0xFFFEF3C7,
-                                                            )
-                                                          : const Color(
-                                                              0xFFDBEAFE,
-                                                            ),
-                                                      child: Icon(
-                                                        isItemCancelled
-                                                            ? Icons
-                                                                  .cancel_outlined
-                                                            : status ==
-                                                                  'CONFIRMED'
-                                                            ? Icons
-                                                                  .check_circle_rounded
-                                                            : status ==
-                                                                  'COUNTER_PROPOSED'
-                                                            ? Icons
-                                                                  .schedule_send_rounded
-                                                            : Icons
-                                                                  .hourglass_top_rounded,
-                                                        color: isItemCancelled
-                                                            ? const Color(
-                                                                0xFFDC2626,
-                                                              )
-                                                            : status ==
-                                                                  'CONFIRMED'
-                                                            ? const Color(
-                                                                0xFF15803D,
-                                                              )
-                                                            : status ==
-                                                                  'COUNTER_PROPOSED'
-                                                            ? const Color(
-                                                                0xFFB45309,
-                                                              )
-                                                            : const Color(
-                                                                0xFF2563EB,
-                                                              ),
-                                                        size: 20,
-                                                      ),
-                                                    ),
-                                                  ))
-                                          : CircleAvatar(
-                                              backgroundColor: isItemCancelled
-                                                  ? const Color(0xFFFEE2E2)
+                                      child: Builder(
+                                        builder: (_) {
+                                          final statusBg = isItemCancelled
+                                              ? (isDark
+                                                    ? const Color(0xFF450A0A)
+                                                    : const Color(0xFFFEE2E2))
+                                              : status == 'CONFIRMED'
+                                              ? (isDark
+                                                    ? const Color(0xFF064E3B)
+                                                    : const Color(0xFFDCFCE7))
+                                              : status == 'COUNTER_PROPOSED'
+                                              ? (isDark
+                                                    ? const Color(0xFF451A03)
+                                                    : const Color(0xFFFEF3C7))
+                                              : (isDark
+                                                    ? const Color(0xFF1E3A8A)
+                                                    : const Color(0xFFDBEAFE));
+                                          final statusFg = isItemCancelled
+                                              ? (isDark
+                                                    ? const Color(0xFFF87171)
+                                                    : const Color(0xFFDC2626))
+                                              : status == 'CONFIRMED'
+                                              ? (isDark
+                                                    ? const Color(0xFF34D399)
+                                                    : const Color(0xFF15803D))
+                                              : status == 'COUNTER_PROPOSED'
+                                              ? (isDark
+                                                    ? const Color(0xFFFBBF24)
+                                                    : const Color(0xFFB45309))
+                                              : (isDark
+                                                    ? const Color(0xFF60A5FA)
+                                                    : const Color(0xFF2563EB));
+                                          final fallback = CircleAvatar(
+                                            backgroundColor: statusBg,
+                                            child: Icon(
+                                              isItemCancelled
+                                                  ? Icons.cancel_outlined
                                                   : status == 'CONFIRMED'
-                                                  ? const Color(0xFFDCFCE7)
+                                                  ? Icons.check_circle_rounded
                                                   : status == 'COUNTER_PROPOSED'
-                                                  ? const Color(0xFFFEF3C7)
-                                                  : const Color(0xFFDBEAFE),
-                                              child: Icon(
-                                                isItemCancelled
-                                                    ? Icons.cancel_outlined
-                                                    : status == 'CONFIRMED'
-                                                    ? Icons.check_circle_rounded
-                                                    : status ==
-                                                          'COUNTER_PROPOSED'
-                                                    ? Icons
-                                                          .schedule_send_rounded
-                                                    : Icons
-                                                          .hourglass_top_rounded,
-                                                color: isItemCancelled
-                                                    ? const Color(0xFFDC2626)
-                                                    : status == 'CONFIRMED'
-                                                    ? const Color(0xFF15803D)
-                                                    : status ==
-                                                          'COUNTER_PROPOSED'
-                                                    ? const Color(0xFFB45309)
-                                                    : const Color(0xFF2563EB),
-                                                size: 20,
-                                              ),
+                                                  ? Icons.schedule_send_rounded
+                                                  : Icons.hourglass_top_rounded,
+                                              color: statusFg,
+                                              size: 20,
                                             ),
+                                          );
+                                          if (imgUrl != null &&
+                                              imgUrl.isNotEmpty) {
+                                            return SmartImage(
+                                              source: imgUrl,
+                                              width: 44,
+                                              height: 44,
+                                              fit: BoxFit.cover,
+                                              placeholderIcon:
+                                                  Icons.event_available_rounded,
+                                            );
+                                          }
+                                          return fallback;
+                                        },
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -446,74 +371,96 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                                             fontSize: 13,
                                           ),
                                         ),
-                                        if (isItemCancelled) ...[
-                                          const SizedBox(height: 6),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFFEE2E2),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              border: Border.all(
-                                                color: const Color(0xFFF87171),
-                                              ),
-                                            ),
-                                            child: const Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.cancel_rounded,
-                                                  size: 13,
-                                                  color: Color(0xFFDC2626),
-                                                ),
-                                                SizedBox(width: 4),
-                                                Text(
-                                                  'CANCELADA / RECUSADA',
-                                                  style: TextStyle(
-                                                    color: Color(0xFFDC2626),
-                                                    fontWeight: FontWeight.w900,
-                                                    fontSize: 10.5,
-                                                    letterSpacing: 0.5,
+                                          if (isItemCancelled) ...[
+                                            const SizedBox(height: 6),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3,
                                                   ),
+                                              decoration: BoxDecoration(
+                                                color: isDark
+                                                    ? const Color(0xFF450A0A)
+                                                    : const Color(0xFFFEE2E2),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color: isDark
+                                                      ? const Color(0xFFDC2626)
+                                                      : const Color(0xFFF87171),
                                                 ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                        if (notes != null &&
-                                            notes.isNotEmpty) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'Observação: $notes',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              fontStyle: FontStyle.italic,
-                                            ),
-                                          ),
-                                        ],
-                                        if (status == 'COUNTER_PROPOSED' &&
-                                            counterNotes != null) ...[
-                                          const SizedBox(height: 6),
-                                          Container(
-                                            padding: const EdgeInsets.all(10),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFFEF3C7),
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            child: Text(
-                                              'Contraproposta enviada: $counterNotes ${propStart != null ? "(${_formatDt(propStart)})" : ""}',
-                                              style: const TextStyle(
-                                                color: Color(0xFFB45309),
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.cancel_rounded,
+                                                    size: 13,
+                                                    color: isDark
+                                                        ? const Color(
+                                                            0xFFF87171,
+                                                          )
+                                                        : const Color(
+                                                            0xFFDC2626,
+                                                          ),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'CANCELADA / RECUSADA',
+                                                    style: TextStyle(
+                                                      color: isDark
+                                                          ? const Color(
+                                                              0xFFF87171,
+                                                            )
+                                                          : const Color(
+                                                              0xFFDC2626,
+                                                            ),
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      fontSize: 10.5,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                          if (notes != null &&
+                                              notes.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Observação: $notes',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ],
+                                          if (status == 'COUNTER_PROPOSED' &&
+                                              counterNotes != null) ...[
+                                            const SizedBox(height: 6),
+                                            Container(
+                                              padding: const EdgeInsets.all(10),
+                                              decoration: BoxDecoration(
+                                                color: isDark
+                                                    ? const Color(0xFF451A03)
+                                                    : const Color(0xFFFEF3C7),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                'Contraproposta enviada: $counterNotes ${propStart != null ? "(${_formatDt(propStart)})" : ""}',
+                                                style: TextStyle(
+                                                  color: isDark
+                                                      ? const Color(0xFFFCD34D)
+                                                      : const Color(0xFFB45309),
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                       ],
                                     ),
                                   ),
@@ -542,23 +489,24 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                                       label: const Text('Aceitar Reserva'),
                                       onPressed: () => _approve(id),
                                     ),
-                                    FilledButton.tonalIcon(
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: const Color(
-                                          0xFFFEF3C7,
+                                      FilledButton.tonalIcon(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: isDark
+                                              ? const Color(0xFF451A03)
+                                              : const Color(0xFFFEF3C7),
+                                          foregroundColor: isDark
+                                              ? const Color(0xFFFCD34D)
+                                              : const Color(0xFFB45309),
+                                          visualDensity: VisualDensity.compact,
                                         ),
-                                        foregroundColor: const Color(
-                                          0xFFB45309,
+                                        icon: const Icon(
+                                          Icons.schedule_send_rounded,
+                                          size: 16,
                                         ),
-                                        visualDensity: VisualDensity.compact,
+                                        label: const Text('Contraproposta'),
+                                        onPressed: () =>
+                                            _openCounterProposal(r),
                                       ),
-                                      icon: const Icon(
-                                        Icons.schedule_send_rounded,
-                                        size: 16,
-                                      ),
-                                      label: const Text('Contraproposta'),
-                                      onPressed: () => _openCounterProposal(r),
-                                    ),
                                     OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
                                         visualDensity: VisualDensity.compact,
@@ -668,9 +616,11 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
         ],
       ),
     );
+    final reason = ctrl.text.trim();
+    ctrl.dispose();
     if (confirmed == true) {
       try {
-        await widget.api.rejectReservation(id, ctrl.text.trim());
+        await widget.api.rejectReservation(id, reason);
         _load();
       } catch (e) {
         if (mounted) {
@@ -745,15 +695,22 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
       ),
     );
 
+    final startText = startCtrl.text.trim();
+    final endText = endCtrl.text.trim();
+    final notesText = notesCtrl.text.trim();
+    startCtrl.dispose();
+    endCtrl.dispose();
+    notesCtrl.dispose();
+
     if (confirmed == true) {
       try {
-        final start = DateTime.parse(startCtrl.text.trim());
-        final end = DateTime.parse(endCtrl.text.trim());
+        final start = DateTime.parse(startText);
+        final end = DateTime.parse(endText);
         await widget.api.modifyAndConfirmReservation(
           reservationId: r['id'] as num,
           startAt: start,
           endAt: end,
-          notes: notesCtrl.text.trim(),
+          notes: notesText,
         );
         _load();
       } catch (e) {

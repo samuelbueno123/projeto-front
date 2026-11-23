@@ -1,6 +1,9 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../design_system/motion_system.dart';
 import '../theme/app_theme.dart';
+import 'saas_dashboard_widgets.dart';
 
 /// Item genérico para menus customizados e seletores do sistema.
 class AncoraMenuOption<T> {
@@ -50,14 +53,19 @@ class AncoraDropdown<T> extends StatefulWidget {
 
 class _AncoraDropdownState<T> extends State<AncoraDropdown<T>> {
   final LayerLink _layerLink = LayerLink();
+  final FocusNode _triggerFocus = FocusNode();
+  final FocusNode _overlayFocus = FocusNode();
   OverlayEntry? _overlayEntry;
   bool _isOpen = false;
   bool _hovered = false;
   String _searchQuery = '';
+  int _highlightedIndex = -1;
 
   @override
   void dispose() {
     _removeOverlay(notifyState: false);
+    _triggerFocus.dispose();
+    _overlayFocus.dispose();
     super.dispose();
   }
 
@@ -74,6 +82,7 @@ class _AncoraDropdownState<T> extends State<AncoraDropdown<T>> {
     _overlayEntry = null;
     if (notifyState && mounted && _isOpen) {
       setState(() => _isOpen = false);
+      _triggerFocus.requestFocus();
     } else {
       _isOpen = false;
     }
@@ -83,13 +92,27 @@ class _AncoraDropdownState<T> extends State<AncoraDropdown<T>> {
     final renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
     final size = renderBox.size;
+    final targetGlobal = renderBox.localToGlobal(Offset.zero);
+    final screen = MediaQuery.sizeOf(context);
     final tokens = AncoraThemeTokens.of(context);
     final reduce = AncoraMotion.shouldReduceMotion(context);
     _searchQuery = '';
+    _highlightedIndex = widget.items.indexWhere((o) => o.value == widget.value);
 
-    final menuWidth = size.width < 220
+    final desiredWidth = size.width < 220
         ? widget.maxMenuWidth.clamp(size.width, 320.0)
         : size.width;
+    final menuWidth = math.min(desiredWidth, math.max(120.0, screen.width - 24));
+    final overflowRight = (targetGlobal.dx + menuWidth) - (screen.width - 12);
+    final dxOffset = overflowRight > 0 ? -overflowRight : 0.0;
+
+    final availableBelow = math.max(90.0, screen.height - (targetGlobal.dy + size.height) - 16);
+    final availableAbove = math.max(90.0, targetGlobal.dy - 16);
+    final openAbove = availableBelow < 180 && availableAbove > availableBelow;
+    final maxHeight = math.min(
+      320.0,
+      openAbove ? availableAbove : availableBelow,
+    );
 
     _overlayEntry = OverlayEntry(
       builder: (overlayContext) {
@@ -110,198 +133,271 @@ class _AncoraDropdownState<T> extends State<AncoraDropdown<T>> {
                       )
                       .toList();
 
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _removeOverlay,
-                  ),
-                ),
-                CompositedTransformFollower(
-                  link: _layerLink,
-                  showWhenUnlinked: false,
-                  targetAnchor: Alignment.bottomLeft,
-                  followerAnchor: Alignment.topLeft,
-                  offset: const Offset(0, 6),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: reduce ? 1.0 : 0.0, end: 1.0),
-                      duration: reduce ? Duration.zero : AncoraMotion.fast,
-                      curve: AncoraMotion.easeOut,
-                      builder: (c, t, child) {
-                        return Opacity(
-                          opacity: t,
-                          child: Transform.translate(
-                            offset: Offset(0, (1 - t) * -6),
-                            child: child,
+            if (_highlightedIndex >= filtered.length) {
+              _highlightedIndex = filtered.isEmpty ? -1 : 0;
+            }
+
+            void moveHighlight(int delta) {
+              if (filtered.isEmpty) return;
+              setOverlayState(() {
+                if (_highlightedIndex < 0) {
+                  _highlightedIndex = delta > 0 ? 0 : filtered.length - 1;
+                } else {
+                  _highlightedIndex =
+                      (_highlightedIndex + delta) % filtered.length;
+                  if (_highlightedIndex < 0) {
+                    _highlightedIndex += filtered.length;
+                  }
+                }
+              });
+            }
+
+            void selectHighlighted() {
+              if (_highlightedIndex >= 0 &&
+                  _highlightedIndex < filtered.length) {
+                final opt = filtered[_highlightedIndex];
+                _removeOverlay();
+                widget.onChanged(opt.value);
+              }
+            }
+
+            return FocusScope(
+              autofocus: true,
+              child: CallbackShortcuts(
+                bindings: {
+                  const SingleActivator(LogicalKeyboardKey.escape):
+                      _removeOverlay,
+                  const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+                      moveHighlight(1),
+                  const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+                      moveHighlight(-1),
+                  const SingleActivator(LogicalKeyboardKey.enter):
+                      selectHighlighted,
+                },
+                child: Focus(
+                  focusNode: _overlayFocus,
+                  autofocus: !widget.searchable,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: _removeOverlay,
+                      ),
+                    ),
+                    CompositedTransformFollower(
+                      link: _layerLink,
+                      showWhenUnlinked: false,
+                      targetAnchor:
+                          openAbove ? Alignment.topLeft : Alignment.bottomLeft,
+                      followerAnchor:
+                          openAbove ? Alignment.bottomLeft : Alignment.topLeft,
+                      offset: Offset(dxOffset, openAbove ? -6 : 6),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(
+                            begin: reduce ? 1.0 : 0.0,
+                            end: 1.0,
                           ),
-                        );
-                      },
-                      child: Container(
-                        width: menuWidth,
-                        constraints: const BoxConstraints(maxHeight: 320),
-                        decoration: BoxDecoration(
-                          color: tokens.surfaceElevated,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: tokens.borderStrong),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(
-                                alpha: tokens.isDark ? 0.45 : 0.12,
-                              ),
-                              blurRadius: 24,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (widget.searchable)
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  10,
-                                  10,
-                                  10,
-                                  6,
+                          duration: reduce ? Duration.zero : AncoraMotion.fast,
+                          curve: AncoraMotion.easeOut,
+                          builder: (c, t, child) {
+                            return Opacity(
+                              opacity: t,
+                              child: Transform.translate(
+                                offset: Offset(
+                                  0,
+                                  (1 - t) * (openAbove ? 6 : -6),
                                 ),
-                                child: TextField(
-                                  autofocus: true,
-                                  onChanged: (v) =>
-                                      setOverlayState(() => _searchQuery = v),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Filtrar opções...',
-                                    prefixIcon: Icon(
-                                      Icons.search_rounded,
-                                      size: 17,
-                                    ),
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: Container(
+                            width: menuWidth,
+                            constraints: BoxConstraints(maxHeight: maxHeight),
+                            decoration: BoxDecoration(
+                              color: tokens.surfaceElevated,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: tokens.borderStrong),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: tokens.isDark ? 0.45 : 0.12,
                                   ),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 10),
                                 ),
-                              ),
-                            Flexible(
-                              child: filtered.isEmpty
-                                  ? Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Text(
-                                        'Nenhuma opção encontrada',
-                                        style: TextStyle(
-                                          color: tokens.textMuted,
-                                          fontSize: 12.5,
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (widget.searchable)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      10,
+                                      10,
+                                      10,
+                                      6,
+                                    ),
+                                    child: TextField(
+                                      autofocus: true,
+                                      onChanged: (v) => setOverlayState(
+                                        () => _searchQuery = v,
+                                      ),
+                                      decoration: const InputDecoration(
+                                        hintText: 'Filtrar opções...',
+                                        prefixIcon: Icon(
+                                          Icons.search_rounded,
+                                          size: 17,
+                                        ),
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
                                         ),
                                       ),
-                                    )
-                                  : ListView.builder(
-                                      shrinkWrap: true,
-                                      padding: const EdgeInsets.all(6),
-                                      itemCount: filtered.length,
-                                      itemBuilder: (_, index) {
-                                        final opt = filtered[index];
-                                        final selected =
-                                            opt.value == widget.value;
-                                        return InkWell(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
+                                    ),
+                                  ),
+                                Flexible(
+                                  child: filtered.isEmpty
+                                      ? Padding(
+                                          padding: const EdgeInsets.all(16),
+                                          child: Text(
+                                            'Nenhuma opção encontrada',
+                                            style: TextStyle(
+                                              color: tokens.textMuted,
+                                              fontSize: 12.5,
+                                            ),
                                           ),
-                                          onTap: () {
-                                            _removeOverlay();
-                                            widget.onChanged(opt.value);
-                                          },
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 9,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: selected
-                                                  ? tokens.accent.withValues(
-                                                      alpha: tokens.isDark
-                                                          ? 0.22
-                                                          : 0.10,
-                                                    )
-                                                  : Colors.transparent,
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                if (opt.icon != null) ...[
-                                                  Icon(
-                                                    opt.icon,
-                                                    size: 16,
+                                        )
+                                      : ListView.builder(
+                                          shrinkWrap: true,
+                                          padding: const EdgeInsets.all(6),
+                                          itemCount: filtered.length,
+                                          itemBuilder: (_, index) {
+                                            final opt = filtered[index];
+                                            final selected =
+                                                opt.value == widget.value;
+                                            final highlighted =
+                                                index == _highlightedIndex;
+                                            return Semantics(
+                                              button: true,
+                                              selected: selected,
+                                              excludeSemantics: true,
+                                              label: opt.subtitle != null &&
+                                                      opt.subtitle!.isNotEmpty
+                                                  ? '${opt.label}, ${opt.subtitle}'
+                                                  : opt.label,
+                                              child: InkWell(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                onTap: () {
+                                                  _removeOverlay();
+                                                  widget.onChanged(opt.value);
+                                                },
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 9,
+                                                      ),
+                                                  decoration: BoxDecoration(
                                                     color: selected
                                                         ? tokens.accent
-                                                        : tokens.textSecondary,
+                                                              .withValues(
+                                                                alpha: tokens.isDark
+                                                                    ? 0.22
+                                                                    : 0.10,
+                                                              )
+                                                        : (highlighted
+                                                              ? tokens.surfaceSubtle
+                                                              : Colors.transparent),
+                                                    borderRadius:
+                                                        BorderRadius.circular(10),
                                                   ),
-                                                  const SizedBox(width: 9),
-                                                ],
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
+                                                  child: Row(
                                                     children: [
-                                                      Text(
-                                                        opt.label,
-                                                        style: TextStyle(
-                                                          fontSize: 13,
-                                                          fontWeight: selected
-                                                              ? FontWeight.w700
-                                                              : FontWeight.w500,
+                                                      if (opt.icon != null) ...[
+                                                        Icon(
+                                                          opt.icon,
+                                                          size: 16,
                                                           color: selected
                                                               ? tokens.accent
                                                               : tokens
-                                                                    .textPrimary,
+                                                                    .textSecondary,
                                                         ),
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
+                                                        const SizedBox(width: 9),
+                                                      ],
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            Text(
+                                                              opt.label,
+                                                              style: TextStyle(
+                                                                fontSize: 13,
+                                                                fontWeight: selected
+                                                                    ? FontWeight.w700
+                                                                    : FontWeight.w500,
+                                                                color: selected
+                                                                    ? tokens.accent
+                                                                    : tokens
+                                                                          .textPrimary,
+                                                              ),
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                            ),
+                                                            if (opt.subtitle !=
+                                                                    null &&
+                                                                opt
+                                                                    .subtitle!
+                                                                    .isNotEmpty)
+                                                              Text(
+                                                                opt.subtitle!,
+                                                                style: TextStyle(
+                                                                  fontSize: 11.5,
+                                                                  color: tokens
+                                                                      .textMuted,
+                                                                ),
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                              ),
+                                                          ],
+                                                        ),
                                                       ),
-                                                      if (opt.subtitle !=
-                                                              null &&
-                                                          opt
-                                                              .subtitle!
-                                                              .isNotEmpty)
-                                                        Text(
-                                                          opt.subtitle!,
-                                                          style: TextStyle(
-                                                            fontSize: 11.5,
-                                                            color: tokens
-                                                                .textMuted,
-                                                          ),
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
+                                                      if (selected)
+                                                        Icon(
+                                                          Icons.check_rounded,
+                                                          size: 16,
+                                                          color: tokens.accent,
                                                         ),
                                                     ],
                                                   ),
                                                 ),
-                                                if (selected)
-                                                  Icon(
-                                                    Icons.check_rounded,
-                                                    size: 16,
-                                                    color: tokens.accent,
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
+              ),
             );
           },
         );
@@ -310,6 +406,13 @@ class _AncoraDropdownState<T> extends State<AncoraDropdown<T>> {
 
     Overlay.of(context, rootOverlay: true).insert(_overlayEntry!);
     setState(() => _isOpen = true);
+    if (!widget.searchable) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _isOpen) {
+          _overlayFocus.requestFocus();
+        }
+      });
+    }
   }
 
   @override
@@ -323,61 +426,83 @@ class _AncoraDropdownState<T> extends State<AncoraDropdown<T>> {
       }
     }
 
-    return CompositedTransformTarget(
-      link: _layerLink,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: _toggle,
-          child: AnimatedContainer(
-            duration: AncoraMotion.duration(context, AncoraMotion.fast),
-            padding: EdgeInsets.symmetric(
-              horizontal: widget.compact ? 11 : 14,
-              vertical: widget.compact ? 7 : 10,
-            ),
-            decoration: BoxDecoration(
-              color: tokens.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _isOpen
-                    ? tokens.accent
-                    : (_hovered ? tokens.borderStrong : tokens.border),
-                width: _isOpen ? 1.5 : 1.0,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.prefixIcon != null) ...[
-                  Icon(widget.prefixIcon, size: 17, color: tokens.accent),
-                  const SizedBox(width: 8),
-                ],
-                Flexible(
-                  child: Text(
-                    selectedOption?.label ?? widget.hint,
-                    style: TextStyle(
-                      fontSize: widget.compact ? 12.5 : 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: selectedOption != null
-                          ? tokens.textPrimary
-                          : tokens.textMuted,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                AnimatedRotation(
-                  turns: _isOpen ? 0.5 : 0.0,
+    return Semantics(
+      button: true,
+      toggled: _isOpen,
+      label: selectedOption != null
+          ? '${widget.hint}: ${selectedOption.label}'
+          : widget.hint,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter): _toggle,
+          const SingleActivator(LogicalKeyboardKey.space): _toggle,
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (_isOpen) _removeOverlay();
+          },
+        },
+        child: Focus(
+          focusNode: _triggerFocus,
+          child: CompositedTransformTarget(
+            link: _layerLink,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setState(() => _hovered = true),
+              onExit: (_) => setState(() => _hovered = false),
+              child: GestureDetector(
+                onTap: _toggle,
+                child: AnimatedContainer(
                   duration: AncoraMotion.duration(context, AncoraMotion.fast),
-                  child: Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 18,
-                    color: tokens.textSecondary,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: widget.compact ? 11 : 14,
+                    vertical: widget.compact ? 7 : 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: tokens.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isOpen
+                          ? tokens.accent
+                          : (_hovered ? tokens.borderStrong : tokens.border),
+                      width: _isOpen ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.prefixIcon != null) ...[
+                        Icon(widget.prefixIcon, size: 17, color: tokens.accent),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Text(
+                          selectedOption?.label ?? widget.hint,
+                          style: TextStyle(
+                            fontSize: widget.compact ? 12.5 : 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: selectedOption != null
+                                ? tokens.textPrimary
+                                : tokens.textMuted,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      AnimatedRotation(
+                        turns: _isOpen ? 0.5 : 0.0,
+                        duration: AncoraMotion.duration(
+                          context,
+                          AncoraMotion.fast,
+                        ),
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 18,
+                          color: tokens.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -522,6 +647,7 @@ class AncoraNavigationShell extends StatefulWidget {
     this.banner,
     this.brandIcon = Icons.anchor_rounded,
     this.onOpenCommandPalette,
+    this.topBarTitleOverride,
   });
 
   final String title;
@@ -537,6 +663,7 @@ class AncoraNavigationShell extends StatefulWidget {
   final Widget? banner;
   final IconData brandIcon;
   final VoidCallback? onOpenCommandPalette;
+  final String? topBarTitleOverride;
 
   @override
   State<AncoraNavigationShell> createState() => _AncoraNavigationShellState();
@@ -615,12 +742,20 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
               width: _collapsed ? 78 : 264,
               decoration: BoxDecoration(
                 color: tokens.surface,
-                border: Border(right: BorderSide(color: tokens.border)),
+                border: Border(
+                  right: BorderSide(
+                    color: tokens.isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : tokens.border,
+                  ),
+                ),
               ),
-              child: _buildSidebarContent(
-                tokens,
-                collapsed: _collapsed,
-                closeDrawerOnTap: false,
+              child: LayoutBuilder(
+                builder: (_, box) => _buildSidebarContent(
+                  tokens,
+                  collapsed: _collapsed || box.maxWidth < 190,
+                  closeDrawerOnTap: false,
+                ),
               ),
             ),
           Expanded(
@@ -649,7 +784,13 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
         color: tokens.surface,
-        border: Border(bottom: BorderSide(color: tokens.border)),
+        border: Border(
+          bottom: BorderSide(
+            color: tokens.isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : tokens.border,
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -660,8 +801,24 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
               icon: const Icon(Icons.menu_rounded),
             ),
             const SizedBox(width: 6),
+          ] else ...[
+            IconButton(
+              tooltip: _collapsed
+                  ? 'Expandir barra lateral'
+                  : 'Recolher barra lateral',
+              onPressed: () => setState(() => _collapsed = !_collapsed),
+              icon: Icon(
+                _collapsed
+                    ? Icons.view_sidebar_rounded
+                    : Icons.menu_open_rounded,
+                size: 20,
+                color: tokens.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 6),
           ],
           Expanded(
+            flex: isDesktop ? 2 : 1,
             child: Row(
               children: [
                 if (current != null) ...[
@@ -674,7 +831,9 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
                 ],
                 Flexible(
                   child: Text(
-                    current?.label ?? widget.title,
+                    widget.topBarTitleOverride ??
+                        current?.label ??
+                        widget.title,
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w800,
@@ -687,61 +846,95 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
               ],
             ),
           ),
-          if (widget.onOpenCommandPalette != null && isDesktop) ...[
-            InkWell(
-              onTap: widget.onOpenCommandPalette,
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: tokens.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: tokens.border),
-                ),
+          const SizedBox(width: 8),
+          Flexible(
+            flex: isDesktop ? 5 : 2,
+            fit: FlexFit.loose,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.search_rounded,
-                      size: 16,
-                      color: tokens.textMuted,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Ir para...',
-                      style: TextStyle(fontSize: 12.5, color: tokens.textMuted),
-                    ),
-                    const SizedBox(width: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: tokens.surface,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: tokens.borderStrong),
-                      ),
-                      child: Text(
-                        'Ctrl K',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: tokens.textSecondary,
+                    if (isDesktop) ...[
+                      const AncoraConnectionStatusPill(),
+                      const SizedBox(width: 8),
+                      const AncoraLiveClockPill(),
+                      const SizedBox(width: 10),
+                    ],
+                    if (widget.onOpenCommandPalette != null && isDesktop) ...[
+                      InkWell(
+                        onTap: widget.onOpenCommandPalette,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: tokens.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: tokens.isDark
+                                  ? Colors.white.withValues(alpha: 0.06)
+                                  : tokens.border,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.search_rounded,
+                                size: 16,
+                                color: tokens.textMuted,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Buscar ou ir para...',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: tokens.textMuted,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: tokens.surface,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: tokens.borderStrong,
+                                  ),
+                                ),
+                                child: Text(
+                                  'Ctrl K',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: tokens.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    ...widget.headerActions.map(
+                      (w) => Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: w,
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(width: 10),
-          ],
-          ...widget.headerActions.map(
-            (w) => Padding(padding: const EdgeInsets.only(left: 8), child: w),
           ),
         ],
       ),

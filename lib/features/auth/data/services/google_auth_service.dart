@@ -199,26 +199,38 @@ class AuthService {
       );
     }
 
-    final response = await _httpClient
-        .post(
-          Uri.parse('$_backendBaseUrl${ApiConfig.authGoogleEndpoint}'),
-          headers: const {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: jsonEncode({'idToken': idToken}),
-        )
-        .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+    final http.Response response;
+    try {
+      response = await _httpClient
+          .post(
+            Uri.parse('$_backendBaseUrl${ApiConfig.authGoogleEndpoint}'),
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'idToken': idToken}),
+          )
+          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+    } catch (_) {
+      throw const AuthException(
+        'Não foi possível conectar ao servidor para concluir o login com Google.',
+      );
+    }
     final googleBody = utf8.decode(response.bodyBytes, allowMalformed: true);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw AuthException(
         _extractErrorMessage(googleBody) ?? 'Falha ao autenticar no Google.',
       );
     }
-    final decoded = jsonDecode(googleBody);
-    final responseData = decoded is Map<String, dynamic>
-        ? decoded
-        : <String, dynamic>{};
+    Map<String, dynamic> responseData = <String, dynamic>{};
+    if (googleBody.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(googleBody);
+        if (decoded is Map<String, dynamic>) {
+          responseData = decoded;
+        }
+      } catch (_) {}
+    }
 
     final session = _sessionFromResponse(
       responseData,
@@ -226,6 +238,11 @@ class AuthService {
       fallbackEmail: googleUser.email,
       provider: 'google',
     );
+    if (session.token == null) {
+      throw const AuthException(
+        'A API autenticou com o Google, mas não retornou um token de acesso válido.',
+      );
+    }
     await _persistSession(session);
     return session;
   }
@@ -253,6 +270,60 @@ class AuthService {
   }) => signInWithEmailPassword(email: email, password: password);
 
   Future<AuthSession> refreshGoogleSession() => signInWithGoogle();
+
+  Future<AuthSession?> refreshAccessToken() async {
+    final current = await readSession();
+    final currentRefresh = current?.refreshToken?.trim();
+    if (current == null || currentRefresh == null || currentRefresh.isEmpty) {
+      return null;
+    }
+    try {
+      final response = await _httpClient
+          .post(
+            Uri.parse('$_backendBaseUrl/oauth2/token'),
+            headers: {
+              'Authorization':
+                  'Basic ${base64Encode(utf8.encode('${ApiConfig.oauthClientId}:${ApiConfig.oauthClientSecret}'))}',
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json',
+            },
+            body: {
+              'grant_type': 'refresh_token',
+              'refresh_token': currentRefresh,
+            },
+          )
+          .timeout(const Duration(seconds: ApiConfig.requestTimeoutSeconds));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      final bodyStr = utf8.decode(response.bodyBytes, allowMalformed: true);
+      final decoded = jsonDecode(bodyStr);
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+      final refreshed = _sessionFromResponse(
+        decoded,
+        fallbackName: current.userName,
+        fallbackEmail: current.userEmail,
+        provider: current.provider,
+      );
+      if (refreshed.token == null || refreshed.token!.isEmpty) {
+        return null;
+      }
+      final finalSession = AuthSession(
+        isAuthenticated: true,
+        token: refreshed.token,
+        refreshToken: refreshed.refreshToken ?? currentRefresh,
+        userName: refreshed.userName ?? current.userName,
+        userEmail: refreshed.userEmail ?? current.userEmail,
+        provider: refreshed.provider,
+      );
+      await _persistSession(finalSession);
+      return finalSession;
+    } catch (_) {
+      return null;
+    }
+  }
 
   AuthSession _sessionFromResponse(
     Map<String, dynamic> responseData, {

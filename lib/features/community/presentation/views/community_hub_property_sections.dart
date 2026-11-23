@@ -18,6 +18,7 @@ class _VehiclesSubView extends StatefulWidget {
 
 class _VehiclesSubViewState extends State<_VehiclesSubView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _vehicles = [];
   List<Map<String, dynamic>> _parkingSpots = [];
 
@@ -28,7 +29,10 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final results = await Future.wait([
         widget.api.listVehicles(widget.condominiumId),
@@ -43,8 +47,13 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -53,7 +62,8 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
     final descCtrl = TextEditingController();
     String spotType = 'RESIDENT';
 
-    await showDialog<void>(
+    try {
+      await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
@@ -224,6 +234,10 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
         ),
       ),
     );
+    } finally {
+      codeCtrl.dispose();
+      descCtrl.dispose();
+    }
   }
 
   Future<void> _openNewVehicleDialog() async {
@@ -234,7 +248,8 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
     String type = 'CAR';
     num? selectedSpotId;
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
@@ -335,17 +350,33 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
       ),
     );
 
-    if (ok == true && model.text.isNotEmpty && plate.text.isNotEmpty) {
-      await widget.api.createVehicle(
-        condoId: widget.condominiumId,
-        type: type,
-        brandModel: model.text.trim(),
-        color: color.text.trim().isEmpty ? 'Padrão' : color.text.trim(),
-        licensePlate: plate.text.trim().toUpperCase(),
-        parkingSpot: spot.text.trim().isEmpty ? null : spot.text.trim(),
-        parkingSpotId: selectedSpotId,
-      );
-      _load();
+      final modelVal = model.text.trim();
+      final plateVal = plate.text.trim().toUpperCase();
+      final colorVal = color.text.trim();
+      final spotVal = spot.text.trim();
+      if (ok == true && modelVal.isNotEmpty && plateVal.isNotEmpty) {
+        try {
+          await widget.api.createVehicle(
+            condoId: widget.condominiumId,
+            type: type,
+            brandModel: modelVal,
+            color: colorVal.isEmpty ? 'Padrão' : colorVal,
+            licensePlate: plateVal,
+            parkingSpot: spotVal.isEmpty ? null : spotVal,
+            parkingSpotId: selectedSpotId,
+          );
+          _load();
+        } catch (e) {
+          if (mounted) {
+            SaaSFeedback.showError(context, 'Erro ao cadastrar veículo: $e');
+          }
+        }
+      }
+    } finally {
+      model.dispose();
+      plate.dispose();
+      color.dispose();
+      spot.dispose();
     }
   }
 
@@ -398,6 +429,11 @@ class _VehiclesSubViewState extends State<_VehiclesSubView> {
                         message: 'Carregando veículos cadastrados...',
                       ),
                     ),
+                  )
+                : _error != null
+                ? SaaSErrorState(
+                    message: 'Falha ao carregar veículos: $_error',
+                    onRetry: _load,
                   )
                 : _vehicles.isEmpty
                 ? const SaaSEmptyState(
@@ -530,6 +566,7 @@ class _PetsSubView extends StatefulWidget {
 
 class _PetsSubViewState extends State<_PetsSubView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _pets = [];
 
   @override
@@ -539,7 +576,10 @@ class _PetsSubViewState extends State<_PetsSubView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listPets(widget.condominiumId);
       if (mounted) {
@@ -548,8 +588,13 @@ class _PetsSubViewState extends State<_PetsSubView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -560,7 +605,8 @@ class _PetsSubViewState extends State<_PetsSubView> {
     String size = 'MEDIUM';
     bool vaccinated = true;
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
@@ -629,16 +675,28 @@ class _PetsSubViewState extends State<_PetsSubView> {
       ),
     );
 
-    if (ok == true && name.text.isNotEmpty) {
-      await widget.api.createPet(
-        condoId: widget.condominiumId,
-        name: name.text.trim(),
-        species: species,
-        breed: breed.text.trim().isEmpty ? null : breed.text.trim(),
-        size: size,
-        vaccinated: vaccinated,
-      );
-      _load();
+      final nameVal = name.text.trim();
+      final breedVal = breed.text.trim();
+      if (ok == true && nameVal.isNotEmpty) {
+        try {
+          await widget.api.createPet(
+            condoId: widget.condominiumId,
+            name: nameVal,
+            species: species,
+            breed: breedVal.isEmpty ? null : breedVal,
+            size: size,
+            vaccinated: vaccinated,
+          );
+          _load();
+        } catch (e) {
+          if (mounted) {
+            SaaSFeedback.showError(context, 'Erro ao cadastrar pet: $e');
+          }
+        }
+      }
+    } finally {
+      name.dispose();
+      breed.dispose();
     }
   }
 
@@ -653,7 +711,8 @@ class _PetsSubViewState extends State<_PetsSubView> {
     String size = pet['size']?.toString() ?? 'MEDIUM';
     bool vaccinated = pet['vaccinated'] == true;
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
@@ -741,18 +800,34 @@ class _PetsSubViewState extends State<_PetsSubView> {
       ),
     );
 
-    if (ok == true && name.text.trim().isNotEmpty) {
-      await widget.api.updatePet(
-        pet['id'],
-        name: name.text.trim(),
-        species: species,
-        breed: breed.text.trim(),
-        size: size,
-        vaccinated: vaccinated,
-        notes: notes.text.trim(),
-        managerNotes: widget.canManage ? managerNotes.text.trim() : null,
-      );
-      _load();
+      final nameVal = name.text.trim();
+      final breedVal = breed.text.trim();
+      final notesVal = notes.text.trim();
+      final managerNotesVal = managerNotes.text.trim();
+      if (ok == true && nameVal.isNotEmpty) {
+        try {
+          await widget.api.updatePet(
+            pet['id'],
+            name: nameVal,
+            species: species,
+            breed: breedVal,
+            size: size,
+            vaccinated: vaccinated,
+            notes: notesVal,
+            managerNotes: widget.canManage ? managerNotesVal : null,
+          );
+          _load();
+        } catch (e) {
+          if (mounted) {
+            SaaSFeedback.showError(context, 'Erro ao atualizar pet: $e');
+          }
+        }
+      }
+    } finally {
+      name.dispose();
+      breed.dispose();
+      notes.dispose();
+      managerNotes.dispose();
     }
   }
 
@@ -789,6 +864,11 @@ class _PetsSubViewState extends State<_PetsSubView> {
                         message: 'Carregando pets cadastrados...',
                       ),
                     ),
+                  )
+                : _error != null
+                ? SaaSErrorState(
+                    message: 'Falha ao carregar pets: $_error',
+                    onRetry: _load,
                   )
                 : _pets.isEmpty
                 ? const SaaSEmptyState(
@@ -909,6 +989,7 @@ class _MovingSubView extends StatefulWidget {
 
 class _MovingSubViewState extends State<_MovingSubView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _requests = [];
 
   @override
@@ -918,7 +999,10 @@ class _MovingSubViewState extends State<_MovingSubView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listMovingRequests(widget.condominiumId);
       if (mounted) {
@@ -927,8 +1011,13 @@ class _MovingSubViewState extends State<_MovingSubView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -955,52 +1044,57 @@ class _MovingSubViewState extends State<_MovingSubView> {
 
   Future<void> _rejectMoving(num id) async {
     final reason = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Recusar Agendamento de Mudança'),
-        content: TextField(
-          controller: reason,
-          maxLines: 2,
-          decoration: const InputDecoration(
-            labelText: 'Motivo da recusa *',
-            hintText: 'Ex: Horário reservado para manutenção predial',
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Recusar Agendamento de Mudança'),
+          content: TextField(
+            controller: reason,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Motivo da recusa *',
+              hintText: 'Ex: Horário reservado para manutenção predial',
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Voltar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Confirmar Recusa'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Voltar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirmar Recusa'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && reason.text.isNotEmpty) {
-      try {
-        await widget.api.rejectMovingRequest(id, reason.text.trim());
-        _load();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Agendamento recusado.'),
-              backgroundColor: Color(0xFFDC2626),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      );
+      final reasonVal = reason.text.trim();
+      if (ok == true && reasonVal.isNotEmpty) {
+        try {
+          await widget.api.rejectMovingRequest(id, reasonVal);
+          _load();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Agendamento recusado.'),
+                backgroundColor: Color(0xFFDC2626),
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+          }
         }
       }
+    } finally {
+      reason.dispose();
     }
   }
 
@@ -1285,6 +1379,11 @@ class _MovingSubViewState extends State<_MovingSubView> {
                       ),
                     ),
                   )
+                : _error != null
+                ? SaaSErrorState(
+                    message: 'Falha ao carregar agendamentos: $_error',
+                    onRetry: _load,
+                  )
                 : _requests.isEmpty
                 ? const SaaSEmptyState(
                     icon: Icons.local_shipping_outlined,
@@ -1533,6 +1632,7 @@ class _DocumentsSubView extends StatefulWidget {
 
 class _DocumentsSubViewState extends State<_DocumentsSubView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _docs = [];
 
   @override
@@ -1549,7 +1649,8 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
     String category = 'INTERNAL_RULES';
     bool pinned = false;
 
-    final ok = await showDialog<bool>(
+    try {
+      final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
@@ -1653,39 +1754,49 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
       ),
     );
 
-    if (ok == true &&
-        title.text.trim().isNotEmpty &&
-        content.text.trim().isNotEmpty) {
-      try {
-        await widget.api.createDocument(
-          condoId: widget.condominiumId,
-          category: category,
-          title: title.text.trim(),
-          summary: summary.text.trim().isEmpty ? null : summary.text.trim(),
-          contentOrUrl: content.text.trim(),
-          pinned: pinned,
-        );
-        _load();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Documento publicado com sucesso!'),
-              backgroundColor: Color(0xFF15803D),
-            ),
+      final titleVal = title.text.trim();
+      final summaryVal = summary.text.trim();
+      final contentVal = content.text.trim();
+      if (ok == true && titleVal.isNotEmpty && contentVal.isNotEmpty) {
+        try {
+          await widget.api.createDocument(
+            condoId: widget.condominiumId,
+            category: category,
+            title: titleVal,
+            summary: summaryVal.isEmpty ? null : summaryVal,
+            contentOrUrl: contentVal,
+            pinned: pinned,
           );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+          _load();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Documento publicado com sucesso!'),
+                backgroundColor: Color(0xFF15803D),
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Erro: $e')));
+          }
         }
       }
+    } finally {
+      title.dispose();
+      summary.dispose();
+      content.dispose();
+      phone.dispose();
     }
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listDocuments(widget.condominiumId);
       if (mounted) {
@@ -1694,8 +1805,13 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -1733,6 +1849,11 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
                         message: 'Carregando documentos e atas...',
                       ),
                     ),
+                  )
+                : _error != null
+                ? SaaSErrorState(
+                    message: 'Falha ao carregar documentos: $_error',
+                    onRetry: _load,
                   )
                 : _docs.isEmpty
                 ? const SaaSEmptyState(

@@ -64,6 +64,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
   void didUpdateWidget(covariant UserProfilePage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.token != widget.token) {
+      _api.dispose();
       _api = HomeService(token: widget.token);
       _load();
     }
@@ -71,6 +72,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
   @override
   void dispose() {
+    _api.dispose();
     _name.dispose();
     _email.dispose();
     _phone.dispose();
@@ -231,7 +233,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
     }
     setState(() => _saving = true);
     try {
-      await _api.send(
+      final updatedProfile = await _api.send(
         'PUT',
         '/users/me/profile',
         body: {
@@ -243,14 +245,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
           'currentPassword': password,
           'googleIdToken': googleIdToken,
         },
-      );
-      final updatedProfile =
-          await _api.get('/users/me') as Map<String, dynamic>;
-      if (!mounted) return;
-      setState(() {
-        _profileImage = updatedProfile['profileImage'] as String?;
-        _phone.text = formatPhone(updatedProfile['phone']?.toString());
-      });
+      ) as Map<String, dynamic>;
       if (changingEmail) {
         if (widget.provider == 'google') {
           await widget.refreshGoogleSession();
@@ -258,6 +253,11 @@ class _UserProfilePageState extends State<UserProfilePage> {
           await widget.refreshWithCredentials(_email.text.trim(), password!);
         }
       }
+      if (!mounted) return;
+      setState(() {
+        _profileImage = updatedProfile['profileImage'] as String?;
+        _phone.text = formatPhone(updatedProfile['phone']?.toString());
+      });
       if (!mounted) return;
       _message('Seus dados foram atualizados com sucesso!');
       if (changingEmail) widget.onClose();

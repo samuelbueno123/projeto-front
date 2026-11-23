@@ -17,7 +17,9 @@ class DoormanSmartLockersView extends StatefulWidget {
 
 class _DoormanSmartLockersViewState extends State<DoormanSmartLockersView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _lockers = [];
+  List<Map<String, dynamic>> _units = [];
 
   @override
   void initState() {
@@ -26,93 +28,187 @@ class _DoormanSmartLockersViewState extends State<DoormanSmartLockersView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final list = await widget.api.listLockers(widget.condominiumId);
+      final results = await Future.wait<dynamic>([
+        widget.api.listLockers(widget.condominiumId),
+        widget.api.api
+            .get('/condominiums/${widget.condominiumId}/directory/units')
+            .catchError((_) => <dynamic>[]),
+      ]);
+      final lockers = results[0] is List<Map<String, dynamic>>
+          ? results[0] as List<Map<String, dynamic>>
+          : <Map<String, dynamic>>[];
+      final units = results[1] is List
+          ? (results[1] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+          : <Map<String, dynamic>>[];
       if (mounted) {
         setState(() {
-          _lockers = list;
+          _lockers = lockers;
+          _units = units;
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Não foi possível carregar os lockers: $e';
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _depositDialog() async {
     final comp = TextEditingController();
-    final unitId = TextEditingController();
     final courier = TextEditingController();
     final tracking = TextEditingController();
+    final manualUnitCtrl = TextEditingController();
+    num? selectedUnitId = _units.isNotEmpty ? _units.first['id'] as num? : null;
+    String? inlineError;
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Depositar em Armário Inteligente'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: comp,
-                decoration: const InputDecoration(
-                  labelText: 'Nº do Compartimento *',
-                  hintText: 'Ex: A-01',
-                ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: const Text('Depositar em Armário Inteligente'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (inlineError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        inlineError!,
+                        style: const TextStyle(
+                          color: SaaSColors.error,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  TextField(
+                    controller: comp,
+                    decoration: const InputDecoration(
+                      labelText: 'Nº do Compartimento *',
+                      hintText: 'Ex: A-01',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (_units.isNotEmpty)
+                    DropdownButtonFormField<num>(
+                      initialValue: selectedUnitId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Unidade Destino *',
+                        prefixIcon: Icon(Icons.home_work_outlined),
+                      ),
+                      items: _units.map((u) {
+                        final id = u['id'] as num?;
+                        final sector = u['sectorName']?.toString() ?? '';
+                        final ident = u['identifier']?.toString() ?? '#$id';
+                        return DropdownMenuItem<num>(
+                          value: id,
+                          child: Text(
+                            sector.isEmpty
+                                ? 'Unidade $ident'
+                                : '$sector • Unidade $ident',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (v) => setDlgState(() => selectedUnitId = v),
+                    )
+                  else
+                    TextField(
+                      controller: manualUnitCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'ID da Unidade Destino *',
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: courier,
+                    decoration: const InputDecoration(
+                      labelText: 'Entregadora (ex: Amazon, Sedex)',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: tracking,
+                    decoration: const InputDecoration(
+                      labelText: 'Código de Rastreio',
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: unitId,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'ID da Unidade Destino *',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: courier,
-                decoration: const InputDecoration(
-                  labelText: 'Entregadora (ex: Amazon, Sedex)',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: tracking,
-                decoration: const InputDecoration(
-                  labelText: 'Código de Rastreio',
-                ),
-              ),
-            ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final resolvedUnit = _units.isNotEmpty
+                    ? selectedUnitId
+                    : num.tryParse(manualUnitCtrl.text.trim());
+                if (comp.text.trim().isEmpty || resolvedUnit == null) {
+                  setDlgState(
+                    () => inlineError =
+                        'Informe o compartimento e selecione a unidade destino.',
+                  );
+                  return;
+                }
+                selectedUnitId = resolvedUnit;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Depositar & Gerar PIN'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Depositar & Gerar PIN'),
-          ),
-        ],
       ),
     );
 
-    if (ok == true && comp.text.isNotEmpty && unitId.text.isNotEmpty) {
-      final uId = num.tryParse(unitId.text.trim());
-      if (uId != null) {
+    final compVal = comp.text.trim();
+    final courierVal = courier.text.trim();
+    final trackingVal = tracking.text.trim();
+    comp.dispose();
+    courier.dispose();
+    tracking.dispose();
+    manualUnitCtrl.dispose();
+
+    if (ok == true && selectedUnitId != null && compVal.isNotEmpty) {
+      try {
         await widget.api.depositLocker(
           condoId: widget.condominiumId,
-          compartmentNumber: comp.text.trim(),
-          unitId: uId,
-          courierName: courier.text.trim().isEmpty ? null : courier.text.trim(),
-          trackingCode: tracking.text.trim().isEmpty
-              ? null
-              : tracking.text.trim(),
+          compartmentNumber: compVal,
+          unitId: selectedUnitId!,
+          courierName: courierVal.isEmpty ? null : courierVal,
+          trackingCode: trackingVal.isEmpty ? null : trackingVal,
         );
+        if (mounted) {
+          SaaSFeedback.showSuccess(
+            context,
+            'Encomenda depositada no locker $compVal com PIN gerado!',
+          );
+        }
         _load();
+      } catch (e) {
+        if (mounted) {
+          SaaSFeedback.showError(context, 'Erro ao depositar no locker: $e');
+        }
       }
     }
   }
@@ -151,6 +247,8 @@ class _DoormanSmartLockersViewState extends State<DoormanSmartLockersView> {
                       ),
                     ),
                   )
+                : _error != null
+                ? SaaSErrorState(message: _error!, onRetry: _load)
                 : _lockers.isEmpty
                 ? const SaaSEmptyState(
                     icon: Icons.all_inbox_outlined,
@@ -230,6 +328,7 @@ class DoormanLostFoundView extends StatefulWidget {
 
 class _DoormanLostFoundViewState extends State<DoormanLostFoundView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _items = [];
 
   @override
@@ -239,7 +338,10 @@ class _DoormanLostFoundViewState extends State<DoormanLostFoundView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listLostFound(widget.condominiumId);
       if (mounted) {
@@ -248,8 +350,13 @@ class _DoormanLostFoundViewState extends State<DoormanLostFoundView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Erro ao carregar achados e perdidos: $e';
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -257,72 +364,102 @@ class _DoormanLostFoundViewState extends State<DoormanLostFoundView> {
     final title = TextEditingController();
     final desc = TextEditingController();
     final loc = TextEditingController();
+    String? inlineError;
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Registrar Objeto Encontrado'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: title,
-                decoration: const InputDecoration(
-                  labelText: 'Objeto *',
-                  hintText: 'Ex: Chaveiro com tag azul',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: const Text('Registrar Objeto Encontrado'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (inlineError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      inlineError!,
+                      style: const TextStyle(color: SaaSColors.error, fontSize: 12),
+                    ),
+                  ),
+                TextField(
+                  controller: title,
+                  decoration: const InputDecoration(
+                    labelText: 'Objeto *',
+                    hintText: 'Ex: Chaveiro com tag azul',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: loc,
-                decoration: const InputDecoration(
-                  labelText: 'Local onde foi achado',
-                  hintText: 'Ex: Elevador Social Bloco A',
+                const SizedBox(height: 10),
+                TextField(
+                  controller: loc,
+                  decoration: const InputDecoration(
+                    labelText: 'Local onde foi achado',
+                    hintText: 'Ex: Elevador Social Bloco A',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: desc,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Descrição detalhada',
+                const SizedBox(height: 10),
+                TextField(
+                  controller: desc,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Descrição detalhada',
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (title.text.trim().isEmpty) {
+                  setDlgState(() => inlineError = 'Informe o nome do objeto.');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Registrar'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Registrar'),
-          ),
-        ],
       ),
     );
 
-    if (ok == true && title.text.isNotEmpty) {
-      await widget.api.createLostFound(
-        condoId: widget.condominiumId,
-        type: 'FOUND',
-        title: title.text.trim(),
-        description: desc.text.trim().isEmpty
-            ? 'Sem detalhes adicionais'
-            : desc.text.trim(),
-        location: loc.text.trim().isEmpty ? null : loc.text.trim(),
-      );
-      _load();
+    final titleVal = title.text.trim();
+    final descVal = desc.text.trim();
+    final locVal = loc.text.trim();
+    title.dispose();
+    desc.dispose();
+    loc.dispose();
+
+    if (ok == true && titleVal.isNotEmpty) {
+      try {
+        await widget.api.createLostFound(
+          condoId: widget.condominiumId,
+          type: 'FOUND',
+          title: titleVal,
+          description: descVal.isEmpty ? 'Sem detalhes adicionais' : descVal,
+          location: locVal.isEmpty ? null : locVal,
+        );
+        _load();
+      } catch (e) {
+        if (mounted) SaaSFeedback.showError(context, 'Erro ao registrar: $e');
+      }
     }
   }
 
   Future<void> _returnItem(num id) async {
-    await widget.api.returnLostFound(id);
-    _load();
+    try {
+      await widget.api.returnLostFound(id);
+      _load();
+    } catch (e) {
+      if (mounted) SaaSFeedback.showError(context, 'Erro ao devolver item: $e');
+    }
   }
 
   @override
@@ -359,6 +496,8 @@ class _DoormanLostFoundViewState extends State<DoormanLostFoundView> {
                       ),
                     ),
                   )
+                : _error != null
+                ? SaaSErrorState(message: _error!, onRetry: _load)
                 : _items.isEmpty
                 ? const SaaSEmptyState(
                     icon: Icons.inventory_outlined,

@@ -53,6 +53,8 @@ class _EmergencySosBannerState extends State<EmergencySosBanner> {
   void didUpdateWidget(covariant EmergencySosBanner oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.condominiumId != widget.condominiumId) {
+      _activeAlerts = [];
+      _loading = false;
       _loadActiveAlerts();
     }
   }

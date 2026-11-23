@@ -15,10 +15,12 @@ class NotificationsPage extends StatefulWidget {
     required this.api,
     this.condominiumId,
     this.onInvitationChanged,
+    this.isEmbedded = false,
   });
   final HomeService api;
   final int? condominiumId;
   final Future<void> Function()? onInvitationChanged;
+  final bool isEmbedded;
 
   @override
   State<NotificationsPage> createState() => _NotificationsPageState();
@@ -40,10 +42,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
   void initState() {
     super.initState();
     _sseSub = RealtimeService.instance.events.listen((event) {
-      if (event.type == 'NOTIFICATION' || event.type == 'SYSTEM_ANNOUNCEMENT') {
+      if (event.condominiumId != null &&
+          widget.condominiumId != null &&
+          event.condominiumId != widget.condominiumId) {
+        return;
+      }
+      if (event.type == RealtimeEventTypes.notification ||
+          event.type == RealtimeEventTypes.systemAnnouncement ||
+          event.type == RealtimeEventTypes.subscriptionUpdated) {
         _refresh();
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant NotificationsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.condominiumId != widget.condominiumId) {
+      _refresh();
+    }
   }
 
   @override
@@ -78,7 +95,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   Future<void> _markAllAsRead() async {
     try {
-      await widget.api.send('PATCH', '/notifications/read-all');
+      final condoParam = widget.condominiumId != null
+          ? '?condominiumId=${widget.condominiumId}'
+          : '';
+      await widget.api.send('PATCH', '/notifications/read-all$condoParam');
       await _refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -104,7 +124,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
     })
   >
   _fetch() async {
-    final noticeResult = await widget.api.get('/notifications/my');
+    final condoQuery = widget.condominiumId != null
+        ? '?condominiumId=${widget.condominiumId}'
+        : '';
+    final noticeResult = await widget.api.get('/notifications/my$condoQuery');
     dynamic announcementResult;
     if (widget.condominiumId != null) {
       try {
@@ -113,9 +136,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
         );
       } catch (_) {}
     }
-    final notices = noticeResult is List
+    var notices = noticeResult is List
         ? noticeResult.whereType<Map<String, dynamic>>().toList()
         : <Map<String, dynamic>>[];
+    if (widget.condominiumId != null) {
+      notices = notices.where((n) {
+        final cid = (n['condominiumId'] as num?)?.toInt();
+        if (cid != null) return cid == widget.condominiumId;
+        return n['type'] != 'ANNOUNCEMENT';
+      }).toList();
+    }
     final announcements = announcementResult is List
         ? announcementResult.whereType<Map<String, dynamic>>().toList()
         : <Map<String, dynamic>>[];
@@ -205,26 +235,34 @@ class _NotificationsPageState extends State<NotificationsPage> {
     'CONDOMINIUM': 'Condomínio',
   };
 
-  (IconData, Color, Color) _originStyle(String origin) => switch (origin) {
-    'ADMIN' => (
-      Icons.admin_panel_settings_outlined,
-      const Color(0xFFEDE9FE),
-      const Color(0xFF6D28D9),
-    ),
-    'CONDOMINIUM' => (
-      Icons.apartment_rounded,
-      const Color(0xFFFEF3C7),
-      const Color(0xFFB45309),
-    ),
-    _ => (
-      Icons.smart_toy_outlined,
-      const Color(0xFFE0F2FE),
-      const Color(0xFF0369A1),
-    ),
-  };
+  (IconData, Color, Color) _originStyle(String origin, bool isDark) =>
+      switch (origin) {
+        'ADMIN' => (
+          Icons.admin_panel_settings_outlined,
+          isDark
+              ? SaaSColors.purple.withValues(alpha: 0.18)
+              : const Color(0xFFEDE9FE),
+          isDark ? const Color(0xFFC4B5FD) : const Color(0xFF6D28D9),
+        ),
+        'CONDOMINIUM' => (
+          Icons.apartment_rounded,
+          isDark
+              ? SaaSColors.warning.withValues(alpha: 0.18)
+              : const Color(0xFFFEF3C7),
+          isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309),
+        ),
+        _ => (
+          Icons.smart_toy_outlined,
+          isDark
+              ? SaaSColors.info.withValues(alpha: 0.18)
+              : const Color(0xFFE0F2FE),
+          isDark ? const Color(0xFF93C5FD) : const Color(0xFF0369A1),
+        ),
+      };
 
   Widget _originTag(String origin, {String? detail}) {
-    final (icon, bg, fg) = _originStyle(origin);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final (icon, bg, fg) = _originStyle(origin, isDark);
     final label = _originLabels[origin] ?? origin;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -262,26 +300,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: SaaSColors.background(isDark),
-      appBar: AppBar(
-        title: const Text('Central de Notificações'),
-        backgroundColor: SaaSColors.surface(isDark),
-        actions: [
-          IconButton(
-            tooltip: 'Marcar todas como lidas',
-            onPressed: _confirmMarkAllAsRead,
-            icon: const Icon(Icons.done_all_rounded),
-          ),
-          IconButton(
-            tooltip: 'Atualizar notificações',
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body:
-          FutureBuilder<
+    final bodyContent =
+        FutureBuilder<
             ({
               List<Map<String, dynamic>> notices,
               List<Map<String, dynamic>> announcements,
@@ -457,7 +477,31 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 ),
               );
             },
+          );
+
+    if (widget.isEmbedded) {
+      return bodyContent;
+    }
+
+    return Scaffold(
+      backgroundColor: SaaSColors.background(isDark),
+      appBar: AppBar(
+        title: const Text('Central de Notificações'),
+        backgroundColor: SaaSColors.surface(isDark),
+        actions: [
+          IconButton(
+            tooltip: 'Marcar todas como lidas',
+            onPressed: _confirmMarkAllAsRead,
+            icon: const Icon(Icons.done_all_rounded),
           ),
+          IconButton(
+            tooltip: 'Atualizar notificações',
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: bodyContent,
     );
   }
 
@@ -584,6 +628,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 color: SaaSColors.textSecondary(isDark),
                 height: 1.4,
               ),
+            ),
+          ],
+          if (item['imageUrl'] != null &&
+              item['imageUrl'].toString().trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ClickableImagePreview(
+              imageSource: item['imageUrl'].toString(),
+              title: title,
+              height: 160,
             ),
           ],
           if (isInvitation) ...[

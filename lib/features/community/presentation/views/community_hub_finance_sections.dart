@@ -199,19 +199,26 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
       ),
     );
 
+    final titleText = title.text.trim();
+    final descText = desc.text.trim();
+    final locationText = location.text.trim();
+    final quorumVal = int.tryParse(quorumCtrl.text.trim()) ?? 50;
+    title.dispose();
+    desc.dispose();
+    location.dispose();
+    quorumCtrl.dispose();
+
     if (ok == true) {
       try {
         await widget.api.createAssembly(
           widget.condominiumId,
-          title: title.text.trim(),
-          description: desc.text.trim().isNotEmpty ? desc.text.trim() : null,
+          title: titleText,
+          description: descText.isNotEmpty ? descText : null,
           type: type,
           meetingDate: meetingDate,
-          locationOrLink: location.text.trim().isNotEmpty
-              ? location.text.trim()
-              : null,
+          locationOrLink: locationText.isNotEmpty ? locationText : null,
           blockDelinquentUnits: blockDelinquentUnits,
-          quorumMinimumPercent: int.tryParse(quorumCtrl.text.trim()) ?? 50,
+          quorumMinimumPercent: quorumVal,
         );
         _load();
       } catch (e) {
@@ -286,12 +293,17 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
       ),
     );
 
+    final titleText = title.text.trim();
+    final descText = desc.text.trim();
+    title.dispose();
+    desc.dispose();
+
     if (ok == true) {
       try {
         await widget.api.addAssemblyTopic(
           assemblyId,
-          title: title.text.trim(),
-          description: desc.text.trim().isNotEmpty ? desc.text.trim() : null,
+          title: titleText,
+          description: descText.isNotEmpty ? descText : null,
         );
         _load();
       } catch (e) {
@@ -373,23 +385,29 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                         ?.whereType<Map<String, dynamic>>()
                         .toList() ??
                     [];
+                final isDark = Theme.of(context).brightness == Brightness.dark;
                 final dateStr = a['meetingDate'] != null
                     ? a['meetingDate'].toString().replaceFirst('T', ' ')
                     : '';
                 return Card(
                   margin: const EdgeInsets.only(bottom: 16),
+                  color: SaaSColors.surface(isDark),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
-                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    side: BorderSide(color: SaaSColors.border(isDark)),
                   ),
                   elevation: 0,
                   child: ExpansionTile(
                     initiallyExpanded: index == 0,
-                    leading: const CircleAvatar(
-                      backgroundColor: Color(0xFFEFF6FF),
+                    leading: CircleAvatar(
+                      backgroundColor: SaaSColors.primary.withValues(
+                        alpha: isDark ? 0.22 : 0.14,
+                      ),
                       child: Icon(
                         Icons.groups_outlined,
-                        color: Color(0xFF2563EB),
+                        color: isDark
+                            ? const Color(0xFF93C5FD)
+                            : const Color(0xFF2563EB),
                       ),
                     ),
                     title: Text(
@@ -521,10 +539,12 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                             ),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
+                              color: isDark
+                                  ? SaaSColors.deepNavy
+                                  : const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: const Color(0xFFE2E8F0),
+                                color: SaaSColors.border(isDark),
                               ),
                             ),
                             child: Column(
@@ -563,8 +583,8 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                                   const SizedBox(height: 4),
                                   Text(
                                     t['description'],
-                                    style: const TextStyle(
-                                      color: Color(0xFF64748B),
+                                    style: TextStyle(
+                                      color: SaaSColors.textSecondary(isDark),
                                       fontSize: 12.5,
                                     ),
                                   ),
@@ -578,13 +598,17 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                                         vertical: 3,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFDCFCE7),
+                                        color: SaaSColors.success.withValues(
+                                          alpha: isDark ? 0.20 : 0.14,
+                                        ),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
                                         'Sim: $inFavor',
-                                        style: const TextStyle(
-                                          color: Color(0xFF15803D),
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? const Color(0xFF34D399)
+                                              : const Color(0xFF15803D),
                                           fontWeight: FontWeight.bold,
                                           fontSize: 11.5,
                                         ),
@@ -597,13 +621,17 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                                         vertical: 3,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFFEE2E2),
+                                        color: SaaSColors.error.withValues(
+                                          alpha: isDark ? 0.20 : 0.14,
+                                        ),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
                                         'Não: $against',
-                                        style: const TextStyle(
-                                          color: Color(0xFFB91C1C),
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? const Color(0xFFF87171)
+                                              : const Color(0xFFB91C1C),
                                           fontWeight: FontWeight.bold,
                                           fontSize: 11.5,
                                         ),
@@ -616,13 +644,17 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                                         vertical: 3,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFF1F5F9),
+                                        color: isDark
+                                            ? const Color(0xFF1E293B)
+                                            : const Color(0xFFF1F5F9),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
                                         'Abstenções: $abstain',
-                                        style: const TextStyle(
-                                          color: Color(0xFF475569),
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? const Color(0xFFCBD5E1)
+                                              : const Color(0xFF475569),
                                           fontSize: 11.5,
                                         ),
                                       ),
@@ -663,12 +695,13 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                                     children: [
                                       FilledButton.tonal(
                                         style: FilledButton.styleFrom(
-                                          backgroundColor: const Color(
-                                            0xFFDCFCE7,
-                                          ),
-                                          foregroundColor: const Color(
-                                            0xFF15803D,
-                                          ),
+                                          backgroundColor: SaaSColors.success
+                                              .withValues(
+                                                alpha: isDark ? 0.22 : 0.16,
+                                              ),
+                                          foregroundColor: isDark
+                                              ? const Color(0xFF34D399)
+                                              : const Color(0xFF15803D),
                                         ),
                                         onPressed: () =>
                                             _castVote(t['id'], 'IN_FAVOR'),
@@ -676,12 +709,13 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                                       ),
                                       FilledButton.tonal(
                                         style: FilledButton.styleFrom(
-                                          backgroundColor: const Color(
-                                            0xFFFEE2E2,
-                                          ),
-                                          foregroundColor: const Color(
-                                            0xFFB91C1C,
-                                          ),
+                                          backgroundColor: SaaSColors.error
+                                              .withValues(
+                                                alpha: isDark ? 0.22 : 0.16,
+                                              ),
+                                          foregroundColor: isDark
+                                              ? const Color(0xFFF87171)
+                                              : const Color(0xFFB91C1C),
                                         ),
                                         onPressed: () =>
                                             _castVote(t['id'], 'AGAINST'),
@@ -689,12 +723,12 @@ class _AssembliesSubViewState extends State<_AssembliesSubView> {
                                       ),
                                       FilledButton.tonal(
                                         style: FilledButton.styleFrom(
-                                          backgroundColor: const Color(
-                                            0xFFF1F5F9,
-                                          ),
-                                          foregroundColor: const Color(
-                                            0xFF475569,
-                                          ),
+                                          backgroundColor: isDark
+                                              ? const Color(0xFF1E293B)
+                                              : const Color(0xFFF1F5F9),
+                                          foregroundColor: isDark
+                                              ? const Color(0xFFCBD5E1)
+                                              : const Color(0xFF475569),
                                         ),
                                         onPressed: () =>
                                             _castVote(t['id'], 'ABSTAIN'),
@@ -947,20 +981,31 @@ class _FinancialSubViewState extends State<_FinancialSubView> {
       ),
     );
 
+    final descText = desc.text.trim();
+    final parsedAmount = double.tryParse(amount.text.replaceAll(',', '.').trim());
+    final supplierText = supplier.text.trim();
+    final docText = docNumber.text.trim();
+    desc.dispose();
+    amount.dispose();
+    supplier.dispose();
+    docNumber.dispose();
+
     if (ok == true) {
+      if (parsedAmount == null) {
+        if (mounted) {
+          SaaSFeedback.showWarning(context, 'Informe um valor válido para a despesa.');
+        }
+        return;
+      }
       try {
         await widget.api.createExpense(
           widget.condominiumId,
           category: category,
-          description: desc.text.trim(),
-          amount: double.parse(amount.text.replaceAll(',', '.')),
+          description: descText,
+          amount: parsedAmount,
           dueDate: dueDate,
-          supplier: supplier.text.trim().isNotEmpty
-              ? supplier.text.trim()
-              : null,
-          documentNumber: docNumber.text.trim().isNotEmpty
-              ? docNumber.text.trim()
-              : null,
+          supplier: supplierText.isNotEmpty ? supplierText : null,
+          documentNumber: docText.isNotEmpty ? docText : null,
         );
         _load();
       } catch (e) {
@@ -1022,176 +1067,213 @@ class _FinancialSubViewState extends State<_FinancialSubView> {
             )
           : RefreshIndicator(
               onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                children: [
-                  // KPI Cards Row
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      _kpiCard(
-                        'Total Arrecadado',
-                        'R\$ ${totalCollected.toStringAsFixed(2)}',
-                        Icons.arrow_downward_rounded,
-                        const Color(0xFF10B981),
+              child: CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // KPI Cards Row
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              _kpiCard(
+                                'Total Arrecadado',
+                                'R\$ ${totalCollected.toStringAsFixed(2)}',
+                                Icons.arrow_downward_rounded,
+                                const Color(0xFF10B981),
+                              ),
+                              _kpiCard(
+                                'Despesas Pagas',
+                                'R\$ ${totalExpenses.toStringAsFixed(2)}',
+                                Icons.arrow_upward_rounded,
+                                const Color(0xFFEF4444),
+                              ),
+                              _kpiCard(
+                                'Saldo Operacional',
+                                'R\$ ${netBalance.toStringAsFixed(2)}',
+                                Icons.account_balance_rounded,
+                                netBalance >= 0
+                                    ? const Color(0xFF2563EB)
+                                    : const Color(0xFFEF4444),
+                              ),
+                              _kpiCard(
+                                'Total Previsto',
+                                'R\$ ${totalInvoiced.toStringAsFixed(2)}',
+                                Icons.receipt_long_outlined,
+                                const Color(0xFF64748B),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Histórico de Despesas do Condomínio',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              Text(
+                                '${_expenses.length} lançamentos',
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      _kpiCard(
-                        'Despesas Pagas',
-                        'R\$ ${totalExpenses.toStringAsFixed(2)}',
-                        Icons.arrow_upward_rounded,
-                        const Color(0xFFEF4444),
-                      ),
-                      _kpiCard(
-                        'Saldo Operacional',
-                        'R\$ ${netBalance.toStringAsFixed(2)}',
-                        Icons.account_balance_rounded,
-                        netBalance >= 0
-                            ? const Color(0xFF2563EB)
-                            : const Color(0xFFEF4444),
-                      ),
-                      _kpiCard(
-                        'Total Previsto',
-                        'R\$ ${totalInvoiced.toStringAsFixed(2)}',
-                        Icons.receipt_long_outlined,
-                        const Color(0xFF64748B),
-                      ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Histórico de Despesas do Condomínio',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Text(
-                        '${_expenses.length} lançamentos',
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
                   if (_expenses.isEmpty)
-                    const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'Nenhuma despesa registrada para este condomínio.',
-                          textAlign: TextAlign.center,
+                    const SliverPadding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 80),
+                      sliver: SliverToBoxAdapter(
+                        child: Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text(
+                              'Nenhuma despesa registrada para este condomínio.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
                         ),
                       ),
                     )
                   else
-                    ..._expenses.map((exp) {
-                      final status = exp['status']?.toString() ?? 'PENDING';
-                      final isPaid = status == 'PAID';
-                      final amountVal =
-                          (exp['amount'] as num?)?.toDouble() ?? 0.0;
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
-                          ),
-                          leading: CircleAvatar(
-                            backgroundColor: isPaid
-                                ? const Color(0xFFDCFCE7)
-                                : const Color(0xFFFEF3C7),
-                            child: Icon(
-                              isPaid
-                                  ? Icons.check_circle_outline
-                                  : Icons.pending_actions_rounded,
-                              color: isPaid
-                                  ? const Color(0xFF15803D)
-                                  : const Color(0xFFD97706),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                      sliver: SliverList.builder(
+                        itemCount: _expenses.length,
+                        itemBuilder: (context, idx) {
+                          final exp = _expenses[idx];
+                          final status = exp['status']?.toString() ?? 'PENDING';
+                          final isDark =
+                              Theme.of(context).brightness == Brightness.dark;
+                          final isPaid = status == 'PAID';
+                          final amountVal =
+                              (exp['amount'] as num?)?.toDouble() ?? 0.0;
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            elevation: 0,
+                            color: SaaSColors.surface(isDark),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: BorderSide(color: SaaSColors.border(isDark)),
                             ),
-                          ),
-                          title: Text(
-                            exp['description'] ?? 'Despesa',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14.5,
-                            ),
-                          ),
-                          subtitle: Text(
-                            'Venc.: ${exp['dueDate'] ?? ''} • Fornecedor: ${exp['supplier'] ?? 'Geral'}\nCat.: ${exp['category'] ?? ''}',
-                            style: const TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 12.5,
-                            ),
-                          ),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                'R\$ ${amountVal.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: Color(0xFF1E293B),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 6,
+                              ),
+                              leading: CircleAvatar(
+                                backgroundColor:
+                                    (isPaid
+                                            ? SaaSColors.success
+                                            : SaaSColors.warning)
+                                        .withValues(alpha: isDark ? 0.20 : 0.14),
+                                child: Icon(
+                                  isPaid
+                                      ? Icons.check_circle_outline
+                                      : Icons.pending_actions_rounded,
+                                  color: isPaid
+                                      ? (isDark
+                                            ? const Color(0xFF34D399)
+                                            : const Color(0xFF15803D))
+                                      : (isDark
+                                            ? const Color(0xFFFBBF24)
+                                            : const Color(0xFFD97706)),
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              if (widget.canManage && !isPaid)
-                                SizedBox(
-                                  height: 26,
-                                  child: FilledButton.tonal(
-                                    style: FilledButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                      ),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                    onPressed: () => _payExpense(exp['id']),
-                                    child: const Text(
-                                      'Liquidar',
-                                      style: TextStyle(fontSize: 11.5),
-                                    ),
-                                  ),
-                                )
-                              else
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isPaid
-                                        ? const Color(0xFFDCFCE7)
-                                        : const Color(0xFFFEF3C7),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    isPaid ? 'Pago' : 'Pendente',
-                                    style: TextStyle(
-                                      color: isPaid
-                                          ? const Color(0xFF15803D)
-                                          : const Color(0xFFD97706),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                              title: Text(
+                                exp['description'] ?? 'Despesa',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14.5,
                                 ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
+                              ),
+                              subtitle: Text(
+                                'Venc.: ${exp['dueDate'] ?? ''} • Fornecedor: ${exp['supplier'] ?? 'Geral'}\nCat.: ${exp['category'] ?? ''}',
+                                style: TextStyle(
+                                  color: SaaSColors.textSecondary(isDark),
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                              trailing: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    'R\$ ${amountVal.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                      color: SaaSColors.textPrimary(isDark),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  if (widget.canManage && !isPaid)
+                                    SizedBox(
+                                      height: 26,
+                                      child: FilledButton.tonal(
+                                        style: FilledButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                        onPressed: () => _payExpense(exp['id']),
+                                        child: const Text(
+                                          'Liquidar',
+                                          style: TextStyle(fontSize: 11.5),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            (isPaid
+                                                    ? SaaSColors.success
+                                                    : SaaSColors.warning)
+                                                .withValues(
+                                                  alpha: isDark ? 0.20 : 0.14,
+                                                ),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        isPaid ? 'Pago' : 'Pendente',
+                                        style: TextStyle(
+                                          color: isPaid
+                                              ? (isDark
+                                                    ? const Color(0xFF34D399)
+                                                    : const Color(0xFF15803D))
+                                              : (isDark
+                                                    ? const Color(0xFFFBBF24)
+                                                    : const Color(0xFFD97706)),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1199,13 +1281,14 @@ class _FinancialSubViewState extends State<_FinancialSubView> {
   }
 
   Widget _kpiCard(String label, String value, IconData icon, Color color) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: 170,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: SaaSColors.surface(isDark),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: SaaSColors.border(isDark)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.02),
@@ -1410,16 +1493,27 @@ class _LostFoundSubViewState extends State<_LostFoundSubView> {
       ),
     );
 
+    final titleVal = titleCtrl.text.trim();
+    final descVal = descCtrl.text.trim();
+    final locVal = locCtrl.text.trim();
+    titleCtrl.dispose();
+    descCtrl.dispose();
+    locCtrl.dispose();
+
     if (ok == true) {
-      await widget.api.createLostFound(
-        condoId: widget.condominiumId,
-        type: type,
-        category: category,
-        title: titleCtrl.text.trim(),
-        description: descCtrl.text.trim(),
-        location: locCtrl.text.trim(),
-      );
-      _load();
+      try {
+        await widget.api.createLostFound(
+          condoId: widget.condominiumId,
+          type: type,
+          category: category,
+          title: titleVal,
+          description: descVal,
+          location: locVal,
+        );
+        _load();
+      } catch (e) {
+        if (mounted) SaaSFeedback.showError(context, 'Erro ao publicar: $e');
+      }
     }
   }
 
@@ -1430,8 +1524,12 @@ class _LostFoundSubViewState extends State<_LostFoundSubView> {
       messages = await widget.api.listLostFoundMessages(item['id']);
     } catch (_) {}
 
-    if (!mounted) return;
-    await showDialog<void>(
+    if (!mounted) {
+      msgCtrl.dispose();
+      return;
+    }
+    try {
+      await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (c, setD) => AlertDialog(
@@ -1514,6 +1612,9 @@ class _LostFoundSubViewState extends State<_LostFoundSubView> {
         ),
       ),
     );
+    } finally {
+      msgCtrl.dispose();
+    }
   }
 
   @override
@@ -1562,14 +1663,17 @@ class _LostFoundSubViewState extends State<_LostFoundSubView> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, idx) {
                       final it = _items[idx];
+                      final isDark =
+                          Theme.of(context).brightness == Brightness.dark;
                       final isFound = it['type'] == 'FOUND';
                       final status = it['status']?.toString() ?? 'OPEN';
                       final isOpen = status == 'OPEN' || status == 'CLAIMED';
                       return Card(
                         elevation: 0,
+                        color: SaaSColors.surface(isDark),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                          side: BorderSide(color: SaaSColors.border(isDark)),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(14),
@@ -1586,13 +1690,21 @@ class _LostFoundSubViewState extends State<_LostFoundSubView> {
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
                                         color: isFound
-                                            ? const Color(0xFF15803D)
-                                            : const Color(0xFFB45309),
+                                            ? (isDark
+                                                  ? const Color(0xFF34D399)
+                                                  : const Color(0xFF15803D))
+                                            : (isDark
+                                                  ? const Color(0xFFFBBF24)
+                                                  : const Color(0xFFB45309)),
                                       ),
                                     ),
-                                    backgroundColor: isFound
-                                        ? const Color(0xFFDCFCE7)
-                                        : const Color(0xFFFEF3C7),
+                                    backgroundColor:
+                                        (isFound
+                                                ? SaaSColors.success
+                                                : SaaSColors.warning)
+                                            .withValues(
+                                              alpha: isDark ? 0.20 : 0.14,
+                                            ),
                                   ),
                                   const SizedBox(width: 8),
                                   if (it['category'] != null)
@@ -1956,13 +2068,16 @@ class _ReportsSubViewState extends State<_ReportsSubView> {
                   ),
                 )
               else
-                ...areas.map(
-                  (a) => Card(
+                ...areas.map((a) {
+                  final isDark =
+                      Theme.of(context).brightness == Brightness.dark;
+                  return Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     elevation: 0,
+                    color: SaaSColors.surface(isDark),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(color: Color(0xFFE2E8F0)),
+                      side: BorderSide(color: SaaSColors.border(isDark)),
                     ),
                     child: ListTile(
                       leading: const Icon(
@@ -1977,20 +2092,21 @@ class _ReportsSubViewState extends State<_ReportsSubView> {
                         'Confirmadas: ${a['confirmedBookings'] ?? 0} • Pendentes: ${a['pendingBookings'] ?? 0} • Lista de Espera: ${a['waitlistedBookings'] ?? 0} • Canceladas: ${a['cancelledBookings'] ?? 0}',
                       ),
                     ),
-                  ),
-                ),
+                  );
+                }),
             ],
           );
   }
 
   Widget _statBox(String title, String value, IconData icon, Color color) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: 240,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: SaaSColors.surface(isDark),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: SaaSColors.border(isDark)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

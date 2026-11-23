@@ -16,6 +16,7 @@ class DoormanVisitorsView extends StatefulWidget {
 
 class _DoormanVisitorsViewState extends State<DoormanVisitorsView> {
   bool _loading = true;
+  String? _error;
   List<Map<String, dynamic>> _visitors = [];
 
   @override
@@ -25,7 +26,10 @@ class _DoormanVisitorsViewState extends State<DoormanVisitorsView> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.api.listVisitors(widget.condominiumId);
       if (mounted) {
@@ -34,24 +38,41 @@ class _DoormanVisitorsViewState extends State<DoormanVisitorsView> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Erro ao carregar visitantes: $e';
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _checkIn(num id) async {
-    await widget.api.checkInVisitor(id);
-    _load();
+    try {
+      await widget.api.checkInVisitor(id);
+      _load();
+    } catch (e) {
+      if (mounted) SaaSFeedback.showError(context, 'Erro no check-in: $e');
+    }
   }
 
   Future<void> _checkOut(num id) async {
-    await widget.api.checkOutVisitor(id);
-    _load();
+    try {
+      await widget.api.checkOutVisitor(id);
+      _load();
+    } catch (e) {
+      if (mounted) SaaSFeedback.showError(context, 'Erro no check-out: $e');
+    }
   }
 
   Future<void> _deny(num id) async {
-    await widget.api.denyVisitor(id);
-    _load();
+    try {
+      await widget.api.denyVisitor(id);
+      _load();
+    } catch (e) {
+      if (mounted) SaaSFeedback.showError(context, 'Erro ao recusar acesso: $e');
+    }
   }
 
   Future<void> _openValidateQrDialog() async {
@@ -88,11 +109,14 @@ class _DoormanVisitorsViewState extends State<DoormanVisitorsView> {
       ),
     );
 
-    if (ok == true && codeCtrl.text.trim().isNotEmpty) {
+    final code = codeCtrl.text.trim();
+    codeCtrl.dispose();
+
+    if (ok == true && code.isNotEmpty) {
       try {
         final res = await widget.api.validateVisitorQr(
           widget.condominiumId,
-          qrCodeOrAccessCode: codeCtrl.text.trim(),
+          qrCodeOrAccessCode: code,
           autoCheckIn: true,
         );
         await _load();
@@ -160,6 +184,8 @@ class _DoormanVisitorsViewState extends State<DoormanVisitorsView> {
                       ),
                     ),
                   )
+                : _error != null
+                ? SaaSErrorState(message: _error!, onRetry: _load)
                 : _visitors.isEmpty
                 ? const SaaSEmptyState(
                     icon: Icons.person_search_outlined,
@@ -167,76 +193,111 @@ class _DoormanVisitorsViewState extends State<DoormanVisitorsView> {
                     subtitle:
                         'Não há visitantes pré-autorizados ou na fila de entrada.',
                   )
-                : ListView.separated(
-                    itemCount: _visitors.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, idx) {
-                      final v = _visitors[idx];
-                      final status = v['status']?.toString();
-                      final isAuth = status == 'AUTHORIZED';
-                      final isCheckedIn = status == 'CHECKED_IN';
-
-                      return Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: isCheckedIn
-                                ? const Color(0xFFDCFCE7)
-                                : const Color(0xFFE0E7FF),
-                            child: Icon(
-                              isCheckedIn
-                                  ? Icons.login_rounded
-                                  : Icons.access_time_rounded,
-                              color: isCheckedIn
-                                  ? const Color(0xFF15803D)
-                                  : const Color(0xFF2F3FB0),
-                            ),
-                          ),
-                          title: Text(
-                            v['visitorName'] ?? '',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Text(
-                            'Código: ${v['accessCode'] ?? '—'} • Placa: ${v['vehiclePlate'] ?? 'Sem veículo'}\nUnidade: ${v['unitIdentifier'] ?? '—'} • Tipo: ${v['visitorType'] ?? ''}',
-                          ),
-                          isThreeLine: true,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (isAuth) ...[
-                                FilledButton.icon(
-                                  icon: const Icon(
-                                    Icons.login_rounded,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Entrada'),
-                                  onPressed: () => _checkIn(v['id']),
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isCompact = constraints.maxWidth < 680;
+                      return ListView.separated(
+                        itemCount: _visitors.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final v = _visitors[idx];
+                          final status = v['status']?.toString();
+                          final isAuth = status == 'AUTHORIZED';
+                          final isCheckedIn = status == 'CHECKED_IN';
+                          final actionWidgets = <Widget>[
+                            if (isAuth) ...[
+                              FilledButton.icon(
+                                icon: const Icon(Icons.login_rounded, size: 16),
+                                label: const Text('Entrada'),
+                                onPressed: () => _checkIn(v['id']),
+                              ),
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFFDC2626),
                                 ),
-                                const SizedBox(width: 6),
-                                OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFFDC2626),
-                                  ),
-                                  onPressed: () => _deny(v['id']),
-                                  child: const Text('Recusar'),
-                                ),
-                              ],
-                              if (isCheckedIn)
-                                OutlinedButton.icon(
-                                  icon: const Icon(
-                                    Icons.logout_rounded,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Saída'),
-                                  onPressed: () => _checkOut(v['id']),
-                                ),
+                                onPressed: () => _deny(v['id']),
+                                child: const Text('Recusar'),
+                              ),
                             ],
-                          ),
-                        ),
+                            if (isCheckedIn)
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.logout_rounded, size: 16),
+                                label: const Text('Saída'),
+                                onPressed: () => _checkOut(v['id']),
+                              ),
+                          ];
+
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      CircleAvatar(
+                                        backgroundColor: isCheckedIn
+                                            ? const Color(0xFFDCFCE7)
+                                            : const Color(0xFFE0E7FF),
+                                        child: Icon(
+                                          isCheckedIn
+                                              ? Icons.login_rounded
+                                              : Icons.access_time_rounded,
+                                          color: isCheckedIn
+                                              ? const Color(0xFF15803D)
+                                              : const Color(0xFF2F3FB0),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              v['visitorName']?.toString() ?? '',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14.5,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              'Código: ${v['accessCode'] ?? '—'} • Placa: ${v['vehiclePlate'] ?? 'Sem veículo'}\nUnidade: ${v['unitIdentifier'] ?? '—'} • Tipo: ${v['visitorType'] ?? ''}',
+                                              style: const TextStyle(fontSize: 12.5),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (!isCompact && actionWidgets.isNotEmpty)
+                                        Wrap(
+                                          spacing: 6,
+                                          children: actionWidgets,
+                                        ),
+                                    ],
+                                  ),
+                                  if (isCompact && actionWidgets.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      children: actionWidgets,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),

@@ -96,9 +96,13 @@ class _DoormanChatViewState extends State<DoormanChatView> {
       }
     });
 
-    // Fallback de polling a cada 20 segundos
+    // Fallback de polling apenas quando SSE não estiver conectado
     _timer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (!mounted) return;
+      if (RealtimeService.instance.currentState ==
+          RealtimeConnectionState.connected) {
+        return;
+      }
       if (!widget.isDoormanMode || _selectedResident != null) {
         _pollMessages(silent: true);
       }
@@ -731,15 +735,23 @@ class _DoormanChatViewState extends State<DoormanChatView> {
               CircleAvatar(
                 radius: 20,
                 backgroundColor: widget.isDoormanMode
-                    ? const Color(0xFFEFF6FF)
-                    : const Color(0xFFDCFCE7),
+                    ? (isDark
+                          ? const Color(0xFF1E3A8A)
+                          : const Color(0xFFEFF6FF))
+                    : (isDark
+                          ? const Color(0xFF064E3B)
+                          : const Color(0xFFDCFCE7)),
                 child: Icon(
                   widget.isDoormanMode
                       ? Icons.person_rounded
                       : Icons.security_rounded,
                   color: widget.isDoormanMode
-                      ? const Color(0xFF2563EB)
-                      : const Color(0xFF15803D),
+                      ? (isDark
+                            ? const Color(0xFF60A5FA)
+                            : const Color(0xFF2563EB))
+                      : (isDark
+                            ? const Color(0xFF34D399)
+                            : const Color(0xFF15803D)),
                   size: 22,
                 ),
               ),
@@ -992,7 +1004,11 @@ class _DoormanChatViewState extends State<DoormanChatView> {
                           backgroundColor: isDark
                               ? const Color(0xFF1E293B)
                               : const Color(0xFFEFF6FF),
-                          side: const BorderSide(color: Color(0xFFBFDBFE)),
+                          side: BorderSide(
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : const Color(0xFFBFDBFE),
+                          ),
                           onPressed: () {
                             _msgCtrl.text = preset;
                             _send();

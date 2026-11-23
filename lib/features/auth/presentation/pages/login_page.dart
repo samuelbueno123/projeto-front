@@ -71,7 +71,7 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+    final password = _passwordController.text;
 
     if (_isSignUp) {
       final name = _nameController.text.trim();

@@ -48,6 +48,7 @@ class _AppWidgetState extends State<AppWidget> {
       _resetNavigationStack();
       _authController.signOut();
     };
+    HttpClientWrapper.onRefreshToken = _authController.refreshSessionToken;
     _authController.bootstrap();
   }
 
@@ -56,6 +57,7 @@ class _AppWidgetState extends State<AppWidget> {
     _authController.removeListener(_handleControllerChange);
     _authController.dispose();
     HttpClientWrapper.onUnauthorized = null;
+    HttpClientWrapper.onRefreshToken = null;
     RealtimeService.instance.setToken(null);
     super.dispose();
   }
@@ -78,8 +80,9 @@ class _AppWidgetState extends State<AppWidget> {
 
   Future<void> _loadThemePreference(String token) async {
     final generation = ++_profileRequestGeneration;
+    final api = HomeService(token: token);
     try {
-      final profile = await HomeService(token: token).get('/users/me');
+      final profile = await api.get('/users/me');
       if (!mounted ||
           generation != _profileRequestGeneration ||
           token != _authController.session?.token) {
@@ -90,6 +93,8 @@ class _AppWidgetState extends State<AppWidget> {
       }
     } catch (_) {
       // Theme sync is best-effort; keep the current account usable if it fails.
+    } finally {
+      api.dispose();
     }
   }
 

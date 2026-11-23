@@ -230,4 +230,16 @@ class AuthController {
     _session = session;
     _notify();
   }
+
+  Future<String?> refreshSessionToken() async {
+    if (_disposed) return null;
+    final generation = _operationGeneration;
+    final refreshed = await _authService.refreshAccessToken();
+    if (_disposed || generation != _operationGeneration || refreshed == null) {
+      return null;
+    }
+    _session = refreshed;
+    _notify();
+    return refreshed.token;
+  }
 }

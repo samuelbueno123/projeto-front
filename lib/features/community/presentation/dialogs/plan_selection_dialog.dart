@@ -10,12 +10,22 @@ class PlanSelectionDialog extends StatefulWidget {
     required this.condominiumName,
     required this.api,
     required this.onPlanSelected,
+    this.isInitialSetup = true,
+    this.currentPlanId,
+    this.currentPlanName,
+    this.subscriptionStatus,
+    this.initialBillingCycle = 'MONTHLY',
   });
 
   final num condominiumId;
   final String condominiumName;
   final CommunityApi api;
   final VoidCallback onPlanSelected;
+  final bool isInitialSetup;
+  final num? currentPlanId;
+  final String? currentPlanName;
+  final String? subscriptionStatus;
+  final String initialBillingCycle;
 
   @override
   State<PlanSelectionDialog> createState() => _PlanSelectionDialogState();
@@ -23,6 +33,9 @@ class PlanSelectionDialog extends StatefulWidget {
 
 class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
   num? _selectedPlan;
+  late String _billingCycle = widget.initialBillingCycle.toUpperCase() == 'ANNUAL'
+      ? 'ANNUAL'
+      : 'MONTHLY';
   bool _submitting = false;
   bool _loadingPlans = true;
   List<Map<String, dynamic>> _plans = [];
@@ -44,9 +57,26 @@ class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
           .toList();
       setState(() {
         _plans = activePlans;
-        _selectedPlan = activePlans.isEmpty
-            ? null
-            : _number(activePlans.first['id']);
+        num? defaultId;
+        if (widget.currentPlanId != null) {
+          for (final p in activePlans) {
+            if (_number(p['id']) == widget.currentPlanId) {
+              defaultId = _number(p['id']);
+              break;
+            }
+          }
+        }
+        if (defaultId == null && widget.currentPlanName != null) {
+          final target = widget.currentPlanName!.trim().toLowerCase();
+          for (final p in activePlans) {
+            if ((p['name']?.toString().trim().toLowerCase() ?? '') == target) {
+              defaultId = _number(p['id']);
+              break;
+            }
+          }
+        }
+        _selectedPlan = defaultId ??
+            (activePlans.isEmpty ? null : _number(activePlans.first['id']));
         _loadingPlans = false;
         _error = null;
       });
@@ -138,9 +168,11 @@ class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'CONFIGURAÇÃO INICIAL DO SÍNDICO',
-                                style: TextStyle(
+                              Text(
+                                widget.isInitialSetup
+                                    ? 'CONFIGURAÇÃO INICIAL DO SÍNDICO'
+                                    : 'ASSINATURA & RECURSOS DO CONDOMÍNIO',
+                                style: const TextStyle(
                                   color: Colors.white70,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
@@ -148,7 +180,9 @@ class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
                                 ),
                               ),
                               Text(
-                                'Escolha o plano para ${widget.condominiumName}',
+                                widget.isInitialSetup
+                                    ? 'Escolha o plano para ${widget.condominiumName}'
+                                    : 'Gerenciar plano de ${widget.condominiumName}',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 18.5,
@@ -160,16 +194,79 @@ class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
                             ],
                           ),
                         ),
+                        if (widget.currentPlanName != null ||
+                            widget.subscriptionStatus != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.25),
+                              ),
+                            ),
+                            child: Text(
+                              [
+                                if (widget.currentPlanName != null)
+                                  widget.currentPlanName!,
+                                if (widget.subscriptionStatus != null)
+                                  widget.subscriptionStatus!,
+                              ].join(' • '),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Selecione o plano ideal para gerenciar seu condomínio. Você poderá alterar o plano a qualquer momento pelo painel.',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        height: 1.35,
-                      ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      alignment: WrapAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Selecione o plano e o ciclo de cobrança para liberar os módulos autorizados.',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            height: 1.35,
+                          ),
+                        ),
+                        SegmentedButton<String>(
+                          style: SegmentedButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(alpha: 0.12),
+                            selectedBackgroundColor: Colors.white,
+                            selectedForegroundColor: const Color(0xFF1E3A8A),
+                            foregroundColor: Colors.white,
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          segments: const [
+                            ButtonSegment(value: 'MONTHLY', label: Text('Mensal')),
+                            ButtonSegment(
+                              value: 'ANNUAL',
+                              label: Text('Anual (-17%)'),
+                            ),
+                          ],
+                          selected: {_billingCycle},
+                          onSelectionChanged: (s) {
+                            if (s.isNotEmpty) {
+                              setState(() => _billingCycle = s.first);
+                            }
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -230,15 +327,23 @@ class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
                             final id = _number(plan['id']);
                             if (id == null) continue;
                             final fee = _number(plan['monthlyFee']);
+                            final displayFee = _billingCycle == 'ANNUAL' && fee != null
+                                ? fee * 10
+                                : fee;
                             final rawName = plan['name']?.toString().trim();
+                            final isCurrent = (widget.currentPlanId != null &&
+                                    widget.currentPlanId == id) ||
+                                (widget.currentPlanName != null &&
+                                    rawName?.toLowerCase() ==
+                                        widget.currentPlanName!.trim().toLowerCase());
                             cards.add(
                               _buildPlanCard(
                                 id: id,
                                 name: rawName?.isNotEmpty == true
                                     ? rawName!
                                     : 'Plano',
-                                price: formatCurrencyBrl(fee),
-                                badge: 'Ativo',
+                                price: formatCurrencyBrl(displayFee),
+                                badge: isCurrent ? 'Plano Atual' : 'Disponível',
                                 color: colors[cards.length % colors.length],
                                 features: _featureLabels(plan['features']),
                                 constrainFeatureList: isWide,
@@ -301,9 +406,14 @@ class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final plan = _selectedPlanData;
+                    final rawFee = plan == null ? null : _number(plan['monthlyFee']);
+                    final footerFee = _billingCycle == 'ANNUAL' && rawFee != null
+                        ? rawFee * 10
+                        : rawFee;
+                    final footerCycle = _billingCycle == 'ANNUAL' ? '/ano' : '/mês';
                     final selectionLabel = plan == null
                         ? 'Selecione um plano disponível'
-                        : 'Plano selecionado: ${plan['name'] ?? 'Plano'} • ${formatCurrencyBrl(_number(plan['monthlyFee']))}/mês';
+                        : 'Plano selecionado: ${plan['name'] ?? 'Plano'} • ${formatCurrencyBrl(footerFee)}$footerCycle';
                     final confirmButton = FilledButton(
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
@@ -467,9 +577,9 @@ class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Text(
-                  '/mês',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                Text(
+                  _billingCycle == 'ANNUAL' ? '/ano' : '/mês',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                 ),
               ],
             ),
@@ -549,7 +659,16 @@ class _PlanSelectionDialogState extends State<PlanSelectionDialog> {
       _error = null;
     });
     try {
-      await widget.api.selectCondominiumPlan(widget.condominiumId, planId);
+      if (widget.isInitialSetup) {
+        await widget.api.selectCondominiumPlan(widget.condominiumId, planId);
+      } else {
+        await widget.api.changeSubscriptionPlan(
+          widget.condominiumId,
+          planId: planId,
+          billingCycle: _billingCycle,
+          reason: 'Alteração pelo painel do síndico',
+        );
+      }
       if (!mounted) return;
       Navigator.of(context).pop();
       widget.onPlanSelected();

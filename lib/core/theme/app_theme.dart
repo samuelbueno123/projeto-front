@@ -59,21 +59,21 @@ class AncoraThemeTokens extends ThemeExtension<AncoraThemeTokens> {
   );
 
   static const AncoraThemeTokens darkTokens = AncoraThemeTokens(
-    canvas: Color(0xFF0B1120),
-    surface: Color(0xFF111827),
-    surfaceElevated: Color(0xFF1E293B),
-    surfaceSubtle: Color(0xFF172033),
-    border: Color(0xFF273549),
+    canvas: Color(0xFF080B14),
+    surface: Color(0xFF0F1424),
+    surfaceElevated: Color(0xFF161D33),
+    surfaceSubtle: Color(0xFF131A2E),
+    border: Color(0xFF1E293B),
     borderStrong: Color(0xFF334155),
     textPrimary: Color(0xFFF8FAFC),
     textSecondary: Color(0xFFCBD5E1),
     textMuted: Color(0xFF94A3B8),
-    accent: Color(0xFF3B82F6),
+    accent: Color(0xFF2563EB),
     accentSoft: Color(0xFF1E3A8A),
     success: Color(0xFF10B981),
     warning: Color(0xFFF59E0B),
     danger: Color(0xFFEF4444),
-    info: Color(0xFF38BDF8),
+    info: Color(0xFF8B5CF6),
     isDark: true,
   );
 
@@ -174,11 +174,13 @@ class AppTheme {
   static const Color pastelRoseBg = Color(0xFFFFE4E6);
   static const Color pastelRoseIcon = Color(0xFFBE123C);
 
-  static const String fontFamily = 'Plus Jakarta Sans';
+  static const String fontFamily = 'Inter';
   static const List<String> fontFallbacks = [
-    'Inter',
+    'Geist',
+    'Plus Jakarta Sans',
     'Segoe UI',
     'Roboto',
+    'Noto Color Emoji',
     'sans-serif',
   ];
 
@@ -610,6 +612,30 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         backgroundColor: tokens.surfaceElevated,
         contentTextStyle: TextStyle(color: tokens.textPrimary, fontSize: 13.5),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: tokens.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+      ),
+      listTileTheme: ListTileThemeData(
+        textColor: tokens.textPrimary,
+        iconColor: tokens.textSecondary,
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: const Color(0xFF60A5FA),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      dropdownMenuTheme: DropdownMenuThemeData(
+        textStyle: TextStyle(color: tokens.textPrimary, fontSize: 14),
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(tokens.surfaceElevated),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
       ),
     );
   }

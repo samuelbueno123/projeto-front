@@ -116,6 +116,14 @@ class SaaSColors {
   static const infoBg = Color(0xFFEFF6FF);
   static const infoText = Color(0xFF1E40AF);
 
+  static const purple = Color(0xFF8B5CF6);
+  static const purpleBg = Color(0xFFF3E8FF);
+  static const purpleText = Color(0xFF5B21B6);
+
+  static const deepNavy = Color(0xFF080B14);
+  static const cardNavy = Color(0xFF0F1424);
+  static const borderSubtle = Color(0xFF1E293B);
+
   static Color background(bool isDark) => isDark
       ? AncoraThemeTokens.darkTokens.canvas
       : AncoraThemeTokens.lightTokens.canvas;
@@ -292,7 +300,7 @@ class SaaSMetricCard extends StatelessWidget {
   }
 }
 
-enum SaaSBadgeVariant { primary, success, warning, error, neutral }
+enum SaaSBadgeVariant { primary, success, warning, error, purple, neutral }
 
 class SaaSBadge extends StatelessWidget {
   const SaaSBadge({
@@ -351,6 +359,15 @@ class SaaSBadge extends StatelessWidget {
         border = isDark
             ? SaaSColors.error.withValues(alpha: 0.35)
             : const Color(0xFFFECACA);
+        break;
+      case SaaSBadgeVariant.purple:
+        bg = isDark
+            ? SaaSColors.purple.withValues(alpha: 0.2)
+            : SaaSColors.purpleBg;
+        fg = isDark ? const Color(0xFFC4B5FD) : SaaSColors.purpleText;
+        border = isDark
+            ? SaaSColors.purple.withValues(alpha: 0.4)
+            : const Color(0xFFDDD6FE);
         break;
       case SaaSBadgeVariant.neutral:
         bg = SaaSColors.surfaceSubtle(isDark);
@@ -415,46 +432,63 @@ class SaaSSectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.35,
-                          color: SaaSColors.textPrimary(isDark),
-                        ),
-                      ),
-                    ),
-                    if (badge != null) ...[const SizedBox(width: 10), badge!],
-                  ],
+    final headerText = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.35,
+                  color: SaaSColors.textPrimary(isDark),
                 ),
-                if (subtitle != null && subtitle!.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: SaaSColors.textSecondary(isDark),
-                    ),
-                  ),
-                ],
-              ],
+              ),
+            ),
+            if (badge != null) ...[const SizedBox(width: 10), badge!],
+          ],
+        ),
+        if (subtitle != null && subtitle!.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            subtitle!,
+            style: TextStyle(
+              fontSize: 13,
+              color: SaaSColors.textSecondary(isDark),
             ),
           ),
-          if (action != null) ...[const SizedBox(width: 12), action!],
         ],
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (action != null && constraints.maxWidth < 480) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                headerText,
+                const SizedBox(height: 10),
+                action!,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: headerText),
+              if (action != null) ...[
+                const SizedBox(width: 12),
+                Flexible(child: action!),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -488,15 +522,16 @@ class SaaSEmptyState extends StatelessWidget {
         : description;
 
     return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 440),
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
-        decoration: BoxDecoration(
-          color: SaaSColors.surface(isDark),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: SaaSColors.border(isDark)),
-        ),
-        child: Column(
+      child: SingleChildScrollView(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 440),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          decoration: BoxDecoration(
+            color: SaaSColors.surface(isDark),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: SaaSColors.border(isDark)),
+          ),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
@@ -553,6 +588,7 @@ class SaaSEmptyState extends StatelessWidget {
               ),
             ],
           ],
+        ),
         ),
       ),
     ).saasFadeIn(duration: 240.ms);

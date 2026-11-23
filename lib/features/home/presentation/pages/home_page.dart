@@ -15,7 +15,11 @@ import '../../../../core/widgets/condo_assistant_sheet.dart';
 import '../../../../core/widgets/custom_menus.dart';
 import '../../../../core/widgets/emergency_sos_banner.dart';
 import '../../../../core/widgets/enter_search_field.dart';
+import '../../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../../core/widgets/role_switcher_pill.dart';
+import '../../../../core/widgets/saas_dashboard_widgets.dart';
+import '../../../../core/widgets/smart_image.dart';
+import '../../../../core/widgets/subscription_status_banner.dart';
 import '../../../../core/widgets/user_avatar.dart';
 import '../../../auth/presentation/pages/user_profile_page.dart';
 import '../../../community/data/community_api.dart';
@@ -24,11 +28,15 @@ import '../../../community/presentation/dialogs/common_area_booking_dialog.dart'
 import '../../../community/presentation/dialogs/discord_welcome_dialog.dart';
 import '../../../community/presentation/dialogs/emergency_sos_dialog.dart';
 import '../../../community/presentation/dialogs/join_condominium_dialog.dart';
+import '../../../community/presentation/dialogs/visitor_digital_pass_dialog.dart';
 import '../../../community/presentation/views/community_hub_view.dart';
 import '../../../community/presentation/views/condominium_gallery_view.dart';
 import '../../../community/presentation/views/doorman_chat_view.dart';
 import '../../data/home_service.dart';
 import 'notifications_page.dart';
+
+part 'home_resident_sections_part.dart';
+part 'home_resident_dialogs_part.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -44,6 +52,7 @@ class HomePage extends StatefulWidget {
     this.currentRole,
     this.availableRoles = const [],
     this.onSwitchRole,
+    this.api,
   });
 
   final Future<void> Function() onLogout;
@@ -58,6 +67,7 @@ class HomePage extends StatefulWidget {
   final String? currentRole;
   final List<String> availableRoles;
   final ValueChanged<String>? onSwitchRole;
+  final HomeService? api;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -74,12 +84,22 @@ class _HomePageState extends State<HomePage> {
   String? _error;
 
   List<Map<String, dynamic>> _memberships = [];
+  int? _selectedCondominiumId;
+  int? _selectedMembershipId;
   Map<String, dynamic>? _condominium;
+  Map<String, dynamic>? _subscription;
+  SubscriptionAccessState get _subAccess => SubscriptionAccessState.fromMaps(
+    condominium: _condominium,
+    subscription: _subscription,
+  );
   List<Map<String, dynamic>> _announcements = [];
   List<Map<String, dynamic>> _packages = [];
   List<Map<String, dynamic>> _reservations = [];
   List<Map<String, dynamic>> _notifications = [];
   List<Map<String, dynamic>> _invoices = [];
+  List<Map<String, dynamic>> _polls = [];
+  List<Map<String, dynamic>> _visitors = [];
+  List<Map<String, dynamic>> _tickets = [];
   Map<String, dynamic> _profile = {};
 
   String _packageQuery = '';
@@ -87,9 +107,28 @@ class _HomePageState extends State<HomePage> {
   String _reservationFilter = 'SCHEDULED'; // SCHEDULED, PAST, CANCELLED
   String _announcementQuery = '';
 
+  Map<String, dynamic>? get _activeMembership {
+    if (_memberships.isEmpty) return null;
+    if (_selectedMembershipId != null) {
+      for (final m in _memberships) {
+        if ((m['id'] as num?)?.toInt() == _selectedMembershipId) {
+          return m;
+        }
+      }
+    }
+    if (_selectedCondominiumId != null) {
+      for (final m in _memberships) {
+        if ((m['condominiumId'] as num?)?.toInt() == _selectedCondominiumId) {
+          return m;
+        }
+      }
+    }
+    return _memberships.first;
+  }
+
   String get _unitDisplay {
-    if (_memberships.isNotEmpty) {
-      final mem = _memberships.first;
+    final mem = _activeMembership;
+    if (mem != null) {
       final unitName = mem['unitIdentifier'] ?? mem['unitName'];
       if (unitName != null && unitName.toString().trim().isNotEmpty) {
         return 'Apartamento $unitName';
@@ -111,8 +150,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   String get _sectorDisplay {
-    if (_memberships.isNotEmpty) {
-      final mem = _memberships.first;
+    final mem = _activeMembership;
+    if (mem != null) {
       final sec = mem['sectorName'] ?? mem['sector'];
       if (sec != null && sec.toString().trim().isNotEmpty) {
         return 'Bloco $sec';
@@ -151,7 +190,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _api = HomeService(token: widget.token);
+    _api = widget.api ?? HomeService(token: widget.token);
     _communityApi = CommunityApi(api: _api);
     _initRealtime();
     _load();
@@ -160,8 +199,11 @@ class _HomePageState extends State<HomePage> {
   @override
   void didUpdateWidget(covariant HomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.token != widget.token) {
-      _api = HomeService(token: widget.token);
+    if (oldWidget.token != widget.token || oldWidget.api != widget.api) {
+      if (oldWidget.api == null && widget.api == null) {
+        _api.dispose();
+      }
+      _api = widget.api ?? HomeService(token: widget.token);
       _communityApi = CommunityApi(api: _api);
       _initRealtime();
       _load();
@@ -171,6 +213,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _realtimeSub?.cancel();
+    if (widget.api == null) {
+      _api.dispose();
+    }
     super.dispose();
   }
 
@@ -186,43 +231,75 @@ class _HomePageState extends State<HomePage> {
 
   void _handleRealtimeUpdate(RealtimeEvent event) {
     if (!mounted) return;
+    if (event.condominiumId != null &&
+        _selectedCondominiumId != null &&
+        event.condominiumId != _selectedCondominiumId) {
+      return;
+    }
     switch (event.type) {
-      case 'NOTIFICATION':
-      case 'SYSTEM_ANNOUNCEMENT':
+      case RealtimeEventTypes.notification:
+      case RealtimeEventTypes.systemAnnouncement:
         _refreshNotifications();
         break;
-      case 'PACKAGE_UPDATED':
+      case RealtimeEventTypes.packageUpdated:
         _refreshPackages();
         _refreshNotifications();
         break;
-      case 'ANNOUNCEMENT':
+      case RealtimeEventTypes.announcement:
+      case RealtimeEventTypes.announcementCreated:
         _refreshAnnouncements();
         _refreshNotifications();
         break;
-      case 'RESERVATION_UPDATED':
+      case RealtimeEventTypes.reservationUpdated:
         _refreshReservations();
         _refreshNotifications();
         break;
-      case 'INVOICE_UPDATED':
+      case RealtimeEventTypes.invoiceUpdated:
         _refreshInvoices();
         break;
-      case 'CHAT_MESSAGE':
+      case RealtimeEventTypes.subscriptionUpdated:
+        _load();
+        break;
+      case RealtimeEventTypes.chatMessage:
         _refreshNotifications();
         break;
     }
   }
 
+  void _mutate(VoidCallback fn) {
+    if (mounted) setState(fn);
+  }
+
   Future<void> _refreshNotifications() async {
     try {
-      final res = await _safeGet('/notifications/my');
+      final condoId = _condominium?['id'] ?? _selectedCondominiumId;
+      final path = condoId != null
+          ? '/notifications/my?condominiumId=$condoId'
+          : '/notifications/my';
+      final res = await _safeGet(path);
       if (!mounted) return;
-      setState(() => _notifications = _list(res));
+      final raw = _list(res);
+      final filtered = condoId == null
+          ? raw
+          : raw.where((n) {
+              final origin = n['origin']?.toString().toUpperCase();
+              final nid = n['condominiumId'];
+              if (nid == null) {
+                return origin != 'CONDOMINIUM' && n['type'] != 'ANNOUNCEMENT';
+              }
+              return nid.toString() == condoId.toString();
+            }).toList();
+      setState(() => _notifications = filtered);
     } catch (_) {}
   }
 
   Future<void> _refreshPackages() async {
     try {
-      final res = await _safeGet('/packages/my?page=0&size=20');
+      final condoId = _condominium?['id'] ?? _selectedCondominiumId;
+      final path = condoId != null
+          ? '/packages/my?condominiumId=$condoId&page=0&size=20'
+          : '/packages/my?page=0&size=20';
+      final res = await _safeGet(path);
       if (!mounted) return;
       setState(() => _packages = _list(res));
     } catch (_) {}
@@ -280,11 +357,10 @@ class _HomePageState extends State<HomePage> {
       final initial = await Future.wait([
         _safeGet('/users/me'),
         _api.get('/memberships/my'),
-        _safeGet('/notifications/my'),
       ]);
       final profile = _map(initial[0]);
       final memberships = _list(initial[1]);
-      final notifications = _list(initial[2]);
+      var notifications = <Map<String, dynamic>>[];
 
       // Apply saved theme preference
       final themePref = profile['themePreference']?.toString();
@@ -293,30 +369,57 @@ class _HomePageState extends State<HomePage> {
       }
 
       Map<String, dynamic>? condominium;
+      Map<String, dynamic>? subscription;
       List<Map<String, dynamic>> announcements = [];
       List<Map<String, dynamic>> packages = [];
       List<Map<String, dynamic>> reservations = [];
       List<Map<String, dynamic>> invoices = [];
+      List<Map<String, dynamic>> polls = [];
+      List<Map<String, dynamic>> visitors = [];
+      List<Map<String, dynamic>> tickets = [];
+      int? selectedCondoId = _selectedCondominiumId;
 
       if (memberships.isNotEmpty) {
-        final id = memberships.first['condominiumId'];
+        final matchingMem = selectedCondoId != null
+            ? memberships.firstWhere(
+                (m) => (m['condominiumId'] as num?)?.toInt() == selectedCondoId,
+                orElse: () => memberships.first,
+              )
+            : memberships.first;
+        final id = (matchingMem['condominiumId'] as num).toInt();
+        selectedCondoId = id;
         condominium = _map(await _api.get('/condominiums/$id'));
 
         final results = await Future.wait([
           _safeGet('/condominiums/$id/announcements'),
-          _safeGet('/packages/my?page=0&size=20'),
+          _safeGet('/packages/my?condominiumId=$id&page=0&size=20'),
           _safeGet('/condominiums/$id/reservations/my'),
           _safeGet('/condominiums/$id/my-invoices'),
+          _safeGet('/condominiums/$id/polls'),
+          _safeGet('/condominiums/$id/visitors?mine=true'),
+          _safeGet('/condominiums/$id/tickets?mine=true'),
+          _safeGet('/notifications/my?condominiumId=$id'),
+          _safeGet('/condominiums/$id/subscription'),
         ]);
 
         announcements = _list(results[0]);
         packages = _list(results[1]);
         reservations = _list(results[2]);
         invoices = _list(results[3]);
+        polls = _list(results[4]);
+        visitors = _list(results[5]);
+        tickets = _list(results[6]);
+        notifications = _list(results[7]).where((n) {
+          final cid = (n['condominiumId'] as num?)?.toInt();
+          if (cid != null) return cid == id;
+          return n['type'] != 'ANNOUNCEMENT';
+        }).toList();
+        if (results[8] is Map<String, dynamic>) {
+          subscription = Map<String, dynamic>.from(results[8] as Map);
+        }
 
         // Discord welcome dialog on first access
-        final firstMem = memberships.first;
-        if (firstMem['hasSeenWelcome'] != true) {
+        if (matchingMem['hasSeenWelcome'] != true) {
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (!mounted) return;
             await showDialog<void>(
@@ -325,27 +428,34 @@ class _HomePageState extends State<HomePage> {
               builder: (ctx) => DiscordWelcomeDialog(
                 condominiumName:
                     condominium?['name']?.toString() ?? 'nosso Condomínio',
-                membershipId: firstMem['id'] as num,
+                membershipId: matchingMem['id'] as num,
                 api: _communityApi,
                 onExplored: () {
-                  firstMem['hasSeenWelcome'] = true;
+                  matchingMem['hasSeenWelcome'] = true;
                 },
               ),
             );
           });
         }
+      } else {
+        notifications = _list(await _safeGet('/notifications/my'));
       }
 
       if (!mounted) return;
       setState(() {
         _profile = profile;
         _memberships = memberships;
+        _selectedCondominiumId = selectedCondoId;
         _condominium = condominium;
+        _subscription = subscription;
         _announcements = announcements;
         _packages = packages;
         _reservations = reservations;
         _notifications = notifications;
         _invoices = invoices;
+        _polls = polls;
+        _visitors = visitors;
+        _tickets = tickets;
         _loading = false;
       });
     } catch (error) {
@@ -414,7 +524,7 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    const navTabs = <int>[0, 1, 2, 3, 5, 6, 7];
+    const navTabs = <int>[0, 1, 2, 3, 5, 6, 7, 4];
     const destinations = <AncoraNavDestination>[
       AncoraNavDestination(
         id: 'overview',
@@ -462,6 +572,12 @@ class _HomePageState extends State<HomePage> {
         label: 'Comunicados',
         icon: Icons.campaign_outlined,
         section: 'Condomínio',
+      ),
+      AncoraNavDestination(
+        id: 'profile',
+        label: 'Meu perfil',
+        icon: Icons.person_outline_rounded,
+        section: 'Conta',
       ),
     ];
     final selectedIndex = navTabs.indexOf(_tab).clamp(0, navTabs.length - 1);
@@ -536,11 +652,11 @@ class _HomePageState extends State<HomePage> {
         onOpenCommandPalette: () =>
             AncoraCommandShortcutWrapper.open(context, commandActions),
         body: portalBody,
-        banner: _canManage && condoId != null
+        banner: _canManage && condoId != null && _hasFeature('EMERGENCY_SOS')
             ? EmergencySosBanner(api: _api, condominiumId: condoId)
             : null,
         headerActions: [
-          if (condoId != null)
+          if (condoId != null && _hasFeature('EMERGENCY_SOS'))
             IconButton(
               tooltip: 'Acionar alerta SOS',
               onPressed: _openEmergencySos,
@@ -554,14 +670,15 @@ class _HomePageState extends State<HomePage> {
             onPressed: _showMoreMenus,
             icon: const Icon(Icons.grid_view_rounded),
           ),
-          IconButton(
-            tooltip: 'Assistente IA do condomínio',
-            onPressed: _openAssistantModal,
-            icon: const Icon(
-              Icons.auto_awesome_rounded,
-              color: Color(0xFFD97706),
+          if (condoId != null && _hasFeature('AI_ASSISTANT'))
+            IconButton(
+              tooltip: 'Assistente IA do condomínio',
+              onPressed: _openAssistantModal,
+              icon: const Icon(
+                Icons.auto_awesome_rounded,
+                color: Color(0xFFD97706),
+              ),
             ),
-          ),
           IconButton(
             tooltip: 'Notificações',
             onPressed: _showNotifications,
@@ -579,34 +696,37 @@ class _HomePageState extends State<HomePage> {
             tooltip: 'Meu perfil',
           ),
         ],
-        sidebarFooterExtra: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.currentRole != null && widget.onSwitchRole != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: RoleSwitcherPill(
-                  currentRole: widget.currentRole!,
-                  availableRoles: widget.availableRoles,
-                  onSwitchRole: widget.onSwitchRole!,
-                  isLight: !isDark,
+        sidebarFooterExtra: Material(
+          type: MaterialType.transparency,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.currentRole != null && widget.onSwitchRole != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: RoleSwitcherPill(
+                    currentRole: widget.currentRole!,
+                    availableRoles: widget.availableRoles,
+                    onSwitchRole: widget.onSwitchRole!,
+                    isLight: !isDark,
+                  ),
                 ),
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                ),
+                title: const Text('Alternar tema'),
+                onTap: _toggleTheme,
               ),
-            ListTile(
-              dense: true,
-              leading: Icon(
-                isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.logout_rounded, color: Colors.red),
+                title: const Text('Sair da conta'),
+                onTap: widget.onLogout,
               ),
-              title: const Text('Alternar tema'),
-              onTap: _toggleTheme,
-            ),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.logout_rounded, color: Colors.red),
-              title: const Text('Sair da conta'),
-              onTap: widget.onLogout,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -617,8 +737,22 @@ class _HomePageState extends State<HomePage> {
       case 1:
         return _wrapPage(_packagesPage());
       case 2:
+        if (_condominium != null && !_hasFeature('RESERVATIONS')) {
+          return FeatureLockedPlaceholder(
+            featureLabel: 'Reservas de Áreas Comuns',
+            planName: _subAccess.planName,
+            isSuspended: _subAccess.isSuspendedOrCancelled,
+          );
+        }
         return _wrapPage(_reservationsPage());
       case 3:
+        if (_condominium != null && !_hasFeature('DOORMAN_CHAT')) {
+          return FeatureLockedPlaceholder(
+            featureLabel: 'Chat com a Portaria',
+            planName: _subAccess.planName,
+            isSuspended: _subAccess.isSuspendedOrCancelled,
+          );
+        }
         return _condominium != null
             ? DoormanChatView(
                 condominiumId: _condominium!['id'],
@@ -651,15 +785,13 @@ class _HomePageState extends State<HomePage> {
                 condominiumId: _condominium!['id'],
                 initialCategoryIndex: _communityCategoryIndex,
                 canManage: _canManage,
-                enabledFeatures: (_condominium!['features'] as List?)
-                    ?.map((e) => e.toString())
-                    .toList(),
+                enabledFeatures: _subAccess.enabledFeatures.toList(),
               )
             : _wrapPage(_announcementsPage());
       case 7:
         return _wrapPage(_announcementsPage());
       default:
-        return isDesktop ? _desktopDashboard() : _mobileDashboard();
+        return _buildResidentDashboard(isDesktop);
     }
   }
 
@@ -678,92 +810,282 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ----------------------------------------------------
-  // MOBILE DASHBOARD (EXACT VISUAL MATCH TO SCREENSHOT)
-  // ----------------------------------------------------
-  Widget _mobileDashboard() {
-    final hasNewPackage = _packages.any(
-      (p) =>
-          p['status'] == 'WAITING_PICKUP' ||
-          p['status'] == 'RECEIVED' ||
-          p['status'] == 'NOTIFIED',
-    );
-    final hasNewAnnouncement = _announcements.isNotEmpty;
+  String get _residentFirstName {
+    final fromProfile = _profile['firstName']?.toString().trim();
+    if (fromProfile != null && fromProfile.isNotEmpty) return fromProfile;
+    return firstNameOf(widget.userName, fallback: 'Morador');
+  }
 
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-        children: [
-          if (hasNewPackage || hasNewAnnouncement) ...[
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
-                    : const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFBFDBFE)),
-              ),
-              child: Row(
+  Future<void> _openQuickVisitorDialog() async {
+    final condoId = _condominium?['id'] as num?;
+    if (condoId == null) return;
+    final nameCtrl = TextEditingController();
+    final docCtrl = TextEditingController();
+    final plateCtrl = TextEditingController();
+    String visitorType = 'VISITOR';
+    bool saving = false;
+
+    final createdVisitor = await showAncoraDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.qr_code_2_rounded, color: SaaSColors.primary),
+              SizedBox(width: 10),
+              Expanded(child: Text('Liberar Visitante (QR Code)')),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEF4444),
-                      shape: BoxShape.circle,
+                  TextField(
+                    controller: nameCtrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Nome do visitante ou prestador *',
+                      hintText: 'Ex.: João da Silva',
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      [
-                        if (hasNewPackage) '📦 Nova encomenda na portaria',
-                        if (hasNewAnnouncement)
-                          '📢 Novo comunicado no condomínio',
-                      ].join('  •  '),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1D4ED8),
-                      ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: visitorType,
+                    decoration: const InputDecoration(labelText: 'Tipo de acesso'),
+                    items: const [
+                      DropdownMenuItem(value: 'VISITOR', child: Text('Visitante / Convidado')),
+                      DropdownMenuItem(value: 'SERVICE_PROVIDER', child: Text('Prestador de Serviço')),
+                      DropdownMenuItem(value: 'DELIVERY', child: Text('Entregador')),
+                    ],
+                    onChanged: (v) => setDlgState(() => visitorType = v ?? visitorType),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: docCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Documento (RG / CPF - opcional)',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: plateCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Placa do veículo (opcional)',
                     ),
                   ),
                 ],
               ),
             ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (nameCtrl.text.trim().isEmpty) {
+                        SaaSFeedback.showWarning(
+                          context,
+                          'Informe o nome do visitante.',
+                        );
+                        return;
+                      }
+                      setDlgState(() => saving = true);
+                      try {
+                        final res = await _communityApi.createVisitor(
+                          condoId: condoId,
+                          visitorName: nameCtrl.text.trim(),
+                          visitorType: visitorType,
+                          documentNumber: docCtrl.text.trim().isEmpty
+                              ? null
+                              : docCtrl.text.trim(),
+                          vehiclePlate: plateCtrl.text.trim().isEmpty
+                              ? null
+                              : plateCtrl.text.trim(),
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx, res);
+                      } catch (e) {
+                        setDlgState(() => saving = false);
+                        if (context.mounted) {
+                          SaaSFeedback.showError(context, 'Erro: $e');
+                        }
+                      }
+                    },
+              icon: saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.qr_code_rounded, size: 18),
+              label: const Text('Gerar Convite QR'),
+            ),
           ],
-
-          // Unit Card
-          _buildUnitCard(),
-          const SizedBox(height: 18),
-
-          // Atalhos rápidos (5 pastel boxes)
-          _buildQuickActionShortcuts(),
-          const SizedBox(height: 20),
-
-          // Boletos em aberto
-          _buildPendingBoletoSection(),
-          const SizedBox(height: 20),
-
-          // Comunicados recentes
-          _buildRecentAnnouncementsSection(),
-          const SizedBox(height: 20),
-
-          // Próximas reservas & contrapropostas
-          _buildUpcomingReservationsSection(),
-        ],
+        ),
       ),
     );
+    nameCtrl.dispose();
+    docCtrl.dispose();
+    plateCtrl.dispose();
+
+    if (createdVisitor != null && mounted) {
+      await _load();
+      final visitorId = createdVisitor['id'] as num?;
+      if (visitorId != null && mounted) {
+        await showAncoraDialog<void>(
+          context: context,
+          builder: (_) => VisitorDigitalPassDialog(
+            visitorId: visitorId,
+            api: _communityApi,
+          ),
+        );
+      }
+    }
   }
 
-  // ----------------------------------------------------
-  // DESKTOP DASHBOARD (HORIZONTAL MULTI-COLUMN NO SCROLL)
-  // ----------------------------------------------------
-  Widget _desktopDashboard() {
-    final pendingPkgs = _packages
+  Future<void> _openQuickTicketDialog() async {
+    final condoId = _condominium?['id'] as num?;
+    if (condoId == null) return;
+    final titleCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final locationCtrl = TextEditingController();
+    String category = 'MAINTENANCE';
+    bool saving = false;
+
+    final created = await showAncoraDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.report_problem_outlined, color: SaaSColors.warning),
+              SizedBox(width: 10),
+              Expanded(child: Text('Registrar Ocorrência / Chamado')),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: titleCtrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Assunto da ocorrência *',
+                      hintText: 'Ex.: Lâmpada queimada no corredor',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: category,
+                    decoration: const InputDecoration(labelText: 'Categoria'),
+                    items: const [
+                      DropdownMenuItem(value: 'MAINTENANCE', child: Text('Manutenção')),
+                      DropdownMenuItem(value: 'NOISE', child: Text('Barulho / Sossego')),
+                      DropdownMenuItem(value: 'CLEANING', child: Text('Limpeza')),
+                      DropdownMenuItem(value: 'SECURITY', child: Text('Segurança')),
+                      DropdownMenuItem(value: 'OTHER', child: Text('Outros')),
+                    ],
+                    onChanged: (v) => setDlgState(() => category = v ?? category),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: locationCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Local (opcional)',
+                      hintText: 'Ex.: Bloco 2 • Hall do 4º andar',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: descCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Descrição *',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (titleCtrl.text.trim().isEmpty ||
+                          descCtrl.text.trim().isEmpty) {
+                        SaaSFeedback.showWarning(
+                          context,
+                          'Informe assunto e descrição.',
+                        );
+                        return;
+                      }
+                      setDlgState(() => saving = true);
+                      try {
+                        await _communityApi.createTicket(
+                          condoId: condoId,
+                          category: category,
+                          title: titleCtrl.text.trim(),
+                          description: descCtrl.text.trim(),
+                          location: locationCtrl.text.trim().isEmpty
+                              ? null
+                              : locationCtrl.text.trim(),
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      } catch (e) {
+                        setDlgState(() => saving = false);
+                        if (context.mounted) {
+                          SaaSFeedback.showError(context, 'Erro: $e');
+                        }
+                      }
+                    },
+              icon: const Icon(Icons.send_rounded, size: 17),
+              label: const Text('Enviar Ocorrência'),
+            ),
+          ],
+        ),
+      ),
+    );
+    titleCtrl.dispose();
+    descCtrl.dispose();
+    locationCtrl.dispose();
+    if (created == true && mounted) {
+      SaaSFeedback.showSuccess(context, 'Ocorrência registrada com sucesso!');
+      _load();
+    }
+  }
+
+  Future<void> _votePoll(num pollId, num optionId) async {
+    try {
+      await _communityApi.votePoll(pollId: pollId, optionId: optionId);
+      if (!mounted) return;
+      SaaSFeedback.showSuccess(context, 'Voto registrado na enquete!');
+      _load();
+    } catch (e) {
+      if (mounted) SaaSFeedback.showError(context, 'Não foi possível votar: $e');
+    }
+  }
+
+  Widget _buildResidentDashboard(bool isDesktop) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final condoName = _condominium?['name']?.toString() ?? 'Condomínio';
+
+    final pendingPackagesList = _packages
         .where(
           (e) =>
               e['status'] == 'WAITING_PICKUP' ||
@@ -771,439 +1093,722 @@ class _HomePageState extends State<HomePage> {
               e['status'] == 'NOTIFIED' ||
               e['status'] == 'PENDING',
         )
-        .length;
-    final activeRes = _reservations
-        .where(
-          (r) =>
-              r['status'] == 'CONFIRMED' ||
-              r['status'] == 'PENDING' ||
-              r['status'] == 'COUNTER_PROPOSED' ||
-              r['status'] == 'APPROVED',
-        )
-        .length;
+        .toList();
+    final pendingPkgs = pendingPackagesList.length;
+
+    final scheduledReservations = _reservations.where((r) {
+      final s = (r['status']?.toString() ?? '').toUpperCase();
+      if (s == 'CANCELLED' || s == 'REJECTED' || s == 'DENIED') return false;
+      final end = parseUtcToLocal(r['endAt']);
+      return end == null || end.isAfter(DateTime.now());
+    }).toList();
+    final activeRes = scheduledReservations.length;
+
+    final openInvoices = _invoices
+        .where((i) => i['status'] != 'PAID' && i['status'] != 'UP_TO_DATE')
+        .toList();
+    final hasOpenInvoice = openInvoices.isNotEmpty;
+    final firstOpenInvoice = hasOpenInvoice ? openInvoices.first : null;
+    final hasOverdue = openInvoices.any((i) => i['status'] == 'OVERDUE');
+
+    final latestPkg = pendingPackagesList.isNotEmpty
+        ? pendingPackagesList.first
+        : null;
+    final pkgSubtitle = latestPkg != null
+        ? '${latestPkg['description'] ?? 'Pacote'} • ${_formatDate(latestPkg['receivedAt'])}'
+        : 'Nenhuma encomenda aguardando retirada';
+
+    final nextRes = scheduledReservations.isNotEmpty
+        ? scheduledReservations.first
+        : null;
+    final resSubtitle = nextRes != null
+        ? '${nextRes['commonAreaName'] ?? 'Área comum'} • ${_formatDate(nextRes['startAt'])}'
+        : 'Nenhuma reserva agendada';
+
+    final brl = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final invAmount = (firstOpenInvoice?['amount'] as num?)?.toDouble();
+    final finValue = hasOpenInvoice
+        ? (hasOverdue ? 'Taxa Vencida' : 'Taxa em Aberto')
+        : 'Em dia';
+    final finSubtitle = hasOpenInvoice
+        ? '${firstOpenInvoice?['dueDate'] != null ? 'Vence ${_formatDueDate(firstOpenInvoice!['dueDate'])}' : 'Aberto'}${invAmount != null ? ' • ${brl.format(invAmount)}' : ''}'
+        : 'Sem pendências financeiras';
+
     final totalAnnouncements = _announcements.length;
-    final hasOverdueInvoices = _invoices.any((i) => i['status'] == 'OVERDUE');
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final annSubtitle = _announcements.isNotEmpty
+        ? (_announcements.first['title']?.toString() ?? 'Mural atualizado')
+        : 'Nenhum comunicado publicado';
 
     return RefreshIndicator(
       onRefresh: _load,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 16, 28, 16),
-        child: Column(
-          children: [
-            // KPI Stat strip
-            Row(
-              children: [
-                Expanded(
-                  child: SaaSMetricCard(
-                    title: 'Encomendas a Retirar',
-                    value: '$pendingPkgs',
-                    icon: Icons.inventory_2_outlined,
-                    iconColor: pendingPkgs > 0
-                        ? const Color(0xFFF59E0B)
-                        : const Color(0xFF10B981),
-                    subtitle: pendingPkgs > 0 ? 'Na portaria' : 'Tudo retirado',
-                    onTap: () => setState(() => _tab = 1),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: SaaSMetricCard(
-                    title: 'Reservas Ativas',
-                    value: '$activeRes',
-                    icon: Icons.event_available_outlined,
-                    iconColor: const Color(0xFF2563EB),
-                    subtitle: activeRes > 0
-                        ? 'Próximos agendamentos'
-                        : 'Nenhuma reserva',
-                    onTap: () => setState(() => _tab = 2),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: SaaSMetricCard(
-                    title: 'Comunicados Recentes',
-                    value: '$totalAnnouncements',
-                    icon: Icons.campaign_outlined,
-                    iconColor: const Color(0xFF8B5CF6),
-                    subtitle: 'Mural do condomínio',
-                    onTap: () => setState(() => _tab = 7),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: SaaSMetricCard(
-                    title: 'Taxa Condominial',
-                    value: hasOverdueInvoices ? 'Pendente' : 'Em dia',
-                    icon: Icons.receipt_long_outlined,
-                    iconColor: hasOverdueInvoices
-                        ? const Color(0xFFEF4444)
-                        : const Color(0xFF10B981),
-                    subtitle: hasOverdueInvoices
-                        ? 'Boleto em aberto'
-                        : 'Sem pendências',
-                    onTap: _openPaymentDialog,
-                  ),
-                ),
-              ],
-            ),
-            if (pendingPkgs > 0 || totalAnnouncements > 0) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
-                      : const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEF4444),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        [
-                          if (pendingPkgs > 0)
-                            '📦 Você tem $pendingPkgs encomenda(s) aguardando retirada na portaria',
-                          if (totalAnnouncements > 0)
-                            '📢 $totalAnnouncements novo(s) comunicado(s) no condomínio',
-                        ].join('   •   '),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1D4ED8),
-                        ),
-                      ),
-                    ),
-                    if (pendingPkgs > 0)
-                      TextButton(
-                        onPressed: () => setState(() => _tab = 1),
-                        child: const Text('Ver encomendas'),
-                      )
-                    else
-                      TextButton(
-                        onPressed: () => setState(() => _tab = 6),
-                        child: const Text('Ver comunicados'),
-                      ),
-                  ],
-                ),
+      child: ListView(
+        padding: EdgeInsets.fromLTRB(
+          isDesktop ? 24 : 16,
+          16,
+          isDesktop ? 24 : 16,
+          28,
+        ),
+        children: [
+          SubscriptionStatusBanner(access: _subAccess),
+          // Contextual Greeting Banner
+          _buildResidentContextBanner(isDark, condoName),
+          const SizedBox(height: 16),
+
+          // 4 Status Cards
+          SaaSMetricGrid(
+            items: [
+              SaaSMetricCard(
+                title: 'Encomendas',
+                value: pendingPkgs > 0
+                    ? '$pendingPkgs Aguardando Retirada'
+                    : '0 Aguardando',
+                icon: Icons.inventory_2_outlined,
+                iconColor: pendingPkgs > 0
+                    ? SaaSColors.success
+                    : SaaSColors.primary,
+                trend: pendingPkgs > 0 ? 'Na portaria' : null,
+                subtitle: pkgSubtitle,
+                onTap: () => setState(() => _tab = 1),
+              ),
+              SaaSMetricCard(
+                title: 'Reservas',
+                value: activeRes > 0
+                    ? '$activeRes ${activeRes == 1 ? 'Próxima' : 'Próximas'}'
+                    : '0 Reservas',
+                icon: Icons.event_available_outlined,
+                iconColor: SaaSColors.primary,
+                subtitle: resSubtitle,
+                onTap: () => setState(() => _tab = 2),
+              ),
+              SaaSMetricCard(
+                title: 'Financeiro',
+                value: finValue,
+                icon: Icons.receipt_long_outlined,
+                iconColor: hasOverdue
+                    ? SaaSColors.error
+                    : (hasOpenInvoice ? SaaSColors.warning : SaaSColors.success),
+                trend: hasOpenInvoice ? 'Pagar com PIX' : 'Quitado',
+                trendPositive: !hasOpenInvoice,
+                subtitle: finSubtitle,
+                onTap: firstOpenInvoice != null
+                    ? () => _paySingleBoleto(firstOpenInvoice)
+                    : _openPaymentDialog,
+              ),
+              SaaSMetricCard(
+                title: 'Comunicados',
+                value: totalAnnouncements > 0
+                    ? '$totalAnnouncements ${totalAnnouncements == 1 ? 'Novo' : 'Novos'}'
+                    : '0 Novos',
+                icon: Icons.campaign_outlined,
+                iconColor: SaaSColors.purple,
+                subtitle: annSubtitle,
+                onTap: () => setState(() => _tab = 7),
               ),
             ],
-            const SizedBox(height: 16),
-
-            // 3-Column main area filling 100% height (Left: Comunicados, Middle: Unidade/Ações/Boletos, Right: Reservas)
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Left Column: Comunicados recentes
-                  Expanded(
-                    flex: 4,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: _buildRecentAnnouncementsSection(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  // Middle Column: Unit Card, Atalhos rápidos, Boletos
-                  Expanded(
-                    flex: 4,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Minha unidade',
-                              style: TextStyle(
-                                fontSize: 15.5,
-                                fontWeight: FontWeight.w800,
-                                color: isDark
-                                    ? Colors.white
-                                    : const Color(0xFF0F172A),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => setState(() => _tab = 4),
-                              child: const Text('Ver perfil'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        _buildUnitCard(),
-                        const SizedBox(height: 14),
-                        _buildQuickActionShortcuts(),
-                        const SizedBox(height: 14),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: _buildPendingBoletoSection(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  // Right Column: Próximas reservas & Contrapropostas
-                  Expanded(
-                    flex: 4,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: _buildUpcomingReservationsSection(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ----------------------------------------------------
-  // UNIT CARD
-  // ----------------------------------------------------
-  Widget _buildUnitCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final condoImg = _condominium?['imageUrl'] as String?;
-    return Container(
-      height: 84,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 8,
-            offset: Offset(0, 3),
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF0F172A)
-                    : const Color(0xFFEEF2FF),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              alignment: Alignment.center,
-              child: (condoImg != null && condoImg.isNotEmpty)
-                  ? (condoImg.startsWith('data:')
-                        ? Image.memory(
-                            base64Decode(condoImg.split(',').last),
-                            width: 52,
-                            height: 52,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.apartment_rounded,
-                              color: Color(0xFF3B82F6),
-                              size: 28,
-                            ),
-                          )
-                        : Image.network(
-                            condoImg,
-                            width: 52,
-                            height: 52,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.apartment_rounded,
-                              color: Color(0xFF3B82F6),
-                              size: 28,
-                            ),
-                          ))
-                  : const Icon(
-                      Icons.apartment_rounded,
-                      color: Color(0xFF3B82F6),
-                      size: 28,
-                    ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
+          const SizedBox(height: 18),
+
+          // Quick Actions Grid
+          _buildQuickActionShortcuts(),
+          const SizedBox(height: 18),
+
+          // Responsive Columns for Widgets
+          if (isDesktop)
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  _unitDisplay,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                Expanded(
+                  flex: 6,
+                  child: Column(
+                    children: [
+                      _buildResidentPendingInvoiceCard(isDark),
+                      const SizedBox(height: 16),
+                      _buildUpcomingReservationsSection(),
+                      const SizedBox(height: 16),
+                      _buildResidentVisitorsAndTicketsSection(isDark),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  _sectorDisplay,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? Colors.white60 : const Color(0xFF64748B),
-                    fontWeight: FontWeight.w500,
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 6,
+                  child: Column(
+                    children: [
+                      _buildRecentAnnouncementsSection(),
+                      const SizedBox(height: 16),
+                      _buildActivePollsSection(isDark),
+                    ],
                   ),
                 ),
               ],
-            ),
-          ),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              side: BorderSide(
-                color: isDark
-                    ? const Color(0xFF475569)
-                    : const Color(0xFFCBD5E1),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            onPressed: () => setState(() => _tab = 4),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Meus dados',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-                SizedBox(width: 2),
-                Icon(Icons.chevron_right_rounded, size: 15),
-              ],
-            ),
-          ),
+            )
+          else ...[
+            _buildResidentPendingInvoiceCard(isDark),
+            const SizedBox(height: 16),
+            _buildUpcomingReservationsSection(),
+            const SizedBox(height: 16),
+            _buildRecentAnnouncementsSection(),
+            const SizedBox(height: 16),
+            _buildActivePollsSection(isDark),
+            const SizedBox(height: 16),
+            _buildResidentVisitorsAndTicketsSection(isDark),
+          ],
         ],
       ),
     );
   }
 
-  // ----------------------------------------------------
-  // ATALHOS RÁPIDOS (6 PASTEL SQUARES ROBUSTOS)
-  // ----------------------------------------------------
+  Widget _buildResidentContextBanner(bool isDark, String condoName) {
+    final condoImg = _condominium?['imageUrl'] as String?;
+    final imgProvider = resolveAvatarImageProvider(condoImg);
+
+    final avatar = ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: SaaSColors.primary.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: imgProvider != null
+            ? Image(image: imgProvider, fit: BoxFit.cover)
+            : const Icon(
+                Icons.apartment_rounded,
+                color: SaaSColors.primary,
+                size: 28,
+              ),
+      ),
+    );
+
+    final greetingCol = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Olá, $_residentFirstName!',
+          style: TextStyle(
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+            color: SaaSColors.textPrimary(isDark),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '$_unitDisplay - $_sectorDisplay • $condoName',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: SaaSColors.textSecondary(isDark),
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+
+    final actionsWrap = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (_memberships.length > 1)
+          AncoraDropdown<int>(
+            compact: true,
+            prefixIcon: Icons.apartment_rounded,
+            value: (_activeMembership?['id'] as num?)?.toInt() ??
+                _selectedCondominiumId,
+            items: _memberships
+                .where((m) => m['condominiumId'] != null)
+                .map((m) {
+                  final memId =
+                      (m['id'] as num?)?.toInt() ??
+                      (m['condominiumId'] as num).toInt();
+                  final unitIdPart =
+                      m['unitLabel']?.toString() ??
+                      (m['unitIdentifier'] != null
+                          ? 'Unidade ${m['unitIdentifier']}'
+                          : null);
+                  return AncoraMenuOption<int>(
+                    value: memId,
+                    label: m['condominiumName']?.toString() ?? 'Condomínio',
+                    subtitle: unitIdPart,
+                  );
+                })
+                .toList(),
+            onChanged: (selectedKey) {
+              Map<String, dynamic>? chosen;
+              for (final m in _memberships) {
+                final key =
+                    (m['id'] as num?)?.toInt() ??
+                    (m['condominiumId'] as num?)?.toInt();
+                if (key == selectedKey) {
+                  chosen = m;
+                  break;
+                }
+              }
+              final nextCondoId = (chosen?['condominiumId'] as num?)?.toInt();
+              setState(() {
+                _selectedMembershipId = selectedKey;
+                if (nextCondoId != null) _selectedCondominiumId = nextCondoId;
+              });
+              _load();
+            },
+          ),
+        OutlinedButton.icon(
+          onPressed: () => setState(() => _tab = 4),
+          icon: const Icon(Icons.person_outline_rounded, size: 16),
+          label: const Text('Meus dados'),
+        ),
+      ],
+    );
+
+    return SaaSGlassCard(
+      padding: const EdgeInsets.all(18),
+      accentGlowColor: SaaSColors.primary,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 560) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    avatar,
+                    const SizedBox(width: 14),
+                    Expanded(child: greetingCol),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                actionsWrap,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              avatar,
+              const SizedBox(width: 14),
+              Expanded(child: greetingCol),
+              const SizedBox(width: 12),
+              actionsWrap,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildResidentPendingInvoiceCard(bool isDark) {
+    return _buildPendingBoletoSection();
+  }
+
   Widget _buildQuickActionShortcuts() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Center(
-          child: Text(
-            'Ações Rápidas do Condomínio',
-            style: TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
+        const SaaSSectionHeader(
+          title: 'Ações Rápidas',
+          subtitle: 'Acesse os serviços da sua unidade em um clique',
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final maxW = constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : MediaQuery.sizeOf(context).width;
+            final cols = maxW >= 1000 ? 6 : (maxW >= 620 ? 3 : 2);
+            const gap = 12.0;
+            final tileW = (maxW - gap * (cols - 1)) / cols;
+            final actions = <(String, IconData, Color, VoidCallback)>[
+              if (_hasFeature('FINANCIAL'))
+                (
+                  'Pagar Condomínio / PIX',
+                  Icons.qr_code_2_rounded,
+                  SaaSColors.success,
+                  _openPaymentDialog,
+                ),
+              if (_hasFeature('RESERVATIONS'))
+                (
+                  'Reservar Área Comum',
+                  Icons.event_available_rounded,
+                  SaaSColors.primary,
+                  _createReservation,
+                ),
+              if (_hasFeature('VISITORS'))
+                (
+                  'Liberar Visitante (QR Code)',
+                  Icons.badge_outlined,
+                  SaaSColors.purple,
+                  _openQuickVisitorDialog,
+                ),
+              if (_hasFeature('DOORMAN_CHAT'))
+                (
+                  'Chat com Portaria',
+                  Icons.chat_bubble_outline_rounded,
+                  const Color(0xFF06B6D4),
+                  () => setState(() => _tab = 3),
+                ),
+              if (_hasFeature('COMMUNITY_TICKETS'))
+                (
+                  'Registrar Ocorrência',
+                  Icons.report_problem_outlined,
+                  SaaSColors.warning,
+                  _openQuickTicketDialog,
+                ),
+              (
+                'Mural da Comunidade',
+                Icons.diversity_3_outlined,
+                isDark ? const Color(0xFF60A5FA) : const Color(0xFF4F46E5),
+                () => setState(() => _tab = 6),
+              ),
+            ];
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: actions
+                  .map(
+                    (a) => SizedBox(
+                      width: tileW > 0 ? tileW : maxW,
+                      child: SaaSQuickActionCard(
+                        title: a.$1,
+                        icon: a.$2,
+                        color: a.$3,
+                        onTap: a.$4,
+                      ),
+                    ),
+                  )
+                  .toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivePollsSection(bool isDark) {
+    final activePolls = _polls.where((p) => p['active'] != false).toList();
+    return SaaSGlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SaaSSectionHeader(
+            title: 'Enquetes Ativas',
+            badge: SaaSBadge(
+              label: '${activePolls.length}',
+              variant: activePolls.isNotEmpty
+                  ? SaaSBadgeVariant.purple
+                  : SaaSBadgeVariant.neutral,
+            ),
+            action: TextButton(
+              onPressed: () => setState(() => _tab = 6),
+              child: const Text('Ver comunidade'),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        Center(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+          if (activePolls.isEmpty)
+            const SaaSEmptyState(
+              icon: Icons.poll_outlined,
+              title: 'Nenhuma enquete ativa',
+              subtitle: 'Quando o síndico abrir uma votação rápida, ela aparecerá aqui.',
+            )
+          else
+            ...activePolls.take(2).map((poll) {
+              final options = (poll['options'] is List)
+                  ? (poll['options'] as List)
+                        .whereType<Map>()
+                        .map((e) => Map<String, dynamic>.from(e))
+                        .toList()
+                  : <Map<String, dynamic>>[];
+              final votedOptionId =
+                  poll['myOptionId'] ?? poll['userVotedOptionId'];
+              final totalVotes = (poll['totalVotes'] as num?)?.toInt() ?? 0;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: SaaSColors.surfaceSubtle(isDark),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : SaaSColors.border(isDark),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      poll['title']?.toString() ?? 'Enquete',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if ((poll['description']?.toString() ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        poll['description'].toString(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: SaaSColors.textSecondary(isDark),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    ...options.map((opt) {
+                      final optId = opt['id'] as num?;
+                      final isChosen =
+                          votedOptionId != null && votedOptionId == optId;
+                      final count =
+                          (opt['votes'] as num?)?.toInt() ??
+                          (opt['voteCount'] as num?)?.toInt() ??
+                          0;
+                      final pct = totalVotes > 0
+                          ? ((count / totalVotes) * 100).round()
+                          : 0;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: InkWell(
+                          onTap: (optId != null && poll['id'] is num)
+                              ? () => _votePoll(poll['id'] as num, optId)
+                              : null,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isChosen
+                                  ? SaaSColors.primary.withValues(alpha: 0.16)
+                                  : SaaSColors.surface(isDark),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isChosen
+                                    ? SaaSColors.primary
+                                    : SaaSColors.border(isDark),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isChosen
+                                      ? Icons.check_circle_rounded
+                                      : Icons.radio_button_unchecked_rounded,
+                                  size: 16,
+                                  color: isChosen
+                                      ? SaaSColors.primary
+                                      : SaaSColors.textSecondary(isDark),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    opt['label']?.toString() ??
+                                        opt['optionText']?.toString() ??
+                                        opt['text']?.toString() ??
+                                        '',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '$pct% ($count)',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: SaaSColors.textSecondary(isDark),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResidentVisitorsAndTicketsSection(bool isDark) {
+    return SaaSGlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SaaSSectionHeader(
+            title: 'Meus Visitantes & Ocorrências',
+            action: Wrap(
+              spacing: 8,
               children: [
-                _quickActionItem(
-                  title: 'Boletos / PIX',
-                  icon: Icons.qr_code_2_rounded,
-                  bgColor: isDark
-                      ? const Color(0xFF064E3B)
-                      : const Color(0xFFE8F8F0),
-                  iconColor: const Color(0xFF10B981),
-                  onTap: _openPaymentDialog,
+                OutlinedButton.icon(
+                  onPressed: _openQuickVisitorDialog,
+                  icon: const Icon(Icons.qr_code_rounded, size: 15),
+                  label: const Text('Novo Visitante'),
                 ),
-                const SizedBox(width: 8),
-                _quickActionItem(
-                  title: 'Reservas',
-                  icon: Icons.event_available_rounded,
-                  bgColor: isDark
-                      ? const Color(0xFF78350F)
-                      : const Color(0xFFFEF3E2),
-                  iconColor: const Color(0xFFF59E0B),
-                  onTap: () => setState(() => _tab = 2),
-                ),
-                const SizedBox(width: 8),
-                _quickActionItem(
-                  title: 'Encomendas',
-                  icon: Icons.inventory_2_outlined,
-                  bgColor: isDark
-                      ? const Color(0xFF1E3A8A)
-                      : const Color(0xFFDBEAFE),
-                  iconColor: const Color(0xFF2563EB),
-                  onTap: () => setState(() => _tab = 1),
-                ),
-                const SizedBox(width: 8),
-                _quickActionItem(
-                  title: 'Portaria / Chat',
-                  icon: Icons.chat_bubble_outline_rounded,
-                  bgColor: isDark
-                      ? const Color(0xFF164E63)
-                      : const Color(0xFFE0F2FE),
-                  iconColor: const Color(0xFF06B6D4),
-                  onTap: () => setState(() => _tab = 3),
-                ),
-                const SizedBox(width: 8),
-                _quickActionItem(
-                  title: 'Comunidade',
-                  icon: Icons.diversity_3_outlined,
-                  bgColor: isDark
-                      ? const Color(0xFF4C1D95)
-                      : const Color(0xFFF3E8FF),
-                  iconColor: const Color(0xFF8B5CF6),
-                  onTap: () => setState(() => _tab = 6),
-                ),
-                const SizedBox(width: 8),
-                _quickActionItem(
-                  title: 'Emergência',
-                  icon: Icons.local_hospital_outlined,
-                  bgColor: isDark
-                      ? const Color(0xFF831843)
-                      : const Color(0xFFFFE4E6),
-                  iconColor: const Color(0xFFE11D48),
-                  onTap: _openEmergencySos,
+                OutlinedButton.icon(
+                  onPressed: _openQuickTicketDialog,
+                  icon: const Icon(Icons.add_comment_outlined, size: 15),
+                  label: const Text('Ocorrência'),
                 ),
               ],
             ),
           ),
-        ),
-      ],
+          if (_visitors.isEmpty && _tickets.isEmpty)
+            const SaaSEmptyState(
+              icon: Icons.verified_user_outlined,
+              title: 'Nenhum visitante ou ocorrência ativa',
+              subtitle:
+                  'Libere visitantes com QR Code ou registre uma ocorrência para a administração.',
+            )
+          else ...[
+            if (_visitors.isNotEmpty) ...[
+              Text(
+                'Visitantes autorizados (${_visitors.length})',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: SaaSColors.textSecondary(isDark),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ..._visitors.take(3).map((v) {
+                final st = v['status']?.toString() ?? 'AUTHORIZED';
+                final variant = switch (st) {
+                  'CHECKED_IN' => SaaSBadgeVariant.success,
+                  'DENIED' || 'CANCELLED' => SaaSBadgeVariant.error,
+                  _ => SaaSBadgeVariant.primary,
+                };
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SaaSColors.surfaceSubtle(isDark),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : SaaSColors.border(isDark),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              v['visitorName']?.toString() ?? 'Visitante',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              'Código: ${v['accessCode'] ?? '—'} • ${_formatDate(v['expectedAt'] ?? v['createdAt'])}',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: SaaSColors.textSecondary(isDark),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SaaSBadge(label: st, variant: variant),
+                      if (v['id'] is num) ...[
+                        const SizedBox(width: 6),
+                        IconButton(
+                          tooltip: 'Ver Convite QR / WhatsApp',
+                          icon: const Icon(Icons.qr_code_2_rounded, size: 19),
+                          onPressed: () => showAncoraDialog<void>(
+                            context: context,
+                            builder: (_) => VisitorDigitalPassDialog(
+                              visitorId: v['id'] as num,
+                              api: _communityApi,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }),
+            ],
+            if (_tickets.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Minhas ocorrências (${_tickets.length})',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: SaaSColors.textSecondary(isDark),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ..._tickets.take(3).map((t) {
+                final st = t['status']?.toString() ?? 'OPEN';
+                final variant = switch (st) {
+                  'RESOLVED' || 'CLOSED' => SaaSBadgeVariant.success,
+                  'IN_PROGRESS' => SaaSBadgeVariant.primary,
+                  'CANCELLED' => SaaSBadgeVariant.neutral,
+                  _ => SaaSBadgeVariant.warning,
+                };
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SaaSColors.surfaceSubtle(isDark),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : SaaSColors.border(isDark),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              t['title']?.toString() ?? 'Ocorrência',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              '${t['category'] ?? 'Geral'} • ${_formatDate(t['createdAt'])}',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: SaaSColors.textSecondary(isDark),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SaaSBadge(label: st, variant: variant),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ],
+      ),
     );
   }
 
@@ -1219,9 +1824,14 @@ class _HomePageState extends State<HomePage> {
       );
       return;
     }
-    final unitId = _memberships.isNotEmpty
-        ? _memberships.first['unitId'] as num?
-        : null;
+    if (!_hasFeature('EMERGENCY_SOS')) {
+      SaaSFeedback.showWarning(
+        context,
+        'O alerta SOS está bloqueado no plano atual ou assinatura inativa.',
+      );
+      return;
+    }
+    final unitId = _activeMembership?['unitId'] as num?;
     await showAncoraDialog<void>(
       context: context,
       builder: (_) => EmergencySOSDialog(
@@ -1232,2128 +1842,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-
-  Widget _quickActionItem({
-    required String title,
-    required IconData icon,
-    required Color bgColor,
-    required Color iconColor,
-    required VoidCallback onTap,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        width: 88,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-        child: Column(
-          children: [
-            Container(
-              height: 52,
-              width: 52,
-              decoration: BoxDecoration(
-                color: bgColor,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              alignment: Alignment.center,
-              child: Icon(icon, color: iconColor, size: 24),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white70 : const Color(0xFF334155),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ----------------------------------------------------
-  // BOLETOS EM ABERTO
-  // ----------------------------------------------------
-  Widget _buildPendingBoletoSection() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final pendingInvoices = _invoices
-        .where((i) => i['status'] != 'PAID')
-        .toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Taxas & Boletos',
-              style: TextStyle(
-                fontSize: 15.5,
-                fontWeight: FontWeight.w800,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
-              ),
-            ),
-            TextButton(
-              onPressed: _openPaymentDialog,
-              child: const Text('Histórico'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        if (pendingInvoices.isEmpty)
-          InkWell(
-            onTap: _openPaymentDialog,
-            borderRadius: BorderRadius.circular(18),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                      : const Color(0xFFDCFCE7),
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x06000000),
-                    blurRadius: 8,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF064E3B)
-                          : const Color(0xFFDCFCE7),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.check_circle_rounded,
-                      color: Color(0xFF15803D),
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Tudo em dia!',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: isDark
-                                ? Colors.white
-                                : const Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Nenhum boleto em aberto para a sua unidade.',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: isDark
-                                ? Colors.white60
-                                : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: Color(0xFF94A3B8),
-                  ),
-                ],
-              ),
-            ),
-          )
-        else
-          ...pendingInvoices.take(1).map((invoice) {
-            final isOverdue = invoice['status'] == 'OVERDUE';
-            final amountVal = (invoice['amount'] as num?)?.toDouble() ?? 0.00;
-
-            return InkWell(
-              onTap: () => _paySingleBoleto(invoice),
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: isOverdue
-                        ? const Color(0xFFFCA5A5)
-                        : (isDark
-                              ? const Color(0xFF334155)
-                              : const Color(0xFFE2E8F0)),
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x06000000),
-                      blurRadius: 8,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: isOverdue
-                            ? (isDark
-                                  ? const Color(
-                                      0xFF7F1D1D,
-                                    ).withValues(alpha: 0.5)
-                                  : const Color(0xFFFEE2E2))
-                            : (isDark
-                                  ? const Color(
-                                      0xFF1E3A8A,
-                                    ).withValues(alpha: 0.3)
-                                  : const Color(0xFFEFF6FF)),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.description_rounded,
-                        color: isOverdue
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF2563EB),
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            invoice['title']?.toString() ??
-                                'Taxa de Condomínio',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Vencimento: ${_formatDueDate(invoice['dueDate'])}',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: isDark
-                                  ? Colors.white60
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          'R\$ ${amountVal.toStringAsFixed(2).replaceAll('.', ',')}',
-                          style: TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                            color: isDark
-                                ? Colors.white
-                                : const Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          isOverdue ? 'Vencido' : 'Em aberto',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: isOverdue
-                                ? const Color(0xFFDC2626)
-                                : const Color(0xFFF59E0B),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 4,
-                            ),
-                            minimumSize: const Size(0, 32),
-                            side: const BorderSide(color: Color(0xFFBFDBFE)),
-                            backgroundColor: isDark
-                                ? const Color(0xFF1E3A8A).withValues(alpha: 0.2)
-                                : const Color(0xFFEFF6FF),
-                            foregroundColor: const Color(0xFF2563EB),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          onPressed: () => _paySingleBoleto(invoice),
-                          child: const Text(
-                            'Pagar agora',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-      ],
-    );
-  }
-
-  String _formatDueDate(dynamic raw) {
-    if (raw == null) return '—';
-    return formatDate(raw);
-  }
-
-  Future<void> _paySingleBoleto(Map<String, dynamic> invoice) async {
-    final condoId = _condominium?['id'];
-    final unitId =
-        invoice['unitId'] ??
-        (_memberships.isNotEmpty ? _memberships.first['unitId'] : null);
-    if (condoId is! num || unitId is! num) {
-      SaaSFeedback.showWarning(
-        context,
-        'Nenhuma unidade vinculada para realizar o pagamento.',
-      );
-      return;
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => BoletoPaymentDialog(
-        condominiumId: condoId,
-        unitId: unitId,
-        unitLabel: _unitDisplay,
-        title: invoice['title']?.toString() ?? 'Taxa de Condomínio',
-        amount: (invoice['amount'] as num?)?.toDouble() ?? 0.0,
-        dueDate: _formatDueDate(invoice['dueDate']),
-        digitableLine: invoice['digitableLine']?.toString() ?? '',
-        status: invoice['status']?.toString() ?? 'PENDING',
-        api: _communityApi,
-        onPaid: () {
-          setState(() {
-            invoice['status'] = 'PAID';
-          });
-          _load();
-        },
-      ),
-    );
-  }
-
-  // ----------------------------------------------------
-  // COMUNICADOS RECENTES (THEMATIC PASTEL ICONS)
-  // ----------------------------------------------------
-  Widget _buildRecentAnnouncementsSection() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Comunicados recentes',
-              style: TextStyle(
-                fontSize: 15.5,
-                fontWeight: FontWeight.w800,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
-              ),
-            ),
-            TextButton(
-              onPressed: () => setState(() => _tab = 7),
-              child: const Text('Ver todos'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        if (_announcements.isEmpty)
-          InkWell(
-            onTap: () => setState(() => _tab = 7),
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              height: 84,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF334155)
-                      : const Color(0xFFE2E8F0),
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x06000000),
-                    blurRadius: 8,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                          : const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.campaign_outlined,
-                      color: Color(0xFF2563EB),
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      'Nenhum comunicado recente publicado para o condomínio.',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-        else
-          ..._announcements.take(2).map((a) {
-            final title = a['title']?.toString() ?? 'Comunicado';
-            final content = a['content']?.toString() ?? '';
-            final dateStr = _formatDate(a['createdAt']);
-            final isSustainability =
-                title.toLowerCase().contains('sustentab') ||
-                title.toLowerCase().contains('recicl');
-            final iconBg = isSustainability
-                ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFE8F8F0))
-                : (isDark ? const Color(0xFF4C1D95) : const Color(0xFFF3E8FF));
-            final iconColor = isSustainability
-                ? const Color(0xFF10B981)
-                : const Color(0xFF8B5CF6);
-            final iconData = isSustainability
-                ? Icons.eco_rounded
-                : Icons.campaign_rounded;
-
-            return InkWell(
-              onTap: () => setState(() => _tab = 7),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                height: 84,
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFE2E8F0),
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x06000000),
-                      blurRadius: 8,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: iconBg,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(iconData, color: iconColor, size: 24),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w800,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            dateStr,
-                            maxLines: 1,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark
-                                  ? Colors.white60
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            content,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark
-                                  ? Colors.white70
-                                  : const Color(0xFF334155),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF2563EB),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-      ],
-    );
-  }
-
-  // ----------------------------------------------------
-  // PRÓXIMAS RESERVAS & CONTRAPROPOSTAS
-  // ----------------------------------------------------
-  Widget _buildUpcomingReservationsSection() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final counterProposals = _reservations
-        .where((r) => r['status'] == 'COUNTER_PROPOSED')
-        .toList();
-    final scheduledReservations = _reservations.where((r) {
-      final s = (r['status']?.toString() ?? '').toUpperCase();
-      if (s == 'CANCELLED' || s == 'REJECTED' || s == 'DENIED') return false;
-      final end = parseUtcToLocal(r['endAt']);
-      return end == null || end.isAfter(DateTime.now());
-    }).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Próximas reservas',
-              style: TextStyle(
-                fontSize: 15.5,
-                fontWeight: FontWeight.w800,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
-              ),
-            ),
-            TextButton(
-              onPressed: () => setState(() => _tab = 2),
-              child: const Text('Ver todas'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-
-        if (counterProposals.isNotEmpty) ...[
-          ...counterProposals.map(
-            (cp) => _buildCounterProposalCard(cp, isDark),
-          ),
-          const SizedBox(height: 10),
-        ],
-
-        if (scheduledReservations.isEmpty)
-          InkWell(
-            onTap: _createReservation,
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              height: 84,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF334155)
-                      : const Color(0xFFE2E8F0),
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x06000000),
-                    blurRadius: 8,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                          : const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.deck_rounded,
-                      color: Color(0xFF2563EB),
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Nenhuma reserva agendada',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: isDark
-                                ? Colors.white
-                                : const Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Toque para agendar salão ou área comum.',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark
-                                ? Colors.white60
-                                : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.add_circle_outline_rounded,
-                    color: Color(0xFF2563EB),
-                  ),
-                ],
-              ),
-            ),
-          )
-        else
-          ...scheduledReservations.take(1).map((res) {
-            final status = (res['status']?.toString() ?? 'PENDING')
-                .toUpperCase();
-            final isApproved = status == 'APPROVED' || status == 'CONFIRMED';
-            final statusLabel = isApproved
-                ? 'Confirmada'
-                : (status == 'PENDING' ? 'Aguardando' : _text(status));
-            final badgeBg = isApproved
-                ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7))
-                : (isDark
-                      ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                      : const Color(0xFFDBEAFE));
-            final badgeFg = isApproved
-                ? const Color(0xFF15803D)
-                : const Color(0xFF1D4ED8);
-            final imgUrl = (res['imageUrl'] ?? res['commonAreaImageUrl'])
-                ?.toString();
-
-            return InkWell(
-              onTap: () => setState(() => _tab = 2),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                height: 84,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFE2E8F0),
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x06000000),
-                      blurRadius: 8,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF334155)
-                              : const Color(0xFFE0E7FF),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: (imgUrl != null && imgUrl.isNotEmpty)
-                            ? (imgUrl.startsWith('data:')
-                                  ? Image.memory(
-                                      base64Decode(imgUrl.split(',').last),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.deck_rounded,
-                                        color: Color(0xFF3B82F6),
-                                        size: 26,
-                                      ),
-                                    )
-                                  : Image.network(
-                                      imgUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.deck_rounded,
-                                        color: Color(0xFF3B82F6),
-                                        size: 26,
-                                      ),
-                                    ))
-                            : const Icon(
-                                Icons.deck_rounded,
-                                color: Color(0xFF3B82F6),
-                                size: 26,
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            res['commonAreaName']?.toString() ?? 'Área Comum',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w800,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _formatReservationDateTime(res),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark
-                                  ? Colors.white60
-                                  : const Color(0xFF64748B),
-                              height: 1.25,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: badgeBg,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        statusLabel,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: badgeFg,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-      ],
-    );
-  }
-
-  Widget _buildCounterProposalCard(Map<String, dynamic> r, bool isDark) {
-    final areaName = r['commonAreaName'] ?? 'Espaço Comum';
-    final start = _formatDate(r['startAt']);
-    final end = _formatDate(r['endAt']);
-    final notes = r['notes'] ?? 'Portaria sugeriu alteração de horário.';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF78350F).withValues(alpha: 0.3)
-            : const Color(0xFFFEF3C7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF59E0B)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.swap_horiz_rounded,
-                color: Color(0xFFD97706),
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Contraproposta da Portaria: $areaName',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                    color: Color(0xFFB45309),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Novo horário sugerido: De $start até $end',
-            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-          ),
-          if (notes.toString().isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              'Observação: $notes',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF15803D),
-                  ),
-                  onPressed: () => _acceptCounterProposal(r['id'] as num),
-                  child: const Text('Aceitar Proposta'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFDC2626),
-                    side: const BorderSide(color: Color(0xFFF87171)),
-                  ),
-                  onPressed: () => _declineCounterProposal(r['id'] as num),
-                  child: const Text('Recusar'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatReservationDateTime(Map<String, dynamic> r) {
-    final start = r['startAt'];
-    final end = r['endAt'];
-    if (start == null) return 'Horário a definir';
-    try {
-      final s = parseUtcToLocal(start);
-      if (s == null) return 'Horário a definir';
-      final e = end != null
-          ? parseUtcToLocal(end)
-          : s.add(const Duration(hours: 4));
-      final dateStr = DateFormat('dd/MM/yyyy').format(s);
-      final sTime = DateFormat('HH:mm').format(s);
-      final eTime = e != null ? DateFormat('HH:mm').format(e) : '';
-      return '$dateStr\n$sTime - $eTime';
-    } catch (_) {
-      return 'Horário a definir';
-    }
-  }
-
-  Future<void> _acceptCounterProposal(num id) async {
-    try {
-      await _communityApi.acceptCounterProposal(id);
-      _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Contraproposta aceita! Sua reserva está confirmada.',
-            ),
-            backgroundColor: Color(0xFF15803D),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
-      }
-    }
-  }
-
-  Future<void> _declineCounterProposal(num id) async {
-    try {
-      await _communityApi.declineCounterProposal(id);
-      _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Contraproposta recusada.'),
-            backgroundColor: Color(0xFFDC2626),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
-      }
-    }
-  }
-
-  Future<void> _cancelReservation(num id) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cancelar solicitação?'),
-        content: const Text(
-          'Deseja realmente cancelar esta solicitação de reserva? O horário voltará a ficar disponível para outros moradores.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Voltar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Cancelar Reserva'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await _communityApi.cancelReservation(id);
-      _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Solicitação de reserva cancelada com sucesso.'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro ao cancelar: $e')));
-      }
-    }
-  }
-
-  bool _hasFeature(String code) {
-    if (_condominium == null) return true;
-    final f = _condominium!['features'];
-    if (f is List && f.isNotEmpty) {
-      return f
-          .map((e) => e.toString().toUpperCase())
-          .contains(code.toUpperCase());
-    }
-    return true;
-  }
-
-  void _showPackageQrDialog(Map<String, dynamic> pkg) {
-    final pin =
-        pkg['pickupPin']?.toString() ?? pkg['id'].toString().padLeft(6, '0');
-    final desc = pkg['description'] ?? 'Encomenda';
-    final tracking = pkg['trackingCode']?.toString();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1D4ED8).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.qr_code_2_rounded,
-                color: Color(0xFF1D4ED8),
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Retirada Rápida',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
-                  ),
-                  Text(
-                    'Apresente este código na portaria',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: 320,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                desc,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              if (tracking != null && tracking.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  'Rastreio: $tracking',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Container(
-                width: 170,
-                height: 170,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    GridView.builder(
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 7,
-                            mainAxisSpacing: 3,
-                            crossAxisSpacing: 3,
-                          ),
-                      itemCount: 49,
-                      itemBuilder: (context, idx) {
-                        final isCorner =
-                            (idx < 3 && idx % 7 < 3) ||
-                            (idx % 7 > 3 && idx < 3) ||
-                            (idx >= 42 && idx % 7 < 3);
-                        final isPattern =
-                            idx % 2 == 0 || idx % 3 == 0 || isCorner;
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: isPattern
-                                ? const Color(0xFF1E293B)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(1.5),
-                          ),
-                        );
-                      },
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.inventory_2_rounded,
-                        size: 24,
-                        color: Color(0xFF1D4ED8),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'CÓDIGO PIN DE RETIRADA',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
-                  color: Color(0xFF64748B),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF1E293B)
-                      : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      pin,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w900,
-                        fontSize: 22,
-                        letterSpacing: 4,
-                        color: Color(0xFF1D4ED8),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.copy_rounded, size: 18),
-                      tooltip: 'Copiar PIN',
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: pin));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'PIN copiado para a área de transferência!',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Fechar'),
-          ),
-          if (pkg['status'] == 'RECEIVED' || pkg['status'] == 'NOTIFIED')
-            FilledButton.icon(
-              icon: const Icon(Icons.hail_rounded, size: 16),
-              label: const Text('Avisar Portaria'),
-              onPressed: () {
-                Navigator.pop(ctx);
-                _requestPickup(pkg['id']);
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ----------------------------------------------------
-  // SUB-PAGES (ENCOMENDAS, RESERVAS, COMUNICADOS)
-  // SPACES ARE ROOMY AS REQUIRED BY USER RULE
-  // ----------------------------------------------------
-  Widget _packagesPage() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Suas encomendas',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 2),
-                const Text(
-                  'Acompanhe o recebimento e retirada das entregas da sua unidade.',
-                ),
-              ],
-            ),
-          ),
-          FilledButton.icon(
-            onPressed: _openExpectedPackageDialog,
-            icon: const Icon(Icons.add_box_outlined, size: 18),
-            label: const Text('Avisar Encomenda'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 14),
-      EnterSearchField(
-        hintText: 'Pesquisar encomendas (Enter)',
-        onSubmitted: (query) => setState(() => _packageQuery = query),
-      ),
-      const SizedBox(height: 12),
-      if (_packages.where((e) => recordMatchesQuery(e, _packageQuery)).isEmpty)
-        _empty('Nenhuma encomenda encontrada.', Icons.inventory_2_outlined)
-      else
-        ..._packages.where((e) => recordMatchesQuery(e, _packageQuery)).map((
-          e,
-        ) {
-          final isWaitingPickup =
-              e['status'] == 'RECEIVED' || e['status'] == 'NOTIFIED';
-          final pin =
-              e['pickupPin']?.toString() ?? e['id'].toString().padLeft(6, '0');
-          return Card(
-            margin: const EdgeInsets.only(bottom: 10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: isWaitingPickup
-                            ? const Color(0xFFDBEAFE)
-                            : const Color(0xFFF1F5F9),
-                        child: Icon(
-                          Icons.inventory_2_outlined,
-                          color: isWaitingPickup
-                              ? const Color(0xFF1D4ED8)
-                              : const Color(0xFF64748B),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _text(e['description'], 'Encomenda'),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Recebida em: ${_formatDate(e['receivedAt'])}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF64748B),
-                              ),
-                            ),
-                            if (e['trackingCode'] != null &&
-                                e['trackingCode'].toString().isNotEmpty)
-                              Text(
-                                'Rastreio: ${e['trackingCode']}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF64748B),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isWaitingPickup
-                              ? const Color(0xFFDCFCE7)
-                              : const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          isWaitingPickup ? 'Disponível' : _text(e['status']),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: isWaitingPickup
-                                ? const Color(0xFF15803D)
-                                : const Color(0xFF475569),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEEF2FF),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFC7D2FE)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.pin_rounded,
-                                size: 14,
-                                color: Color(0xFF4338CA),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'PIN: $pin',
-                                style: const TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                  color: Color(0xFF4338CA),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          icon: const Icon(Icons.qr_code_2_rounded, size: 16),
-                          label: const Text(
-                            'QR / PIN',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          onPressed: () => _showPackageQrDialog(e),
-                        ),
-                        if (isWaitingPickup) ...[
-                          const SizedBox(width: 8),
-                          FilledButton.tonalIcon(
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            icon: const Icon(Icons.hail_rounded, size: 16),
-                            label: const Text(
-                              'Solicitar Retirada',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                            onPressed: () => _requestPickup(e['id']),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
-    ],
-  );
-
-  Widget _reservationsPage() {
-    final hasReservationsFeature = _hasFeature('RESERVATIONS');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Reservas de áreas comuns',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Agende salão de festas, churrasqueira e outros espaços.',
-                  ),
-                ],
-              ),
-            ),
-            FilledButton.icon(
-              onPressed: hasReservationsFeature
-                  ? _createReservation
-                  : () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Módulo de reservas disponível nos planos Profissional ou Premium.',
-                          ),
-                        ),
-                      );
-                    },
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Nova reserva'),
-            ),
-          ],
-        ),
-        if (!hasReservationsFeature) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF3C7),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFFDE68A)),
-            ),
-            child: const Row(
-              children: [
-                Icon(
-                  Icons.workspace_premium_rounded,
-                  color: Color(0xFFD97706),
-                  size: 20,
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Seu condomínio está no plano Básico. O agendamento online de áreas comuns requer o plano Profissional.',
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF92400E)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        const SizedBox(height: 14),
-        Builder(
-          builder: (context) {
-            final now = DateTime.now();
-            bool isCancelled(Map<String, dynamic> r) {
-              final s = (r['status']?.toString() ?? '').toUpperCase();
-              return s == 'CANCELLED' || s == 'REJECTED' || s == 'DENIED';
-            }
-
-            bool isPast(Map<String, dynamic> r) {
-              if (isCancelled(r)) return false;
-              final end = parseUtcToLocal(r['endAt']);
-              return end != null && end.isBefore(now);
-            }
-
-            bool isScheduled(Map<String, dynamic> r) {
-              return !isCancelled(r) && !isPast(r);
-            }
-
-            final scheduled = _reservations.where(isScheduled).toList();
-            final past = _reservations.where(isPast).toList();
-            final cancelled = _reservations.where(isCancelled).toList();
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SegmentedButton<String>(
-                  segments: [
-                    ButtonSegment(
-                      value: 'SCHEDULED',
-                      label: Text('Agendadas (${scheduled.length})'),
-                      icon: const Icon(Icons.event_available_rounded),
-                    ),
-                    ButtonSegment(
-                      value: 'PAST',
-                      label: Text('Já passaram (${past.length})'),
-                      icon: const Icon(Icons.history_rounded),
-                    ),
-                    ButtonSegment(
-                      value: 'CANCELLED',
-                      label: Text('Canceladas (${cancelled.length})'),
-                      icon: const Icon(Icons.cancel_outlined),
-                    ),
-                  ],
-                  selected: {_reservationFilter},
-                  onSelectionChanged: (val) =>
-                      setState(() => _reservationFilter = val.first),
-                ),
-                const SizedBox(height: 14),
-                EnterSearchField(
-                  hintText: 'Pesquisar reservas por área ou data (Enter)',
-                  onSubmitted: (query) =>
-                      setState(() => _reservationQuery = query),
-                ),
-                const SizedBox(height: 12),
-                Builder(
-                  builder: (context) {
-                    final currentList = switch (_reservationFilter) {
-                      'PAST' => past,
-                      'CANCELLED' => cancelled,
-                      _ => scheduled,
-                    };
-                    final filtered = currentList
-                        .where((e) => recordMatchesQuery(e, _reservationQuery))
-                        .toList();
-
-                    if (filtered.isEmpty) {
-                      final emptyLabel = switch (_reservationFilter) {
-                        'PAST' => 'Nenhuma reserva passada encontrada.',
-                        'CANCELLED' => 'Nenhuma reserva cancelada.',
-                        _ => 'Você não possui reservas agendadas no momento.',
-                      };
-                      return _empty(emptyLabel, Icons.event_available_outlined);
-                    }
-
-                    return Column(
-                      children: filtered.map((e) {
-                        final status =
-                            e['status']?.toString().toUpperCase() ?? '';
-                        final isCounter = status == 'COUNTER_PROPOSED';
-                        final isPending = status == 'PENDING';
-                        final isWaitlisted = status == 'WAITLISTED';
-                        final isApproved =
-                            status == 'APPROVED' || status == 'CONFIRMED';
-                        final isItemCancelled = isCancelled(e);
-                        final notes = e['notes']?.toString();
-                        final reason = e['rejectionReason']?.toString();
-
-                        Color badgeBg = const Color(0xFFF1F5F9);
-                        Color badgeFg = const Color(0xFF475569);
-                        String statusLabel = _text(e['status']);
-                        if (isItemCancelled) {
-                          badgeBg = const Color(0xFFDC2626);
-                          badgeFg = Colors.white;
-                          statusLabel = 'CANCELADA';
-                        } else if (isCounter) {
-                          badgeBg = const Color(0xFFFEF3C7);
-                          badgeFg = const Color(0xFFB45309);
-                          statusLabel = 'Contraproposta';
-                        } else if (isWaitlisted) {
-                          badgeBg = const Color(0xFFF3E8FF);
-                          badgeFg = const Color(0xFF6D28D9);
-                          statusLabel =
-                              'Lista de Espera (#${e['waitlistPosition'] ?? 1})';
-                        } else if (isPending) {
-                          badgeBg = const Color(0xFFDBEAFE);
-                          badgeFg = const Color(0xFF1D4ED8);
-                          statusLabel = 'Aguardando Aprovação';
-                        } else if (isApproved) {
-                          badgeBg = const Color(0xFFDCFCE7);
-                          badgeFg = const Color(0xFF15803D);
-                          statusLabel = 'Confirmada';
-                        } else {
-                          badgeBg = const Color(0xFFF1F5F9);
-                          badgeFg = const Color(0xFF475569);
-                          statusLabel = 'Concluída';
-                        }
-
-                        final isDarkTheme =
-                            Theme.of(context).brightness == Brightness.dark;
-
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          color: isItemCancelled
-                              ? (isDarkTheme
-                                    ? const Color(
-                                        0xFF450A0A,
-                                      ).withValues(alpha: 0.35)
-                                    : const Color(0xFFFEF2F2))
-                              : null,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            side: BorderSide(
-                              color: isItemCancelled
-                                  ? const Color(0xFFFCA5A5)
-                                  : (isDarkTheme
-                                        ? const Color(0xFF334155)
-                                        : const Color(0xFFE2E8F0)),
-                              width: isItemCancelled ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: SizedBox(
-                                        width: 44,
-                                        height: 44,
-                                        child:
-                                            (e['imageUrl'] != null &&
-                                                e['imageUrl']
-                                                    .toString()
-                                                    .isNotEmpty)
-                                            ? (e['imageUrl']
-                                                      .toString()
-                                                      .startsWith('data:')
-                                                  ? Image.memory(
-                                                      base64Decode(
-                                                        e['imageUrl']
-                                                            .toString()
-                                                            .split(',')
-                                                            .last,
-                                                      ),
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (_, __, ___) => CircleAvatar(
-                                                        backgroundColor:
-                                                            isItemCancelled
-                                                            ? const Color(
-                                                                0xFFFEE2E2,
-                                                              )
-                                                            : badgeBg,
-                                                        child: Icon(
-                                                          isItemCancelled
-                                                              ? Icons
-                                                                    .cancel_rounded
-                                                              : (isCounter
-                                                                    ? Icons
-                                                                          .swap_horiz_rounded
-                                                                    : (isApproved
-                                                                          ? Icons.check_circle_outline_rounded
-                                                                          : Icons.event_available_outlined)),
-                                                          color: isItemCancelled
-                                                              ? const Color(
-                                                                  0xFFDC2626,
-                                                                )
-                                                              : badgeFg,
-                                                        ),
-                                                      ),
-                                                    )
-                                                  : Image.network(
-                                                      e['imageUrl'].toString(),
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (_, __, ___) => CircleAvatar(
-                                                        backgroundColor:
-                                                            isItemCancelled
-                                                            ? const Color(
-                                                                0xFFFEE2E2,
-                                                              )
-                                                            : badgeBg,
-                                                        child: Icon(
-                                                          isItemCancelled
-                                                              ? Icons
-                                                                    .cancel_rounded
-                                                              : (isCounter
-                                                                    ? Icons
-                                                                          .swap_horiz_rounded
-                                                                    : (isApproved
-                                                                          ? Icons.check_circle_outline_rounded
-                                                                          : Icons.event_available_outlined)),
-                                                          color: isItemCancelled
-                                                              ? const Color(
-                                                                  0xFFDC2626,
-                                                                )
-                                                              : badgeFg,
-                                                        ),
-                                                      ),
-                                                    ))
-                                            : CircleAvatar(
-                                                backgroundColor: isItemCancelled
-                                                    ? const Color(0xFFFEE2E2)
-                                                    : badgeBg,
-                                                child: Icon(
-                                                  isItemCancelled
-                                                      ? Icons.cancel_rounded
-                                                      : (isCounter
-                                                            ? Icons
-                                                                  .swap_horiz_rounded
-                                                            : (isApproved
-                                                                  ? Icons
-                                                                        .check_circle_outline_rounded
-                                                                  : Icons
-                                                                        .event_available_outlined)),
-                                                  color: isItemCancelled
-                                                      ? const Color(0xFFDC2626)
-                                                      : badgeFg,
-                                                ),
-                                              ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            _text(e['commonAreaName']),
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 15,
-                                              color: isItemCancelled
-                                                  ? const Color(0xFF991B1B)
-                                                  : null,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Período: ${_formatDate(e['startAt'])} até ${_formatDate(e['endAt'])}',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: Color(0xFF64748B),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: badgeBg,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        statusLabel,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w800,
-                                          color: badgeFg,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (isItemCancelled) ...[
-                                  const SizedBox(height: 10),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: isDarkTheme
-                                          ? const Color(
-                                              0xFF7F1D1D,
-                                            ).withValues(alpha: 0.3)
-                                          : const Color(0xFFFEE2E2),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: const Color(0xFFFECACA),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.highlight_off_rounded,
-                                          size: 16,
-                                          color: Color(0xFFDC2626),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            reason != null && reason.isNotEmpty
-                                                ? 'Motivo: $reason'
-                                                : 'Esta reserva foi cancelada e o espaço foi liberado para novos agendamentos.',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: Color(0xFF991B1B),
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                if (isCounter &&
-                                    notes != null &&
-                                    notes.isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFFBEB),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: const Color(0xFFFDE68A),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.info_outline,
-                                          size: 16,
-                                          color: Color(0xFFB45309),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            'Proposta da portaria: $notes',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: Color(0xFF92400E),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                if (!isItemCancelled &&
-                                    (isCounter ||
-                                        isPending ||
-                                        isWaitlisted)) ...[
-                                  const SizedBox(height: 10),
-                                  SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      children: [
-                                        if (isCounter) ...[
-                                          FilledButton.icon(
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor: const Color(
-                                                0xFF15803D,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 6,
-                                                  ),
-                                              minimumSize: Size.zero,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                            ),
-                                            icon: const Icon(
-                                              Icons.check_rounded,
-                                              size: 16,
-                                            ),
-                                            label: const Text(
-                                              'Aceitar Proposta',
-                                              style: TextStyle(fontSize: 12),
-                                            ),
-                                            onPressed: () =>
-                                                _acceptCounterProposal(
-                                                  e['id'] as num,
-                                                ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          OutlinedButton.icon(
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: const Color(
-                                                0xFFDC2626,
-                                              ),
-                                              side: const BorderSide(
-                                                color: Color(0xFFF87171),
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 6,
-                                                  ),
-                                              minimumSize: Size.zero,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                            ),
-                                            icon: const Icon(
-                                              Icons.close_rounded,
-                                              size: 16,
-                                            ),
-                                            label: const Text(
-                                              'Recusar',
-                                              style: TextStyle(fontSize: 12),
-                                            ),
-                                            onPressed: () =>
-                                                _declineCounterProposal(
-                                                  e['id'] as num,
-                                                ),
-                                          ),
-                                        ] else if (isPending ||
-                                            isWaitlisted) ...[
-                                          OutlinedButton.icon(
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: const Color(
-                                                0xFF64748B,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 6,
-                                                  ),
-                                              minimumSize: Size.zero,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                            ),
-                                            icon: const Icon(
-                                              Icons.close_rounded,
-                                              size: 16,
-                                            ),
-                                            label: Text(
-                                              isWaitlisted
-                                                  ? 'Sair da Fila de Espera'
-                                                  : 'Cancelar Solicitação',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            onPressed: () => _cancelReservation(
-                                              e['id'] as num,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    );
-                  },
-                ),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _announcementsPage() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        'Mural de comunicados',
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-      const SizedBox(height: 4),
-      const Text(
-        'Avisos oficiais publicados pela administração do seu condomínio.',
-      ),
-      const SizedBox(height: 14),
-      EnterSearchField(
-        hintText: 'Pesquisar comunicados (Enter)',
-        onSubmitted: (query) => setState(() => _announcementQuery = query),
-      ),
-      const SizedBox(height: 12),
-      if (_announcements
-          .where((e) => recordMatchesQuery(e, _announcementQuery))
-          .isEmpty)
-        _empty('Nenhum comunicado ativo no momento.', Icons.campaign_outlined)
-      else
-        ..._announcements
-            .where((e) => recordMatchesQuery(e, _announcementQuery))
-            .map((e) {
-              final isRead = e['readByCurrentUser'] == true;
-              final readCount = e['readCount'] ?? 0;
-              final targetDesc =
-                  e['targetDescription']?.toString() ?? 'Todo o condomínio';
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const CircleAvatar(
-                            backgroundColor: Color(0xFFFEF3C7),
-                            child: Icon(
-                              Icons.campaign_outlined,
-                              color: Color(0xFFD97706),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _text(e['title']),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                Text(
-                                  '${_formatDate(e['createdAt'])} • Público: $targetDesc',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isRead
-                                  ? const Color(0xFFDCFCE7)
-                                  : const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              isRead ? 'Lido' : 'Novo',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: isRead
-                                    ? const Color(0xFF15803D)
-                                    : const Color(0xFFB45309),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(_text(e['content'])),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '$readCount confirmação(ões) de leitura',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF64748B),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (!isRead && e['id'] != null)
-                            FilledButton.tonalIcon(
-                              icon: const Icon(
-                                Icons.done_all_rounded,
-                                size: 16,
-                              ),
-                              label: const Text(
-                                'Confirmar leitura',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                              onPressed: () async {
-                                try {
-                                  await _communityApi.markAnnouncementAsRead(
-                                    e['id'] as num,
-                                  );
-                                  await _refreshAnnouncements();
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Leitura confirmada com sucesso!',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                } catch (err) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Erro: $err')),
-                                    );
-                                  }
-                                }
-                              },
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-    ],
-  );
 
   Widget _empty(String message, IconData icon) =>
       SaaSEmptyState(icon: icon, title: message);
@@ -3417,413 +1905,4 @@ class _HomePageState extends State<HomePage> {
     ),
   );
 
-  Future<void> _openAssistantModal() async {
-    final condoId =
-        _condominium?['id'] as num? ??
-        (_memberships.isNotEmpty
-            ? _memberships.first['condominiumId'] as num?
-            : null);
-    if (condoId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Selecione ou vincule-se a um condomínio para usar o Assistente.',
-          ),
-        ),
-      );
-      return;
-    }
-    await CondoAssistantSheet.show(
-      context,
-      api: _api,
-      condominiumId: condoId,
-      condominiumName: _condominium?['name']?.toString() ?? 'Condomínio',
-    );
-  }
-
-  Future<void> _showNotifications() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => NotificationsPage(
-          api: _api,
-          condominiumId: (_condominium?['id'] as num?)?.toInt(),
-          onInvitationChanged: _load,
-        ),
-      ),
-    );
-    if (mounted) _load();
-  }
-
-  Future<void> _showMoreMenus() async {
-    final entries = <(String, String, IconData, String)>[
-      (
-        'Áreas Comuns',
-        'common-areas',
-        Icons.deck_outlined,
-        'Espaços de lazer e agendamentos',
-      ),
-      (
-        'Galeria de Fotos',
-        'gallery',
-        Icons.photo_library_outlined,
-        'Fotos das áreas do condomínio',
-      ),
-      (
-        'Chat com a Portaria',
-        'chat',
-        Icons.chat_bubble_outline_rounded,
-        'Conversa em tempo real com a portaria',
-      ),
-      (
-        'Planos e Serviços',
-        'plans',
-        Icons.receipt_long_outlined,
-        'Planos e recursos do condomínio',
-      ),
-    ];
-
-    final selected =
-        await showModalBottomSheet<(String, String, IconData, String)>(
-          context: context,
-          builder: (context) => SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  const ListTile(
-                    title: Text(
-                      'Serviços do Condomínio',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                      ),
-                    ),
-                    subtitle: Text('Selecione uma área para navegar'),
-                  ),
-                  const Divider(height: 1),
-                  ...entries.map(
-                    (entry) => ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: const Color(0xFFE8ECFF),
-                        child: Icon(entry.$3, color: const Color(0xFF2F3FB0)),
-                      ),
-                      title: Text(
-                        entry.$1,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(entry.$4),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => Navigator.pop(context, entry),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-
-    if (selected == null || !mounted) return;
-    if (selected.$2 == 'common-areas') {
-      setState(() => _tab = 2);
-    } else if (selected.$2 == 'gallery') {
-      setState(() => _tab = 5);
-    } else if (selected.$2 == 'chat') {
-      setState(() => _tab = 3);
-    } else if (selected.$2 == 'plans') {
-      await _showPlansInfoDialog();
-    }
-  }
-
-  Future<void> _showPlansInfoDialog() async {
-    List<Map<String, dynamic>> plans = const [];
-    String? error;
-    try {
-      final res = await _api.get('/billing/plans');
-      if (res is List) {
-        plans = res.whereType<Map<String, dynamic>>().toList();
-      }
-    } catch (e) {
-      error = e.toString().replaceFirst('Exception: ', '');
-    }
-    if (!mounted) return;
-    final activePlan =
-        _condominium?['billingPlanName']?.toString() ?? 'Não informado';
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Planos e Recursos'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Plano atual do condomínio: $activePlan',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 12),
-                if (error != null)
-                  Text('Não foi possível carregar os planos: $error')
-                else if (plans.isEmpty)
-                  const Text('Nenhum plano disponível encontrado.')
-                else
-                  ...plans.map((p) {
-                    final name = p['name']?.toString() ?? 'Plano';
-                    final fee = p['monthlyFee'];
-                    final isCurrent =
-                        name.toLowerCase() == activePlan.toLowerCase();
-                    final features = p['features'] is List
-                        ? (p['features'] as List).join(', ')
-                        : '';
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(
-                        isCurrent
-                            ? Icons.check_circle_rounded
-                            : Icons.layers_outlined,
-                        color: isCurrent ? const Color(0xFF15803D) : null,
-                      ),
-                      title: Text(
-                        '$name${fee != null ? ' • R\$ $fee/mês' : ''}',
-                      ),
-                      subtitle: features.isNotEmpty ? Text(features) : null,
-                    );
-                  }),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Fechar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _createReservation() async {
-    if (_condominium == null) return;
-    final created = await showDialog<bool>(
-      context: context,
-      builder: (context) => CommonAreaBookingDialog(
-        api: _communityApi,
-        condominiumId: _condominium!['id'],
-      ),
-    );
-    if (created == true) _load();
-  }
-
-  Future<void> _openJoinCondominiumDialog() async {
-    final sent = await showDialog<bool>(
-      context: context,
-      builder: (context) => JoinCondominiumDialog(api: _communityApi),
-    );
-    if (sent == true) _load();
-  }
-
-  Future<void> _openPaymentDialog() async {
-    if (_condominium == null) return;
-    if (_invoices.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Nenhuma fatura ou boleto registrado para a sua unidade no momento.',
-          ),
-        ),
-      );
-      return;
-    }
-    final selected = await showAncoraDialog<int>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Histórico de boletos e pagamentos'),
-        content: SizedBox(
-          width: 520,
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: _invoices.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final invoice = _invoices[index];
-              final status =
-                  invoice['status']?.toString().toUpperCase() ?? 'PENDING';
-              final paid = status == 'PAID' || status == 'UP_TO_DATE';
-              final amount = (invoice['amount'] as num?)?.toDouble();
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  paid
-                      ? Icons.check_circle_outline_rounded
-                      : Icons.receipt_long_outlined,
-                  color: paid
-                      ? const Color(0xFF15803D)
-                      : const Color(0xFF2563EB),
-                ),
-                title: Text(
-                  invoice['invoiceTitle']?.toString() ?? 'Taxa condominial',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  'Vencimento: ${_formatDate(invoice['dueDate'])} • ${paid ? 'Paga' : 'Em aberto'}',
-                ),
-                trailing: Text(formatCurrencyBrl(amount)),
-                onTap: () => Navigator.of(dialogContext).pop(index),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Fechar'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted ||
-        selected == null ||
-        selected < 0 ||
-        selected >= _invoices.length) {
-      return;
-    }
-    await _paySingleBoleto(_invoices[selected]);
-  }
-
-  Future<void> _openExpectedPackageDialog() async {
-    if (_condominium == null) return;
-    final desc = TextEditingController();
-    final tracking = TextEditingController();
-    final sender = TextEditingController();
-
-    final unitId = _memberships.isNotEmpty
-        ? (_memberships.first['unitId'] as num?)?.toInt()
-        : null;
-    if (unitId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Sua conta precisa estar vinculada a uma unidade para pré-cadastrar encomenda.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Avisar Encomenda Prevista'),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Cadastre o pacote para a portaria já saber de quem se trata na entrega.',
-                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: desc,
-                decoration: const InputDecoration(
-                  labelText: 'Descrição do pacote *',
-                  hintText: 'Ex: Livros da Amazon',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: tracking,
-                decoration: const InputDecoration(
-                  labelText: 'Código de rastreio (opcional)',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: sender,
-                decoration: const InputDecoration(
-                  labelText: 'Remetente / Transportadora',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Salvar Aviso'),
-          ),
-        ],
-      ),
-    );
-
-    if (ok == true && desc.text.trim().isNotEmpty) {
-      await _communityApi.registerExpectedPackage(
-        condoId: _condominium!['id'],
-        unitId: unitId,
-        description: desc.text.trim(),
-        trackingCode: tracking.text.trim().isEmpty
-            ? null
-            : tracking.text.trim(),
-        sender: sender.text.trim().isEmpty ? null : sender.text.trim(),
-      );
-      _load();
-    }
-  }
-
-  Future<void> _requestPickup(num packageId) async {
-    try {
-      await _communityApi.requestPackagePickup(packageId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Portaria avisada que você está a caminho para retirar a encomenda!',
-            ),
-          ),
-        );
-      }
-      _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erro: $e')));
-      }
-    }
-  }
-}
-
-class _LazyIndexedTab extends StatefulWidget {
-  const _LazyIndexedTab({
-    super.key,
-    required this.isActive,
-    required this.builder,
-  });
-
-  final bool isActive;
-  final WidgetBuilder builder;
-
-  @override
-  State<_LazyIndexedTab> createState() => _LazyIndexedTabState();
-}
-
-class _LazyIndexedTabState extends State<_LazyIndexedTab> {
-  bool _hasBeenOpened = false;
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.isActive) _hasBeenOpened = true;
-    if (!_hasBeenOpened) return const SizedBox.shrink();
-    return TickerMode(enabled: widget.isActive, child: widget.builder(context));
-  }
 }
