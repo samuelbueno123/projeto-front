@@ -21,13 +21,15 @@ class _CacheEntry {
 class HttpClientWrapper {
   HttpClientWrapper({
     http.Client? httpClient,
-    this.baseUrl = ApiConfig.baseUrl,
+    String? baseUrl,
     this.authToken,
     this.maxRetries = 2,
-  }) : _httpClient = httpClient ?? http.Client();
+  }) : _httpClient = httpClient ?? http.Client(),
+       _explicitBaseUrl = baseUrl;
 
   final http.Client _httpClient;
-  final String baseUrl;
+  final String? _explicitBaseUrl;
+  String get baseUrl => _explicitBaseUrl ?? ApiConfig.baseUrl;
   final int maxRetries;
   String? authToken;
 

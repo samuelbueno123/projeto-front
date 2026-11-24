@@ -1886,7 +1886,14 @@ class _DocumentsSubViewState extends State<_DocumentsSubView> {
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           subtitle: Text(
-                            '${d['category'] ?? 'GERAL'} • Publicado por: ${d['createdByName'] ?? 'Administração'} • ${formatDate(d['createdAt'])}',
+                            '${switch (d['category']?.toString().toUpperCase()) {
+                              'INTERNAL_RULES' => 'Regimento Interno',
+                              'CONVENTION' => 'Convenção',
+                              'MINUTES' => 'Ata de Assembleia',
+                              'FINANCIAL' => 'Financeiro',
+                              'COMMUNICATION' => 'Comunicado',
+                              _ => d['category'] ?? 'Geral',
+                            }} • Publicado por: ${d['createdByName'] ?? 'Administração'} • ${formatDate(d['createdAt'])}',
                           ),
                           children: [
                             Padding(

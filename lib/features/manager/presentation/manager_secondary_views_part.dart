@@ -809,7 +809,11 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
     }
   }
 
-  Widget _buildPhotoThumbnail(String? url, IconData fallbackIcon) {
+  Widget _buildPhotoThumbnail(
+    String? url,
+    IconData fallbackIcon, {
+    String? fallbackAsset,
+  }) {
     return SmartImage(
       source: url,
       width: 52,
@@ -817,6 +821,7 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
       fit: BoxFit.cover,
       borderRadius: BorderRadius.circular(10),
       placeholderIcon: fallbackIcon,
+      fallbackAsset: fallbackAsset,
     );
   }
 
@@ -1031,6 +1036,8 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                                           child: _buildPhotoThumbnail(
                                             img,
                                             Icons.deck_rounded,
+                                            fallbackAsset:
+                                                AppAssets.commonAreaDefault,
                                           ),
                                         ),
                                       ),
@@ -1143,6 +1150,8 @@ class _MainPhotosManagerDialogState extends State<_MainPhotosManagerDialog> {
                                           child: _buildPhotoThumbnail(
                                             img,
                                             Icons.apartment_rounded,
+                                            fallbackAsset:
+                                                AppAssets.sectorDefault,
                                           ),
                                         ),
                                       ),

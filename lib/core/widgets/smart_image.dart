@@ -42,6 +42,9 @@ ImageProvider<Object>? resolveSmartImageProvider(String? rawSource) {
   final trimmed = rawSource.trim();
   if (trimmed.isEmpty) return null;
 
+  if (trimmed.startsWith('assets/')) {
+    return AssetImage(trimmed);
+  }
   if (trimmed.startsWith('data:image/')) {
     final bytes = _SmartImageMemoryCache.decodeBase64DataUrl(trimmed);
     return bytes == null ? null : MemoryImage(bytes);
@@ -51,7 +54,7 @@ ImageProvider<Object>? resolveSmartImageProvider(String? rawSource) {
   return NetworkImage(resolved);
 }
 
-/// Exibe imagens de rede, caminho relativo `/media/pictures/...` ou data URL base64 sem jank.
+/// Exibe imagens de rede, assets locais (`assets/...`), `/media/pictures/...` ou data URL base64 sem jank.
 class SmartImage extends StatelessWidget {
   const SmartImage({
     super.key,
@@ -61,6 +64,7 @@ class SmartImage extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.borderRadius,
     this.placeholderIcon = Icons.image_outlined,
+    this.fallbackAsset,
   });
 
   final String? source;
@@ -69,13 +73,14 @@ class SmartImage extends StatelessWidget {
   final BoxFit fit;
   final BorderRadius? borderRadius;
   final IconData placeholderIcon;
+  final String? fallbackAsset;
 
   @override
   Widget build(BuildContext context) {
     final tokens = AncoraThemeTokens.of(context);
     final raw = source?.trim() ?? '';
 
-    Widget buildFallback() {
+    Widget buildIconPlaceholder() {
       return Container(
         width: width,
         height: height,
@@ -83,6 +88,19 @@ class SmartImage extends StatelessWidget {
         alignment: Alignment.center,
         child: Icon(placeholderIcon, color: tokens.textMuted, size: 28),
       );
+    }
+
+    Widget buildFallback() {
+      if (fallbackAsset != null && fallbackAsset!.trim().isNotEmpty) {
+        return Image.asset(
+          fallbackAsset!.trim(),
+          width: width,
+          height: height,
+          fit: fit,
+          errorBuilder: (_, __, ___) => buildIconPlaceholder(),
+        );
+      }
+      return buildIconPlaceholder();
     }
 
     if (raw.isEmpty) {
@@ -93,7 +111,16 @@ class SmartImage extends StatelessWidget {
     }
 
     Widget imgWidget;
-    if (raw.startsWith('data:image/')) {
+    if (raw.startsWith('assets/')) {
+      imgWidget = Image.asset(
+        raw,
+        width: width,
+        height: height,
+        fit: fit,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => buildFallback(),
+      );
+    } else if (raw.startsWith('data:image/')) {
       final bytes = _SmartImageMemoryCache.decodeBase64DataUrl(raw);
       if (bytes == null) {
         imgWidget = buildFallback();

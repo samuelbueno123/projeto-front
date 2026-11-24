@@ -30,8 +30,8 @@ COPY lib ./lib
 COPY web ./web
 COPY assets ./assets
 
-# Build Flutter Web release with dart-defines
-ARG API_BASE_URL=http://localhost:8080
+# Build Flutter Web release with dart-defines ("auto" resolves host dynamically in browser)
+ARG API_BASE_URL=auto
 ARG GOOGLE_WEB_CLIENT_ID=1093543407623-ch2dq0uh0bnvrhm6pkf6kd8v75bvr3a0.apps.googleusercontent.com
 
 RUN flutter build web --release \

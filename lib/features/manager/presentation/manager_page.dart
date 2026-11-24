@@ -7,11 +7,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../core/config/app_assets.dart';
 import '../../../core/design_system/motion_system.dart';
 import '../../../core/design_system/saas_design_system.dart';
 import '../../../core/services/realtime_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/ancora_charts.dart';
 import '../../../core/widgets/enter_search_field.dart';
 import '../../../core/widgets/command_palette.dart';
 import '../../../core/widgets/condo_assistant_sheet.dart';

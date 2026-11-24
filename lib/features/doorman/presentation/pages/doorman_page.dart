@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../../../../core/config/app_assets.dart';
 import '../../../../core/design_system/motion_system.dart';
 import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -1123,7 +1124,8 @@ class _DoormanPageState extends State<DoormanPage>
             : null,
         floatingActionButton: (_selectedCondominium != null &&
                 _navIndex == 0 &&
-                _hasFeature('PACKAGES'))
+                _hasFeature('PACKAGES') &&
+                MediaQuery.sizeOf(context).width < 960)
             ? FloatingActionButton.extended(
                 backgroundColor: SaaSColors.primary,
                 foregroundColor: Colors.white,
@@ -1144,22 +1146,14 @@ class _DoormanPageState extends State<DoormanPage>
                         child: SizedBox(
                           width: 36,
                           height: 36,
-                          child: (condoImg != null && condoImg.isNotEmpty)
-                              ? SmartImage(
-                                  source: condoImg,
-                                  width: 36,
-                                  height: 36,
-                                  fit: BoxFit.cover,
-                                  placeholderIcon: Icons.apartment_rounded,
-                                )
-                              : Container(
-                                  color: tokens.surfaceSubtle,
-                                  child: Icon(
-                                    Icons.apartment_rounded,
-                                    size: 18,
-                                    color: tokens.accent,
-                                  ),
-                                ),
+                          child: SmartImage(
+                            source: condoImg,
+                            width: 36,
+                            height: 36,
+                            fit: BoxFit.cover,
+                            placeholderIcon: Icons.apartment_rounded,
+                            fallbackAsset: AppAssets.condoCoverDefault,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -1213,113 +1207,191 @@ class _DoormanPageState extends State<DoormanPage>
                   ],
                 ],
               ),
-        sidebarFooterExtra: Row(
+        sidebarFooterExtra: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            UserAvatar(
-              imageSource: _profile['profileImage']?.toString(),
-              name: _profile['firstName']?.toString() ?? widget.userName,
-              radius: 17,
-              onTap: _openProfile,
-              tooltip: 'Meu Perfil',
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: _openProfile,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Olá, $firstName',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: tokens.textPrimary,
-                      ),
-                    ),
-                    Text(
-                      _shiftLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 11, color: tokens.textMuted),
-                    ),
-                  ],
+            if (widget.currentRole != null && widget.onSwitchRole != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: RoleSwitcherPill(
+                  currentRole: widget.currentRole!,
+                  availableRoles: widget.availableRoles,
+                  onSwitchRole: widget.onSwitchRole!,
+                  isLight: !isDark,
                 ),
               ),
-            ),
-            IconButton(
-              tooltip: 'Meu Perfil',
-              onPressed: _openProfile,
-              icon: Icon(
-                Icons.person_outline_rounded,
-                size: 18,
-                color: tokens.textSecondary,
-              ),
-            ),
-            IconButton(
-              tooltip: 'Sair',
-              onPressed: widget.onLogout,
-              icon: const Icon(
-                Icons.logout_rounded,
-                size: 18,
-                color: SaaSColors.error,
-              ),
+            Row(
+              children: [
+                UserAvatar(
+                  imageSource: _profile['profileImage']?.toString(),
+                  name: _profile['firstName']?.toString() ?? widget.userName,
+                  radius: 17,
+                  onTap: _openProfile,
+                  tooltip: 'Meu Perfil',
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: _openProfile,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Olá, $firstName',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: tokens.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          _shiftLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: tokens.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
+                  onPressed: _toggleTheme,
+                  icon: Icon(
+                    isDark
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
+                    size: 18,
+                    color: tokens.textSecondary,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Sair',
+                  onPressed: widget.onLogout,
+                  icon: const Icon(
+                    Icons.logout_rounded,
+                    size: 18,
+                    color: SaaSColors.error,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-        headerActions: [
-          _doormanHeaderAction(
-            icon: Icons.qr_code_scanner_rounded,
-            label: 'Baixa (PIN)',
-            onTap: _selectedCondominium == null ? null : _quickPickupByPin,
-            isDark: isDark,
-          ),
-          _doormanHeaderAction(
-            icon: Icons.campaign_outlined,
-            label: 'Comunicado',
-            onTap: _selectedCondominium == null ? null : _sendAnnouncement,
-            isDark: isDark,
-          ),
-          if (widget.currentRole != null && widget.onSwitchRole != null)
-            RoleSwitcherPill(
-              currentRole: widget.currentRole!,
-              availableRoles: widget.availableRoles,
-              onSwitchRole: widget.onSwitchRole!,
-              isLight: !isDark,
-            ),
-          IconButton(
-            tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
-            onPressed: _toggleTheme,
-            icon: Icon(
-              isDark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
-              color: isDark ? Colors.white70 : const Color(0xFF475569),
-              size: 20,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Notificações e convites',
-            onPressed: () => setState(() => _navIndex = 8),
-            icon: Icon(
-              Icons.notifications_none_rounded,
-              color: _navIndex == 8
-                  ? tokens.accent
-                  : (isDark ? Colors.white70 : const Color(0xFF475569)),
-              size: 20,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Atualizar encomendas',
-            onPressed: _loadPackages,
-            icon: Icon(
-              Icons.refresh_rounded,
-              color: isDark ? Colors.white70 : const Color(0xFF475569),
-              size: 20,
-            ),
-          ),
-        ],
+        headerActions: MediaQuery.sizeOf(context).width < 960
+            ? [
+                IconButton(
+                  tooltip: 'Notificações e convites',
+                  onPressed: () => setState(() => _navIndex = 8),
+                  icon: Icon(
+                    Icons.notifications_none_rounded,
+                    color: _navIndex == 8
+                        ? tokens.accent
+                        : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                    size: 20,
+                  ),
+                ),
+                AncoraContextMenu<String>(
+                  tooltip: 'Ações da portaria',
+                  onSelected: (action) {
+                    if (action == 'pin' && _selectedCondominium != null) {
+                      _quickPickupByPin();
+                    } else if (action == 'announcement' &&
+                        _selectedCondominium != null) {
+                      _sendAnnouncement();
+                    } else if (action == 'refresh') {
+                      _loadPackages();
+                    } else if (action == 'theme') {
+                      _toggleTheme();
+                    }
+                  },
+                  options: [
+                    const AncoraMenuOption(
+                      value: 'pin',
+                      label: 'Baixa por PIN',
+                      icon: Icons.qr_code_scanner_rounded,
+                    ),
+                    const AncoraMenuOption(
+                      value: 'announcement',
+                      label: 'Novo Comunicado',
+                      icon: Icons.campaign_outlined,
+                    ),
+                    const AncoraMenuOption(
+                      value: 'refresh',
+                      label: 'Atualizar encomendas',
+                      icon: Icons.refresh_rounded,
+                    ),
+                    AncoraMenuOption(
+                      value: 'theme',
+                      label: isDark ? 'Modo Claro' : 'Modo Noturno',
+                      icon: isDark
+                          ? Icons.light_mode_rounded
+                          : Icons.dark_mode_outlined,
+                    ),
+                  ],
+                ),
+              ]
+            : [
+                _doormanHeaderAction(
+                  icon: Icons.qr_code_scanner_rounded,
+                  label: 'Baixa (PIN)',
+                  onTap: _selectedCondominium == null
+                      ? null
+                      : _quickPickupByPin,
+                  isDark: isDark,
+                ),
+                _doormanHeaderAction(
+                  icon: Icons.campaign_outlined,
+                  label: 'Comunicado',
+                  onTap: _selectedCondominium == null
+                      ? null
+                      : _sendAnnouncement,
+                  isDark: isDark,
+                ),
+                if (widget.currentRole != null && widget.onSwitchRole != null)
+                  RoleSwitcherPill(
+                    currentRole: widget.currentRole!,
+                    availableRoles: widget.availableRoles,
+                    onSwitchRole: widget.onSwitchRole!,
+                    isLight: !isDark,
+                  ),
+                IconButton(
+                  tooltip: isDark ? 'Modo Claro' : 'Modo Noturno',
+                  onPressed: _toggleTheme,
+                  icon: Icon(
+                    isDark ? Icons.light_mode_rounded : Icons.dark_mode_outlined,
+                    color: isDark ? Colors.white70 : const Color(0xFF475569),
+                    size: 20,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Notificações e convites',
+                  onPressed: () => setState(() => _navIndex = 8),
+                  icon: Icon(
+                    Icons.notifications_none_rounded,
+                    color: _navIndex == 8
+                        ? tokens.accent
+                        : (isDark ? Colors.white70 : const Color(0xFF475569)),
+                    size: 20,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Atualizar encomendas',
+                  onPressed: _loadPackages,
+                  icon: Icon(
+                    Icons.refresh_rounded,
+                    color: isDark ? Colors.white70 : const Color(0xFF475569),
+                    size: 20,
+                  ),
+                ),
+              ],
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1300),
@@ -1383,73 +1455,85 @@ class _DoormanPageState extends State<DoormanPage>
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 1040;
-        final quickActionsBar = Padding(
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: SaaSColors.primary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 14,
-                    ),
-                  ),
-                  onPressed: _selectedCondominium == null
-                      ? null
-                      : () => _registerReceivedPackage(),
-                  icon: const Icon(Icons.add_box_rounded, size: 19),
-                  label: const Text('+ Registrar Encomenda'),
-                ),
-                const SizedBox(width: 10),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: SaaSColors.success,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 14,
-                    ),
-                  ),
-                  onPressed: _selectedCondominium == null
-                      ? null
-                      : _quickReleaseVisitor,
-                  icon: const Icon(Icons.qr_code_scanner_rounded, size: 19),
-                  label: const Text('+ Liberar Visitante'),
-                ),
-                const SizedBox(width: 10),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                  ),
-                  onPressed: _selectedCondominium == null
-                      ? null
-                      : _sendAnnouncement,
-                  icon: const Icon(Icons.campaign_outlined, size: 18),
-                  label: const Text('+ Novo Comunicado'),
-                ),
-                const SizedBox(width: 10),
-                FilledButton.tonalIcon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: SaaSColors.error.withValues(alpha: 0.16),
-                    foregroundColor: SaaSColors.error,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                  ),
-                  onPressed: _selectedCondominium == null
-                      ? null
-                      : _registerUrgentOccurrence,
-                  icon: const Icon(Icons.emergency_rounded, size: 18),
-                  label: const Text('Ocorrência Urgente'),
-                ),
-              ],
+        final quickActionButtons = [
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: SaaSColors.primary,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 9,
+              ),
             ),
+            onPressed: _selectedCondominium == null
+                ? null
+                : () => _registerReceivedPackage(),
+            icon: const Icon(Icons.add_box_rounded, size: 16),
+            label: const Text('+ Registrar Encomenda'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: SaaSColors.success,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 9,
+              ),
+            ),
+            onPressed: _selectedCondominium == null
+                ? null
+                : _quickReleaseVisitor,
+            icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
+            label: const Text('+ Liberar Visitante'),
+          ),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 9,
+              ),
+            ),
+            onPressed: _selectedCondominium == null ? null : _sendAnnouncement,
+            icon: const Icon(Icons.campaign_outlined, size: 16),
+            label: const Text('+ Novo Comunicado'),
+          ),
+          FilledButton.tonalIcon(
+            style: FilledButton.styleFrom(
+              backgroundColor: SaaSColors.error.withValues(alpha: 0.14),
+              foregroundColor: SaaSColors.error,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 9,
+              ),
+            ),
+            onPressed: _selectedCondominium == null
+                ? null
+                : _registerUrgentOccurrence,
+            icon: const Icon(Icons.emergency_rounded, size: 16),
+            label: const Text('Ocorrência Urgente'),
+          ),
+        ];
+
+        final quickActionsBar = Padding(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+          child: SaaSGlassCard(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            borderRadius: 14,
+            child: isWide
+                ? Wrap(spacing: 8, runSpacing: 6, children: quickActionButtons)
+                : SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (int i = 0; i < quickActionButtons.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 8),
+                          quickActionButtons[i],
+                        ],
+                      ],
+                    ),
+                  ),
           ),
         );
 

@@ -625,21 +625,29 @@ class _UserProfilePageState extends State<UserProfilePage> {
             ),
             const SizedBox(height: 10),
             SegmentedButton<String>(
+              style: SegmentedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               segments: const [
                 ButtonSegment(
                   value: 'LIGHT',
-                  icon: Icon(Icons.light_mode_outlined),
-                  label: Text('Claro'),
+                  icon: Icon(Icons.light_mode_outlined, size: 16),
+                  label: Text('Claro', maxLines: 1, softWrap: false),
                 ),
                 ButtonSegment(
                   value: 'DARK',
-                  icon: Icon(Icons.dark_mode_outlined),
-                  label: Text('Escuro'),
+                  icon: Icon(Icons.dark_mode_outlined, size: 16),
+                  label: Text('Escuro', maxLines: 1, softWrap: false),
                 ),
                 ButtonSegment(
                   value: 'SYSTEM',
-                  icon: Icon(Icons.settings_suggest_outlined),
-                  label: Text('Sistema'),
+                  icon: Icon(Icons.settings_suggest_outlined, size: 16),
+                  label: Text('Sistema', maxLines: 1, softWrap: false),
                 ),
               ],
               selected: {_themePreference},

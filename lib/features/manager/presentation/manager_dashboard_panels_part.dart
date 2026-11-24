@@ -4,7 +4,9 @@ extension _ManagerDashboardPanelsExtension on _ManagerPageState {
   Widget _buildCondominiumCoverBanner(bool isDark) {
     final condoName = _selectedCondoName();
     final rawImageUrl = _condoDetails?['imageUrl'] as String?;
-    final imageProvider = resolveAvatarImageProvider(rawImageUrl);
+    final imageProvider =
+        resolveAvatarImageProvider(rawImageUrl) ??
+        const AssetImage(AppAssets.condoCoverDefault);
     final firstName = firstNameOf(widget.userName, fallback: 'Síndico');
     final openTickets = _intStat(
       'openTicketsCount',
@@ -229,16 +231,7 @@ extension _ManagerDashboardPanelsExtension on _ManagerPageState {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: const Color(0xFF0F1424),
-          image: imageProvider != null
-              ? DecorationImage(image: imageProvider, fit: BoxFit.cover)
-              : null,
-          gradient: imageProvider == null
-              ? const LinearGradient(
-                  colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : null,
+          image: DecorationImage(image: imageProvider, fit: BoxFit.cover),
           border: Border.all(
             color: isDark
                 ? Colors.white.withValues(alpha: 0.08)
@@ -256,7 +249,7 @@ extension _ManagerDashboardPanelsExtension on _ManagerPageState {
               ],
             ),
           ),
-          child: !isRunningTestEnvironment && imageProvider != null
+          child: !isRunningTestEnvironment
               ? BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                   child: bannerContent,
@@ -520,6 +513,33 @@ extension _ManagerDashboardPanelsExtension on _ManagerPageState {
             pendingCount: pendingCount,
             overdueCount: overdueCount,
           ),
+          if (shrinkWrap && paidCount + pendingCount + overdueCount > 0) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 150,
+              child: AncoraDonutChart(
+                centerLabel: 'Unidades',
+                centerValue: '${paidCount + pendingCount + overdueCount}',
+                slices: [
+                  AncoraDonutSlice(
+                    label: 'Pagas',
+                    value: paidCount.toDouble(),
+                    color: AncoraChartPalette.emerald,
+                  ),
+                  AncoraDonutSlice(
+                    label: 'Pendentes',
+                    value: pendingCount.toDouble(),
+                    color: AncoraChartPalette.amber,
+                  ),
+                  AncoraDonutSlice(
+                    label: 'Inadimplentes',
+                    value: overdueCount.toDouble(),
+                    color: AncoraChartPalette.rose,
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           EnterSearchField(
             hintText: 'Pesquisar unidades, blocos ou status (Enter)',

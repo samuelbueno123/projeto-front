@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../config/app_assets.dart';
 import '../design_system/motion_system.dart';
 import '../theme/app_theme.dart';
 import 'saas_dashboard_widgets.dart';
@@ -708,9 +709,11 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
       bottomNavigationBar: (!isDesktop && bottomDests.length >= 2)
           ? NavigationBar(
               backgroundColor: tokens.surface,
-              indicatorColor: tokens.accent.withValues(
-                alpha: tokens.isDark ? 0.25 : 0.14,
-              ),
+              indicatorColor: bottomDests.contains(widget.selectedIndex)
+                  ? tokens.accent.withValues(
+                      alpha: tokens.isDark ? 0.25 : 0.14,
+                    )
+                  : Colors.transparent,
               selectedIndex: bottomDests.contains(widget.selectedIndex)
                   ? bottomDests.indexOf(widget.selectedIndex)
                   : 0,
@@ -773,6 +776,7 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
   }
 
   Widget _buildTopBar(AncoraThemeTokens tokens, bool isDesktop) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final current =
         widget.selectedIndex >= 0 &&
             widget.selectedIndex < widget.destinations.length
@@ -781,7 +785,7 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
 
     return Container(
       height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 16 : 10),
       decoration: BoxDecoration(
         color: tokens.surface,
         border: Border(
@@ -848,7 +852,7 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
           ),
           const SizedBox(width: 8),
           Flexible(
-            flex: isDesktop ? 5 : 2,
+            flex: isDesktop ? 5 : 3,
             fit: FlexFit.loose,
             child: Align(
               alignment: Alignment.centerRight,
@@ -859,9 +863,11 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
                   children: [
                     if (isDesktop) ...[
                       const AncoraConnectionStatusPill(),
+                      if (screenWidth >= 1520) ...[
+                        const SizedBox(width: 8),
+                        const AncoraLiveClockPill(),
+                      ],
                       const SizedBox(width: 8),
-                      const AncoraLiveClockPill(),
-                      const SizedBox(width: 10),
                     ],
                     if (widget.onOpenCommandPalette != null && isDesktop) ...[
                       InkWell(
@@ -869,7 +875,7 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
+                            horizontal: 10,
                             vertical: 7,
                           ),
                           decoration: BoxDecoration(
@@ -889,15 +895,18 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
                                 size: 16,
                                 color: tokens.textMuted,
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Buscar ou ir para...',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  color: tokens.textMuted,
+                              if (screenWidth >= 1480) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Buscar ou ir para...',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: tokens.textMuted,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 14),
+                                const SizedBox(width: 12),
+                              ] else
+                                const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 6,
@@ -923,7 +932,7 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                     ],
                     ...widget.headerActions.map(
                       (w) => Padding(
@@ -971,7 +980,22 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
                   ),
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(widget.brandIcon, color: Colors.white, size: 20),
+                child: widget.brandIcon == Icons.anchor_rounded
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(11),
+                        child: Image.asset(
+                          AppAssets.ancoraLogo,
+                          width: 38,
+                          height: 38,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Icon(
+                            widget.brandIcon,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      )
+                    : Icon(widget.brandIcon, color: Colors.white, size: 20),
               ),
               if (!collapsed) ...[
                 const SizedBox(width: 11),
@@ -1072,11 +1096,13 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
                     padding: const EdgeInsets.only(bottom: 3),
                     child: Tooltip(
                       message: collapsed ? dest.label : '',
+                      preferBelow: false,
+                      verticalOffset: 24,
                       child: InkWell(
                         borderRadius: BorderRadius.circular(11),
                         onTap: () {
                           if (closeDrawerOnTap) {
-                            Navigator.of(context).pop();
+                            _scaffoldKey.currentState?.closeDrawer();
                           }
                           widget.onSelect(index);
                         },
@@ -1092,10 +1118,17 @@ class _AncoraNavigationShellState extends State<AncoraNavigationShell> {
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? tokens.accent.withValues(
-                                    alpha: tokens.isDark ? 0.22 : 0.11,
+                                    alpha: tokens.isDark ? 0.18 : 0.09,
                                   )
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(11),
+                            border: isSelected
+                                ? Border.all(
+                                    color: tokens.accent.withValues(
+                                      alpha: tokens.isDark ? 0.35 : 0.22,
+                                    ),
+                                  )
+                                : null,
                           ),
                           child: Row(
                             mainAxisAlignment: collapsed

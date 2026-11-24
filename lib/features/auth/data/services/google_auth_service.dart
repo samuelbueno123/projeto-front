@@ -24,7 +24,7 @@ class AuthService {
        _secureStorage = secureStorage ?? const FlutterSecureStorage();
 
   static const String _sessionStorageKey = 'auth_session';
-  static const String _backendBaseUrl = ApiConfig.baseUrl;
+  static String get _backendBaseUrl => ApiConfig.baseUrl;
 
   final GoogleSignIn _googleSignIn;
   final http.Client _httpClient;

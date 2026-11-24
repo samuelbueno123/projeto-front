@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import '../../../../core/config/app_assets.dart';
 import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/design_system/motion_system.dart';
 import '../../../../core/services/realtime_service.dart';
@@ -154,7 +155,8 @@ class _HomePageState extends State<HomePage> {
     if (mem != null) {
       final sec = mem['sectorName'] ?? mem['sector'];
       if (sec != null && sec.toString().trim().isNotEmpty) {
-        return 'Bloco $sec';
+        final s = sec.toString().trim();
+        return s.toLowerCase().startsWith('bloco') ? s : 'Bloco $s';
       }
       final label = mem['unitLabel']?.toString();
       if (label != null && label.contains('•')) {
@@ -163,7 +165,8 @@ class _HomePageState extends State<HomePage> {
     }
     final profileSec = _profile['sectorName'] ?? _profile['sector'];
     if (profileSec != null && profileSec.toString().trim().isNotEmpty) {
-      return 'Bloco $profileSec';
+      final s = profileSec.toString().trim();
+      return s.toLowerCase().startsWith('bloco') ? s : 'Bloco $s';
     }
     return 'Bloco não definido';
   }
@@ -1260,38 +1263,58 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildResidentContextBanner(bool isDark, String condoName) {
     final condoImg = _condominium?['imageUrl'] as String?;
-    final imgProvider = resolveAvatarImageProvider(condoImg);
 
     final avatar = ClipRRect(
       borderRadius: BorderRadius.circular(14),
-      child: Container(
+      child: SizedBox(
         width: 56,
         height: 56,
-        decoration: BoxDecoration(
-          color: SaaSColors.primary.withValues(alpha: 0.14),
+        child: SmartImage(
+          source: condoImg,
+          width: 56,
+          height: 56,
+          fit: BoxFit.cover,
           borderRadius: BorderRadius.circular(14),
+          placeholderIcon: Icons.apartment_rounded,
+          fallbackAsset: AppAssets.condoCoverDefault,
         ),
-        child: imgProvider != null
-            ? Image(image: imgProvider, fit: BoxFit.cover)
-            : const Icon(
-                Icons.apartment_rounded,
-                color: SaaSColors.primary,
-                size: 28,
-              ),
       ),
     );
 
     final greetingCol = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Olá, $_residentFirstName!',
-          style: TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.4,
-            color: SaaSColors.textPrimary(isDark),
-          ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              'Olá, $_residentFirstName!',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.4,
+                color: SaaSColors.textPrimary(isDark),
+              ),
+            ),
+            SaaSBadge(
+              label: _packages.any((e) =>
+                      e['status'] == 'WAITING_PICKUP' ||
+                      e['status'] == 'RECEIVED' ||
+                      e['status'] == 'NOTIFIED' ||
+                      e['status'] == 'PENDING')
+                  ? 'Encomenda na portaria'
+                  : 'Tudo em dia',
+              variant: _packages.any((e) =>
+                      e['status'] == 'WAITING_PICKUP' ||
+                      e['status'] == 'RECEIVED' ||
+                      e['status'] == 'NOTIFIED' ||
+                      e['status'] == 'PENDING')
+                  ? SaaSBadgeVariant.success
+                  : SaaSBadgeVariant.primary,
+            ),
+          ],
         ),
         const SizedBox(height: 3),
         Text(

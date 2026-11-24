@@ -1376,9 +1376,11 @@ class _MaintenanceSubViewState extends State<_MaintenanceSubView> {
         widget.api
             .listMaintenanceEquipment(widget.condominiumId)
             .catchError((_) => <Map<String, dynamic>>[]),
-        widget.api
-            .listSuppliers(widget.condominiumId)
-            .catchError((_) => <Map<String, dynamic>>[]),
+        widget.canManage
+            ? widget.api
+                  .listSuppliers(widget.condominiumId)
+                  .catchError((_) => <Map<String, dynamic>>[])
+            : Future.value(<Map<String, dynamic>>[]),
       ]);
       if (mounted) {
         setState(() {

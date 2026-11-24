@@ -824,6 +824,8 @@ class _AdminAuditLogViewState extends State<AdminAuditLogView> {
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
+                      columnSpacing: 16,
+                      horizontalMargin: 14,
                       headingRowColor: WidgetStateProperty.all(
                         isDark
                             ? const Color(0xFF0F172A)
@@ -1277,95 +1279,91 @@ class _AdminDiagnosticsViewState extends State<AdminDiagnosticsView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Header Action Strip
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: isOverallUp
+                      ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                      : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
                     color: isOverallUp
-                        ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                        : const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isOverallUp
-                          ? const Color(0xFF10B981)
-                          : const Color(0xFFF59E0B),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: isOverallUp
-                              ? const Color(0xFF10B981)
-                              : const Color(0xFFF59E0B),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        isOverallUp
-                            ? 'SISTEMA OPERACIONAL (STATUS UP)'
-                            : 'STATUS DEGRADADO',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: isOverallUp
-                              ? const Color(0xFF047857)
-                              : const Color(0xFFB45309),
-                        ),
-                      ),
-                    ],
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFFF59E0B),
                   ),
                 ),
-                const SizedBox(width: 16),
-                Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      'Auto-refresh (15s):',
-                      style: TextStyle(fontSize: 12),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: isOverallUp
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFFF59E0B),
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                    Switch(
-                      value: _autoRefresh,
-                      onChanged: (val) {
-                        setState(() => _autoRefresh = val);
-                        _startTimer();
-                      },
+                    const SizedBox(width: 8),
+                    Text(
+                      isOverallUp
+                          ? 'SISTEMA OPERACIONAL (STATUS UP)'
+                          : 'STATUS DEGRADADO',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isOverallUp
+                            ? const Color(0xFF047857)
+                            : const Color(0xFFB45309),
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Atualizar'),
-                  onPressed: () => _loadDiagnostics(),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.download_outlined, size: 16),
-                  label: const Text('Exportar Relatório'),
-                  onPressed: _exportDiagnosticsReport,
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFEF4444),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Auto-refresh (15s):',
+                    style: TextStyle(fontSize: 12),
                   ),
-                  icon: const Icon(Icons.cleaning_services_outlined, size: 16),
-                  label: const Text('Limpar Caches'),
-                  onPressed: () => _evictCaches(),
+                  Switch(
+                    value: _autoRefresh,
+                    onChanged: (val) {
+                      setState(() => _autoRefresh = val);
+                      _startTimer();
+                    },
+                  ),
+                ],
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Atualizar'),
+                onPressed: () => _loadDiagnostics(),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.download_outlined, size: 16),
+                label: const Text('Exportar Relatório'),
+                onPressed: _exportDiagnosticsReport,
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFEF4444),
                 ),
-              ],
-            ),
+                icon: const Icon(Icons.cleaning_services_outlined, size: 16),
+                label: const Text('Limpar Caches'),
+                onPressed: () => _evictCaches(),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 

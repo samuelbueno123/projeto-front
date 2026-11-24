@@ -276,65 +276,15 @@ class _DoormanReservationsViewState extends State<DoormanReservationsView> {
                                     child: SizedBox(
                                       width: 44,
                                       height: 44,
-                                      child: Builder(
-                                        builder: (_) {
-                                          final statusBg = isItemCancelled
-                                              ? (isDark
-                                                    ? const Color(0xFF450A0A)
-                                                    : const Color(0xFFFEE2E2))
-                                              : status == 'CONFIRMED'
-                                              ? (isDark
-                                                    ? const Color(0xFF064E3B)
-                                                    : const Color(0xFFDCFCE7))
-                                              : status == 'COUNTER_PROPOSED'
-                                              ? (isDark
-                                                    ? const Color(0xFF451A03)
-                                                    : const Color(0xFFFEF3C7))
-                                              : (isDark
-                                                    ? const Color(0xFF1E3A8A)
-                                                    : const Color(0xFFDBEAFE));
-                                          final statusFg = isItemCancelled
-                                              ? (isDark
-                                                    ? const Color(0xFFF87171)
-                                                    : const Color(0xFFDC2626))
-                                              : status == 'CONFIRMED'
-                                              ? (isDark
-                                                    ? const Color(0xFF34D399)
-                                                    : const Color(0xFF15803D))
-                                              : status == 'COUNTER_PROPOSED'
-                                              ? (isDark
-                                                    ? const Color(0xFFFBBF24)
-                                                    : const Color(0xFFB45309))
-                                              : (isDark
-                                                    ? const Color(0xFF60A5FA)
-                                                    : const Color(0xFF2563EB));
-                                          final fallback = CircleAvatar(
-                                            backgroundColor: statusBg,
-                                            child: Icon(
-                                              isItemCancelled
-                                                  ? Icons.cancel_outlined
-                                                  : status == 'CONFIRMED'
-                                                  ? Icons.check_circle_rounded
-                                                  : status == 'COUNTER_PROPOSED'
-                                                  ? Icons.schedule_send_rounded
-                                                  : Icons.hourglass_top_rounded,
-                                              color: statusFg,
-                                              size: 20,
-                                            ),
-                                          );
-                                          if (imgUrl != null &&
-                                              imgUrl.isNotEmpty) {
-                                            return SmartImage(
-                                              source: imgUrl,
-                                              width: 44,
-                                              height: 44,
-                                              fit: BoxFit.cover,
-                                              placeholderIcon:
-                                                  Icons.event_available_rounded,
-                                            );
-                                          }
-                                          return fallback;
-                                        },
+                                      child: SmartImage(
+                                        source: imgUrl,
+                                        width: 44,
+                                        height: 44,
+                                        fit: BoxFit.cover,
+                                        placeholderIcon:
+                                            Icons.event_available_rounded,
+                                        fallbackAsset:
+                                            AppAssets.commonAreaDefault,
                                       ),
                                     ),
                                   ),

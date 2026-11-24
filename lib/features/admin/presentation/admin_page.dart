@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../core/design_system/motion_system.dart';
 import '../../../core/design_system/saas_design_system.dart';
 import '../../../core/responsive/responsive_layout.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/ancora_charts.dart';
 import '../../../core/widgets/command_palette.dart';
+import '../../../core/widgets/custom_menus.dart';
 import '../../../core/widgets/enter_search_field.dart';
 import '../../../core/widgets/full_screen_image_viewer.dart';
 import '../../../core/widgets/role_switcher_pill.dart';
@@ -15,9 +18,17 @@ import '../../../core/widgets/smart_image.dart';
 import '../../home/data/home_service.dart';
 import '../../auth/presentation/pages/user_profile_page.dart';
 import '../../manager/presentation/membership_management_page.dart';
+import '../data/admin_telemetry_service.dart';
 import 'admin_create_dialogs.dart';
 import 'system_announcement_page.dart';
 import 'admin_command_center_views.dart';
+import 'views/admin_alerts_view.dart';
+import 'views/admin_analytics_view.dart';
+import 'views/admin_application_view.dart';
+import 'views/admin_database_view.dart';
+import 'views/admin_infrastructure_view.dart';
+import 'views/admin_telemetry_helpers.dart';
+import 'widgets/admin_live_toolbar.dart';
 
 class AdminPage extends StatefulWidget {
   const AdminPage({
@@ -56,6 +67,7 @@ class AdminPage extends StatefulWidget {
 
 class _AdminPageState extends State<AdminPage> {
   late HomeService _api = widget.api ?? HomeService(token: widget.token);
+  late final AdminTelemetryService _telemetry;
   Map<String, dynamic> _profile = {};
   late Future<Map<String, dynamic>> _summary;
   String _activeTab = 'overview';
@@ -112,6 +124,8 @@ class _AdminPageState extends State<AdminPage> {
   @override
   void initState() {
     super.initState();
+    _telemetry = AdminTelemetryService(api: _api, token: widget.token);
+    _telemetry.start();
     _summary = _loadSummary();
     _loadProfile();
   }
@@ -124,6 +138,7 @@ class _AdminPageState extends State<AdminPage> {
         _api.dispose();
       }
       _api = widget.api ?? HomeService(token: widget.token);
+      _telemetry.updateCredentials(api: _api, token: widget.token);
       _summary = _loadSummary();
       _loadProfile();
     }
@@ -131,6 +146,7 @@ class _AdminPageState extends State<AdminPage> {
 
   @override
   void dispose() {
+    _telemetry.dispose();
     if (widget.api == null) {
       _api.dispose();
     }
@@ -320,6 +336,66 @@ class _AdminPageState extends State<AdminPage> {
       icon: Icons.dashboard_outlined,
       onExecute: () => setState(() {
         _activeTab = 'overview';
+        _selectedResourceKey = null;
+        _selectedResourceTitle = null;
+      }),
+    ),
+    AncoraCommandAction(
+      id: 'admin-infrastructure',
+      title: 'Infraestrutura & Servidor',
+      subtitle: 'CPU, RAM, JVM, Disco, Rede e Threads',
+      category: 'Navegação',
+      icon: Icons.memory_rounded,
+      onExecute: () => setState(() {
+        _activeTab = 'infrastructure';
+        _selectedResourceKey = null;
+        _selectedResourceTitle = null;
+      }),
+    ),
+    AncoraCommandAction(
+      id: 'admin-application',
+      title: 'Aplicação & API',
+      subtitle: 'RPM, p50/p95/p99, Status HTTP e Endpoints',
+      category: 'Navegação',
+      icon: Icons.speed_rounded,
+      onExecute: () => setState(() {
+        _activeTab = 'application';
+        _selectedResourceKey = null;
+        _selectedResourceTitle = null;
+      }),
+    ),
+    AncoraCommandAction(
+      id: 'admin-database',
+      title: 'Banco de Dados',
+      subtitle: 'Pool HikariCP, Tabelas e Consultas Lentas',
+      category: 'Navegação',
+      icon: Icons.storage_rounded,
+      onExecute: () => setState(() {
+        _activeTab = 'database';
+        _selectedResourceKey = null;
+        _selectedResourceTitle = null;
+      }),
+    ),
+    AncoraCommandAction(
+      id: 'admin-analytics',
+      title: 'Analytics & Negócio',
+      subtitle: 'Condomínios, Planos, Usuários e Uso por Módulo',
+      category: 'Navegação',
+      icon: Icons.insights_rounded,
+      onExecute: () => setState(() {
+        _activeTab = 'analytics';
+        _selectedResourceKey = null;
+        _selectedResourceTitle = null;
+      }),
+    ),
+    AncoraCommandAction(
+      id: 'admin-alerts',
+      title: 'Central de Alertas',
+      subtitle: 'Incidentes ativos, reconhecimento e resolução',
+      category: 'Navegação',
+      icon: Icons.notifications_active_outlined,
+      onExecute: () => setState(() {
+        _activeTab = 'alerts';
         _selectedResourceKey = null;
         _selectedResourceTitle = null;
       }),
@@ -599,6 +675,74 @@ class _AdminPageState extends State<AdminPage> {
                             }),
                           ),
                           _buildSidebarItem(
+                            icon: Icons.memory_rounded,
+                            label: 'Infraestrutura & Servidor',
+                            collapsed: effectiveCollapsed,
+                            isSelected:
+                                _activeTab == 'infrastructure' &&
+                                _selectedResourceKey == null,
+                            onTap: () => setState(() {
+                              _activeTab = 'infrastructure';
+                              _selectedResourceKey = null;
+                              _selectedResourceTitle = null;
+                            }),
+                          ),
+                          _buildSidebarItem(
+                            icon: Icons.speed_rounded,
+                            label: 'Aplicação & API',
+                            collapsed: effectiveCollapsed,
+                            isSelected:
+                                _activeTab == 'application' &&
+                                _selectedResourceKey == null,
+                            onTap: () => setState(() {
+                              _activeTab = 'application';
+                              _selectedResourceKey = null;
+                              _selectedResourceTitle = null;
+                            }),
+                          ),
+                          _buildSidebarItem(
+                            icon: Icons.storage_rounded,
+                            label: 'Banco de Dados',
+                            collapsed: effectiveCollapsed,
+                            isSelected:
+                                _activeTab == 'database' &&
+                                _selectedResourceKey == null,
+                            onTap: () => setState(() {
+                              _activeTab = 'database';
+                              _selectedResourceKey = null;
+                              _selectedResourceTitle = null;
+                            }),
+                          ),
+                          _buildSidebarItem(
+                            icon: Icons.insights_rounded,
+                            label: 'Analytics & Negócio',
+                            collapsed: effectiveCollapsed,
+                            isSelected:
+                                _activeTab == 'analytics' &&
+                                _selectedResourceKey == null,
+                            onTap: () => setState(() {
+                              _activeTab = 'analytics';
+                              _selectedResourceKey = null;
+                              _selectedResourceTitle = null;
+                            }),
+                          ),
+                          _buildSidebarItem(
+                            icon: Icons.notifications_active_outlined,
+                            label: 'Central de Alertas',
+                            count: _telemetry.activeAlertsCount > 0
+                                ? _telemetry.activeAlertsCount
+                                : null,
+                            collapsed: effectiveCollapsed,
+                            isSelected:
+                                _activeTab == 'alerts' &&
+                                _selectedResourceKey == null,
+                            onTap: () => setState(() {
+                              _activeTab = 'alerts';
+                              _selectedResourceKey = null;
+                              _selectedResourceTitle = null;
+                            }),
+                          ),
+                          _buildSidebarItem(
                             icon: Icons.shield_outlined,
                             label: 'Logs e Auditoria',
                             collapsed: effectiveCollapsed,
@@ -827,6 +971,16 @@ class _AdminPageState extends State<AdminPage> {
                               Flexible(
                                 child: Text(
                                   switch (_activeTab) {
+                                    'infrastructure' =>
+                                      'Infraestrutura & Servidor',
+                                    'application' =>
+                                      'Observabilidade da Aplicação & API',
+                                    'database' =>
+                                      'Monitoramento do Banco de Dados',
+                                    'analytics' =>
+                                      'Analytics & Utilização da Plataforma',
+                                    'alerts' =>
+                                      'Central de Alertas & Incidentes',
                                     'auditLogs' =>
                                       'Logs e Auditoria do Sistema',
                                     'diagnostics' =>
@@ -900,15 +1054,17 @@ class _AdminPageState extends State<AdminPage> {
                                       size: 15,
                                       color: SaaSColors.muted(context),
                                     ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Busca universal',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: SaaSColors.muted(context),
+                                    if (MediaQuery.sizeOf(context).width >= 1540) ...[
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Busca universal',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: SaaSColors.muted(context),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
+                                    ],
+                                    const SizedBox(width: 6),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 5,
@@ -936,13 +1092,15 @@ class _AdminPageState extends State<AdminPage> {
                             ),
                             const SizedBox(width: 8),
                             const AncoraConnectionStatusPill(),
+                            if (MediaQuery.sizeOf(context).width >= 1520) ...[
+                              const SizedBox(width: 8),
+                              const AncoraLiveClockPill(),
+                            ],
                             const SizedBox(width: 8),
-                            const AncoraLiveClockPill(),
-                            const SizedBox(width: 10),
                             if (widget.currentRole != null &&
                                 widget.onSwitchRole != null)
                               Padding(
-                                padding: const EdgeInsets.only(right: 12),
+                                padding: const EdgeInsets.only(right: 8),
                                 child: RoleSwitcherPill(
                                   currentRole: widget.currentRole!,
                                   availableRoles: widget.availableRoles,
@@ -954,43 +1112,51 @@ class _AdminPageState extends State<AdminPage> {
                                 backgroundColor: SaaSColors.primary,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
+                                  horizontal: 12,
                                   vertical: 10,
                                 ),
                               ),
                               onPressed: _openCreateCondominium,
                               icon: const Icon(
                                 Icons.domain_add_outlined,
-                                size: 18,
+                                size: 17,
                               ),
                               label: const Text('Novo condomínio'),
                             ),
                             const SizedBox(width: 8),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
+                            AncoraContextMenu<String>(
+                              tooltip: 'Mais ações administrativas',
+                              onSelected: (action) {
+                                if (action == 'create_entity') {
+                                  _openCreateAnyEntityMenu();
+                                } else if (action == 'announcement') {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          SystemAnnouncementPage(api: _api),
+                                    ),
+                                  );
+                                }
+                              },
+                              options: const [
+                                AncoraMenuOption(
+                                  value: 'create_entity',
+                                  label: 'Criar registro no banco',
+                                  icon: Icons.add_circle_outline,
                                 ),
-                              ),
-                              onPressed: _openCreateAnyEntityMenu,
-                              icon: const Icon(
-                                Icons.add_circle_outline,
-                                size: 18,
-                              ),
-                              label: const Text('Criar registro'),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              tooltip: 'Publicar aviso geral',
-                              icon: const Icon(Icons.campaign_outlined),
-                              onPressed: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      SystemAnnouncementPage(api: _api),
+                                AncoraMenuOption(
+                                  value: 'announcement',
+                                  label: 'Publicar aviso geral',
+                                  icon: Icons.campaign_outlined,
                                 ),
+                              ],
+                              child: OutlinedButton.icon(
+                                onPressed: null,
+                                icon: const Icon(Icons.bolt_rounded, size: 16),
+                                label: const Text('Ações'),
                               ),
                             ),
+                            const SizedBox(width: 4),
                             IconButton(
                               tooltip: 'Atualizar dados',
                               icon: const Icon(Icons.refresh),
@@ -1025,29 +1191,59 @@ class _AdminPageState extends State<AdminPage> {
 
                 // Content View (Expanded, zero outer scroll)
                 Expanded(
-                  child: _selectedResourceKey != null
-                      ? _AdminResourceView(
-                          key: ValueKey(_selectedResourceKey),
-                          api: _api,
-                          title: _selectedResourceTitle!,
-                          resource: _selectedResourceKey!,
-                          isEmbedded: true,
-                          onBack: () => setState(() {
-                            _selectedResourceKey = null;
-                            _selectedResourceTitle = null;
-                          }),
-                        )
-                      : switch (_activeTab) {
-                          'auditLogs' => AdminAuditLogView(api: _api),
-                          'diagnostics' => AdminDiagnosticsView(api: _api),
-                          'permissions' => AdminPermissionsView(api: _api),
-                          _ => _buildOverviewContent(
-                            context,
-                            data,
-                            isDark,
-                            borderColor,
-                          ),
-                        },
+                  child: AncoraAnimatedSwitcher(
+                    child: KeyedSubtree(
+                      key: ValueKey(_selectedResourceKey ?? _activeTab),
+                      child: _selectedResourceKey != null
+                          ? _AdminResourceView(
+                              key: ValueKey(_selectedResourceKey),
+                              api: _api,
+                              title: _selectedResourceTitle!,
+                              resource: _selectedResourceKey!,
+                              isEmbedded: true,
+                              onBack: () => setState(() {
+                                _selectedResourceKey = null;
+                                _selectedResourceTitle = null;
+                              }),
+                            )
+                          : switch (_activeTab) {
+                              'infrastructure' => AdminInfrastructureView(
+                                telemetry: _telemetry,
+                                onOpenAlerts: () =>
+                                    setState(() => _activeTab = 'alerts'),
+                              ),
+                              'application' => AdminApplicationView(
+                                telemetry: _telemetry,
+                                onOpenAlerts: () =>
+                                    setState(() => _activeTab = 'alerts'),
+                              ),
+                              'database' => AdminDatabaseView(
+                                telemetry: _telemetry,
+                                onOpenAlerts: () =>
+                                    setState(() => _activeTab = 'alerts'),
+                              ),
+                              'analytics' => AdminAnalyticsView(
+                                telemetry: _telemetry,
+                                condominiums: (data['condominiumList'] is List)
+                                    ? (data['condominiumList'] as List)
+                                          .whereType<Map>()
+                                          .map((e) => Map<String, dynamic>.from(e))
+                                          .toList()
+                                    : const [],
+                              ),
+                              'alerts' => AdminAlertsView(telemetry: _telemetry),
+                              'auditLogs' => AdminAuditLogView(api: _api),
+                              'diagnostics' => AdminDiagnosticsView(api: _api),
+                              'permissions' => AdminPermissionsView(api: _api),
+                              _ => _buildOverviewContent(
+                                context,
+                                data,
+                                isDark,
+                                borderColor,
+                              ),
+                            },
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1119,78 +1315,118 @@ class _AdminPageState extends State<AdminPage> {
         ? _resources
         : _resources.take(12).toList();
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 4 Global Metric Cards
-          Row(
-            children: [
-              Expanded(
-                child: SaaSMetricCard(
-                  title: 'Condomínios Ativos',
-                  value: '$activeCondos',
-                  icon: Icons.apartment_outlined,
-                  iconColor: SaaSColors.primary,
-                  subtitle: '$totalCondos cadastrados no sistema',
-                  onTap: () => setState(() {
-                    _selectedResourceKey = 'condominiums';
-                    _selectedResourceTitle = 'Condomínios';
-                  }),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: SaaSMetricCard(
-                  title: 'Usuários Administrativos',
-                  value: '$adminUsersDisplay',
-                  icon: Icons.admin_panel_settings_outlined,
-                  iconColor: SaaSColors.purple,
-                  subtitle: '$totalUsers usuários no total',
-                  onTap: () => setState(() {
-                    _selectedResourceKey = 'users';
-                    _selectedResourceTitle = 'Usuários';
-                  }),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: SaaSMetricCard(
-                  title: 'Moradores Vinculados',
-                  value: '$residentsCount',
-                  icon: Icons.groups_outlined,
-                  iconColor: SaaSColors.success,
-                  subtitle: '$unitsCount unidades • $membershipsCount vínculos',
-                  onTap: () => setState(() {
-                    _selectedResourceKey = 'residents';
-                    _selectedResourceTitle = 'Moradores';
-                  }),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: SaaSMetricCard(
-                  title: 'Saúde & Uptime Real',
-                  value: healthValue,
-                  icon: Icons.monitor_heart_outlined,
-                  iconColor: overallStatus == 'DOWN'
-                      ? SaaSColors.error
-                      : SaaSColors.success,
-                  subtitle: healthSubtitle,
-                  onTap: () => setState(() {
-                    _activeTab = 'diagnostics';
-                    _selectedResourceKey = null;
-                    _selectedResourceTitle = null;
-                  }),
-                ),
-              ),
-            ],
+          AdminLiveToolbar(
+            telemetry: _telemetry,
+            onOpenAlerts: () => setState(() => _activeTab = 'alerts'),
           ),
           const SizedBox(height: 16),
 
-          // Work Area 2 Columns (Expanded, no outer scroll!)
-          Expanded(
+          // 4 Global Metric Cards + live sparklines
+          ListenableBuilder(
+            listenable: _telemetry,
+            builder: (context, _) {
+              final series = AdminTelemetryHelpers.asMapList(
+                _telemetry.snapshot?['timeSeries'],
+              );
+              final cpuSpark = AdminTelemetryHelpers.extractSeries(
+                series,
+                'systemCpuPercent',
+              );
+              final heapSpark = AdminTelemetryHelpers.extractSeries(
+                series,
+                'heapUsagePercent',
+              );
+              final rpmSpark = AdminTelemetryHelpers.extractSeries(
+                series,
+                'requestsPerMinute',
+              );
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SaaSMetricCard(
+                          title: 'Condomínios Ativos',
+                          value: '$activeCondos',
+                          icon: Icons.apartment_outlined,
+                          iconColor: SaaSColors.primary,
+                          subtitle: '$totalCondos cadastrados no sistema',
+                          onTap: () => setState(() {
+                            _selectedResourceKey = 'condominiums';
+                            _selectedResourceTitle = 'Condomínios';
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: SaaSMetricCard(
+                          title: 'Usuários Administrativos',
+                          value: '$adminUsersDisplay',
+                          icon: Icons.admin_panel_settings_outlined,
+                          iconColor: SaaSColors.purple,
+                          subtitle: '$totalUsers usuários no total',
+                          sparklineValues: rpmSpark,
+                          onTap: () => setState(() {
+                            _selectedResourceKey = 'users';
+                            _selectedResourceTitle = 'Usuários';
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: SaaSMetricCard(
+                          title: 'Moradores Vinculados',
+                          value: '$residentsCount',
+                          icon: Icons.groups_outlined,
+                          iconColor: SaaSColors.success,
+                          subtitle: '$unitsCount unidades • $membershipsCount vínculos',
+                          sparklineValues: cpuSpark,
+                          onTap: () => setState(() {
+                            _selectedResourceKey = 'residents';
+                            _selectedResourceTitle = 'Moradores';
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: SaaSMetricCard(
+                          title: 'Saúde & Uptime Real',
+                          value: healthValue,
+                          icon: Icons.monitor_heart_outlined,
+                          iconColor: overallStatus == 'DOWN'
+                              ? SaaSColors.error
+                              : SaaSColors.success,
+                          subtitle: healthSubtitle,
+                          sparklineValues: heapSpark,
+                          onTap: () => setState(() {
+                            _activeTab = 'diagnostics';
+                            _selectedResourceKey = null;
+                            _selectedResourceTitle = null;
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Executive Live Charts Row
+                  _buildOverviewChartsRow(series, usersByRole, totalUsers),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+
+          // Work Area 2 Columns
+          SizedBox(
+            height: 520,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1375,6 +1611,144 @@ class _AdminPageState extends State<AdminPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildOverviewChartsRow(
+    List<Map<String, dynamic>> series,
+    Map<String, dynamic> usersByRole,
+    int totalUsers,
+  ) {
+    final xLabels = AdminTelemetryHelpers.extractTimeLabels(series);
+    final sysCpu = AdminTelemetryHelpers.extractSeries(
+      series,
+      'systemCpuPercent',
+    );
+    final heapPct = AdminTelemetryHelpers.extractSeries(
+      series,
+      'heapUsagePercent',
+    );
+    final rpm = AdminTelemetryHelpers.extractSeries(series, 'requestsPerMinute');
+    final p95 = AdminTelemetryHelpers.extractSeries(series, 'p95LatencyMs');
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: AncoraChartCard(
+            title: 'CPU & JVM Heap ao Vivo',
+            subtitle: 'Carga do servidor e consumo de memória',
+            unit: '%',
+            height: 165,
+            isEmpty: sysCpu.isEmpty,
+            trailing: TextButton(
+              onPressed: () => setState(() => _activeTab = 'infrastructure'),
+              child: const Text('Detalhes', style: TextStyle(fontSize: 11.5)),
+            ),
+            legendItems: const [
+              (label: 'CPU (%)', color: AncoraChartPalette.indigo),
+              (label: 'Heap (%)', color: AncoraChartPalette.violet),
+            ],
+            child: AncoraLineAreaChart(
+              unitSuffix: '%',
+              maxYOverride: 100,
+              xLabels: xLabels,
+              series: [
+                AncoraChartSeries(
+                  label: 'CPU',
+                  values: sysCpu,
+                  color: AncoraChartPalette.indigo,
+                  fillArea: true,
+                ),
+                AncoraChartSeries(
+                  label: 'Heap',
+                  values: heapPct,
+                  color: AncoraChartPalette.violet,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: AncoraChartCard(
+            title: 'Tráfego HTTP & Latência p95',
+            subtitle: 'Requisições por minuto e tempo de resposta',
+            height: 165,
+            isEmpty: rpm.isEmpty,
+            trailing: TextButton(
+              onPressed: () => setState(() => _activeTab = 'application'),
+              child: const Text('API', style: TextStyle(fontSize: 11.5)),
+            ),
+            legendItems: const [
+              (label: 'RPM', color: AncoraChartPalette.cyan),
+              (label: 'p95 (ms)', color: AncoraChartPalette.amber),
+            ],
+            child: AncoraLineAreaChart(
+              xLabels: xLabels,
+              series: [
+                AncoraChartSeries(
+                  label: 'RPM',
+                  values: rpm,
+                  color: AncoraChartPalette.cyan,
+                  fillArea: true,
+                ),
+                AncoraChartSeries(
+                  label: 'p95 (ms)',
+                  values: p95,
+                  color: AncoraChartPalette.amber,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: AncoraChartCard(
+            title: 'Usuários por Perfil',
+            subtitle: 'Distribuição RBAC da plataforma',
+            height: 165,
+            trailing: TextButton(
+              onPressed: () => setState(() => _activeTab = 'analytics'),
+              child: const Text('Analytics', style: TextStyle(fontSize: 11.5)),
+            ),
+            child: AncoraDonutChart(
+              centerLabel: 'Total',
+              centerValue: '$totalUsers',
+              slices: [
+                AncoraDonutSlice(
+                  label: 'Moradores',
+                  value: AdminTelemetryHelpers.asDouble(
+                    usersByRole['ROLE_RESIDENT'],
+                  ),
+                  color: AncoraChartPalette.emerald,
+                ),
+                AncoraDonutSlice(
+                  label: 'Porteiros',
+                  value: AdminTelemetryHelpers.asDouble(
+                    usersByRole['ROLE_DOORMAN'],
+                  ),
+                  color: AncoraChartPalette.cyan,
+                ),
+                AncoraDonutSlice(
+                  label: 'Síndicos',
+                  value: AdminTelemetryHelpers.asDouble(
+                    usersByRole['ROLE_MANAGER'],
+                  ),
+                  color: AncoraChartPalette.indigo,
+                ),
+                AncoraDonutSlice(
+                  label: 'Admins',
+                  value: AdminTelemetryHelpers.asDouble(
+                    usersByRole['ROLE_ADMIN'],
+                  ),
+                  color: AncoraChartPalette.violet,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1696,6 +2070,84 @@ class _AdminPageState extends State<AdminPage> {
                         },
                       ),
                       _buildSidebarItem(
+                        icon: Icons.memory_rounded,
+                        label: 'Infraestrutura & Servidor',
+                        isSelected:
+                            _activeTab == 'infrastructure' &&
+                            _selectedResourceKey == null,
+                        onTap: () {
+                          Navigator.of(drawerCtx).pop();
+                          setState(() {
+                            _activeTab = 'infrastructure';
+                            _selectedResourceKey = null;
+                            _selectedResourceTitle = null;
+                          });
+                        },
+                      ),
+                      _buildSidebarItem(
+                        icon: Icons.speed_rounded,
+                        label: 'Aplicação & API',
+                        isSelected:
+                            _activeTab == 'application' &&
+                            _selectedResourceKey == null,
+                        onTap: () {
+                          Navigator.of(drawerCtx).pop();
+                          setState(() {
+                            _activeTab = 'application';
+                            _selectedResourceKey = null;
+                            _selectedResourceTitle = null;
+                          });
+                        },
+                      ),
+                      _buildSidebarItem(
+                        icon: Icons.storage_rounded,
+                        label: 'Banco de Dados',
+                        isSelected:
+                            _activeTab == 'database' &&
+                            _selectedResourceKey == null,
+                        onTap: () {
+                          Navigator.of(drawerCtx).pop();
+                          setState(() {
+                            _activeTab = 'database';
+                            _selectedResourceKey = null;
+                            _selectedResourceTitle = null;
+                          });
+                        },
+                      ),
+                      _buildSidebarItem(
+                        icon: Icons.insights_rounded,
+                        label: 'Analytics & Negócio',
+                        isSelected:
+                            _activeTab == 'analytics' &&
+                            _selectedResourceKey == null,
+                        onTap: () {
+                          Navigator.of(drawerCtx).pop();
+                          setState(() {
+                            _activeTab = 'analytics';
+                            _selectedResourceKey = null;
+                            _selectedResourceTitle = null;
+                          });
+                        },
+                      ),
+                      _buildSidebarItem(
+                        icon: Icons.notifications_active_outlined,
+                        label: 'Central de Alertas',
+                        count: _telemetry.activeAlertsCount > 0
+                            ? _telemetry.activeAlertsCount
+                            : null,
+                        isSelected:
+                            _activeTab == 'alerts' &&
+                            _selectedResourceKey == null,
+                        onTap: () {
+                          Navigator.of(drawerCtx).pop();
+                          setState(() {
+                            _activeTab = 'alerts';
+                            _selectedResourceKey = null;
+                            _selectedResourceTitle = null;
+                          });
+                        },
+                      ),
+                      _buildSidebarItem(
                         icon: Icons.shield_outlined,
                         label: 'Logs e Auditoria',
                         isSelected:
@@ -1769,6 +2221,11 @@ class _AdminPageState extends State<AdminPage> {
         title: Text(
           _selectedResourceTitle ??
               switch (_activeTab) {
+                'infrastructure' => 'Infraestrutura & Servidor',
+                'application' => 'Aplicação & API',
+                'database' => 'Banco de Dados',
+                'analytics' => 'Analytics & Negócio',
+                'alerts' => 'Central de Alertas',
                 'auditLogs' => 'Logs e Auditoria',
                 'diagnostics' => 'Saúde e Diagnóstico',
                 'permissions' => 'Permissões e Papéis',
@@ -1781,65 +2238,80 @@ class _AdminPageState extends State<AdminPage> {
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            tooltip: isDark ? 'Modo claro' : 'Modo escuro',
-            icon: Icon(
-              isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-            ),
-            onPressed: () {
-              AppTheme.themeModeNotifier.value = isDark
-                  ? ThemeMode.light
-                  : ThemeMode.dark;
-            },
-          ),
-          if (widget.currentRole != null && widget.onSwitchRole != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-              child: RoleSwitcherPill(
-                currentRole: widget.currentRole!,
-                availableRoles: widget.availableRoles,
-                onSwitchRole: widget.onSwitchRole!,
-              ),
-            ),
-          IconButton(
-            tooltip: 'Criar entrada no banco',
-            onPressed: _openCreateAnyEntityMenu,
-            icon: const Icon(Icons.add_circle_outline),
-          ),
-          IconButton(
-            tooltip: 'Novo condomínio',
-            onPressed: _openCreateCondominium,
-            icon: const Icon(Icons.domain_add_outlined),
-          ),
-          IconButton(
-            tooltip: 'Publicar aviso geral',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SystemAnnouncementPage(api: _api),
-              ),
-            ),
-            icon: const Icon(Icons.campaign_outlined),
-          ),
-          IconButton(
-            tooltip: 'Minha conta',
-            onPressed: _openProfile,
-            icon: CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white24,
-              backgroundImage: _profileAvatarImage,
-              child: _profileAvatarImage == null
-                  ? const Icon(Icons.person, color: Colors.white, size: 20)
-                  : null,
-            ),
-          ),
-          IconButton(
             tooltip: 'Atualizar',
             onPressed: _refresh,
             icon: const Icon(Icons.refresh),
           ),
           IconButton(
-            tooltip: 'Sair',
-            onPressed: widget.onLogout,
-            icon: const Icon(Icons.logout),
+            tooltip: 'Minha conta',
+            onPressed: _openProfile,
+            icon: CircleAvatar(
+              radius: 15,
+              backgroundColor: Colors.white24,
+              backgroundImage: _profileAvatarImage,
+              child: _profileAvatarImage == null
+                  ? const Icon(Icons.person, color: Colors.white, size: 18)
+                  : null,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: AncoraContextMenu<String>(
+              tooltip: 'Ações rápidas',
+              onSelected: (action) {
+                if (action == 'theme') {
+                  AppTheme.themeModeNotifier.value = isDark
+                      ? ThemeMode.light
+                      : ThemeMode.dark;
+                } else if (action == 'new_condo') {
+                  _openCreateCondominium();
+                } else if (action == 'create_entity') {
+                  _openCreateAnyEntityMenu();
+                } else if (action == 'announcement') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => SystemAnnouncementPage(api: _api),
+                    ),
+                  );
+                } else if (action == 'logout') {
+                  widget.onLogout();
+                }
+              },
+              options: [
+                AncoraMenuOption(
+                  value: 'theme',
+                  label: isDark ? 'Modo claro' : 'Modo escuro',
+                  icon: isDark
+                      ? Icons.light_mode_outlined
+                      : Icons.dark_mode_outlined,
+                ),
+                const AncoraMenuOption(
+                  value: 'new_condo',
+                  label: 'Novo condomínio',
+                  icon: Icons.domain_add_outlined,
+                ),
+                const AncoraMenuOption(
+                  value: 'create_entity',
+                  label: 'Criar entrada no banco',
+                  icon: Icons.add_circle_outline,
+                ),
+                const AncoraMenuOption(
+                  value: 'announcement',
+                  label: 'Publicar aviso geral',
+                  icon: Icons.campaign_outlined,
+                ),
+                const AncoraMenuOption(
+                  value: 'logout',
+                  label: 'Sair',
+                  icon: Icons.logout_rounded,
+                  isDanger: true,
+                ),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.more_vert_rounded, color: Colors.white),
+              ),
+            ),
           ),
         ],
       ),
@@ -1882,6 +2354,26 @@ class _AdminPageState extends State<AdminPage> {
                 const Divider(height: 1),
                 Expanded(
                   child: switch (_activeTab) {
+                    'infrastructure' => AdminInfrastructureView(
+                      telemetry: _telemetry,
+                      onOpenAlerts: () =>
+                          setState(() => _activeTab = 'alerts'),
+                    ),
+                    'application' => AdminApplicationView(
+                      telemetry: _telemetry,
+                      onOpenAlerts: () =>
+                          setState(() => _activeTab = 'alerts'),
+                    ),
+                    'database' => AdminDatabaseView(
+                      telemetry: _telemetry,
+                      onOpenAlerts: () =>
+                          setState(() => _activeTab = 'alerts'),
+                    ),
+                    'analytics' => AdminAnalyticsView(
+                      telemetry: _telemetry,
+                      condominiums: condoList,
+                    ),
+                    'alerts' => AdminAlertsView(telemetry: _telemetry),
                     'auditLogs' => AdminAuditLogView(api: _api),
                     'diagnostics' => AdminDiagnosticsView(api: _api),
                     'permissions' => AdminPermissionsView(api: _api),
@@ -2304,7 +2796,7 @@ Future<Map<String, dynamic>?> showCreateCondominiumDialog({
   int? createdCondoId;
   Map<String, dynamic>? createdCondoMap;
 
-  final created = await showDialog<Map<String, dynamic>>(
+  final created = await showAncoraDialog<Map<String, dynamic>>(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => StatefulBuilder(
@@ -3004,7 +3496,7 @@ class _AdminRecordCard extends StatelessWidget {
     bool deleting = false;
 
     try {
-      final deleted = await showDialog<bool>(
+      final deleted = await showAncoraDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => StatefulBuilder(
@@ -3181,7 +3673,7 @@ Future<void> showRecordDetailsDialog({
   final subtitle = _recordSecondarySubtitle(resource, item);
   final badges = _recordBadges(resource, item);
 
-  await showDialog<void>(
+  await showAncoraDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

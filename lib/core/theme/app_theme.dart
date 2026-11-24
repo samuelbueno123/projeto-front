@@ -44,7 +44,7 @@ class AncoraThemeTokens extends ThemeExtension<AncoraThemeTokens> {
     surface: Colors.white,
     surfaceElevated: Colors.white,
     surfaceSubtle: Color(0xFFF1F5F9),
-    border: Color(0xFFE2E8F0),
+    border: Color(0xFFE4E7EC),
     borderStrong: Color(0xFFCBD5E1),
     textPrimary: Color(0xFF0F172A),
     textSecondary: Color(0xFF475569),
@@ -63,17 +63,17 @@ class AncoraThemeTokens extends ThemeExtension<AncoraThemeTokens> {
     surface: Color(0xFF0F1424),
     surfaceElevated: Color(0xFF161D33),
     surfaceSubtle: Color(0xFF131A2E),
-    border: Color(0xFF1E293B),
+    border: Color(0xFF1E2638),
     borderStrong: Color(0xFF334155),
     textPrimary: Color(0xFFF8FAFC),
     textSecondary: Color(0xFFCBD5E1),
     textMuted: Color(0xFF94A3B8),
-    accent: Color(0xFF2563EB),
+    accent: Color(0xFF3B82F6),
     accentSoft: Color(0xFF1E3A8A),
     success: Color(0xFF10B981),
     warning: Color(0xFFF59E0B),
     danger: Color(0xFFEF4444),
-    info: Color(0xFF8B5CF6),
+    info: Color(0xFF38BDF8),
     isDark: true,
   );
 
@@ -151,6 +151,44 @@ class AncoraThemeTokens extends ThemeExtension<AncoraThemeTokens> {
       isDark: t < 0.5 ? isDark : other.isDark,
     );
   }
+}
+
+/// Escala padronizada de espaçamentos e raios do Design System Âncora Gestão.
+abstract final class AncoraSpacing {
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+}
+
+abstract final class AncoraRadius {
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double pill = 999;
+}
+
+/// Paleta semântica para séries de gráficos e observabilidade (estilo Grafana/Stripe).
+abstract final class AncoraChartPalette {
+  static const Color indigo = Color(0xFF3B82F6);
+  static const Color emerald = Color(0xFF10B981);
+  static const Color violet = Color(0xFF8B5CF6);
+  static const Color amber = Color(0xFFF59E0B);
+  static const Color rose = Color(0xFFEF4444);
+  static const Color cyan = Color(0xFF06B6D4);
+  static const Color slate = Color(0xFF64748B);
+
+  static const List<Color> series = [
+    indigo,
+    emerald,
+    violet,
+    amber,
+    cyan,
+    rose,
+    slate,
+  ];
 }
 
 class AppTheme {

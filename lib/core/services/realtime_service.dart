@@ -133,7 +133,7 @@ class RealtimeService {
 
     try {
       final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
-      final uri = Uri.parse('$base/realtime/subscribe');
+      final uri = Uri.parse('$base/realtime/events');
       final headers = <String, String>{
         'Authorization': 'Bearer $_token',
         'Accept': 'text/event-stream',

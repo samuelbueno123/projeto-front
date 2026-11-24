@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/config/app_assets.dart';
 import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/widgets/smart_image.dart';
 import '../../data/community_api.dart';
@@ -337,6 +338,7 @@ class _CondominiumGalleryViewState extends State<CondominiumGalleryView> {
       placeholderIcon: path.isEmpty
           ? Icons.image_outlined
           : Icons.broken_image_outlined,
+      fallbackAsset: AppAssets.condoCoverDefault,
     );
   }
 

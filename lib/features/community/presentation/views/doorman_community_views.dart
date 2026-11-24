@@ -1,3 +1,4 @@
+import '../../../../core/config/app_assets.dart';
 import '../../../../core/design_system/saas_design_system.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/smart_image.dart';

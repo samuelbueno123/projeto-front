@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/ancora_charts.dart';
 import 'motion_system.dart';
 import 'test_env_stub.dart' if (dart.library.io) 'test_env_io.dart';
 
@@ -165,6 +168,8 @@ class SaaSMetricCard extends StatelessWidget {
     this.iconBgColor,
     this.trend,
     this.trendPositive = true,
+    this.sparklineValues,
+    this.sparklineColor,
     this.onTap,
   });
 
@@ -176,6 +181,8 @@ class SaaSMetricCard extends StatelessWidget {
   final Color? iconBgColor;
   final String? trend;
   final bool trendPositive;
+  final List<double>? sparklineValues;
+  final Color? sparklineColor;
   final VoidCallback? onTap;
 
   @override
@@ -260,10 +267,19 @@ class SaaSMetricCard extends StatelessWidget {
             fontWeight: FontWeight.w800,
             letterSpacing: -0.6,
             color: SaaSColors.textPrimary(isDark),
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+        if (sparklineValues != null && sparklineValues!.length >= 2) ...[
+          const SizedBox(height: 8),
+          AncoraSparkline(
+            values: sparklineValues!,
+            color: sparklineColor ?? fgIcon,
+            height: 24,
+          ),
+        ],
         const SizedBox(height: 4),
         Text(
           title,
@@ -1191,6 +1207,289 @@ class SaaSDataCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Bloco de carregamento skeleton discreto com suporte a movimento reduzido.
+class AncoraSkeletonBox extends StatelessWidget {
+  const AncoraSkeletonBox({
+    super.key,
+    this.width = double.infinity,
+    this.height = 16,
+    this.borderRadius = 8,
+  });
+
+  final double width;
+  final double height;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AncoraThemeTokens.of(context);
+    final box = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: tokens.surfaceSubtle,
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+    );
+    if (isRunningTestEnvironment || AncoraMotion.shouldReduceMotion(context)) {
+      return box;
+    }
+    return box
+        .animate(onPlay: (c) => c.repeat(reverse: true))
+        .fade(begin: 0.45, end: 0.9, duration: 850.ms);
+  }
+}
+
+/// Indicador compacto de estado (ativo, alerta, erro, inativo).
+class AncoraStatusDot extends StatelessWidget {
+  const AncoraStatusDot({
+    super.key,
+    required this.color,
+    this.size = 8,
+  });
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.35),
+            blurRadius: 4,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Seletor segmentado estilo Vercel/Linear para janelas temporais e filtros rápidos.
+class AncoraFilterPills<T> extends StatelessWidget {
+  const AncoraFilterPills({
+    super.key,
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<({T value, String label})> options;
+  final T selected;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AncoraThemeTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: tokens.surfaceSubtle,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.border),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: options.map((opt) {
+          final isActive = opt.value == selected;
+          return InkWell(
+            borderRadius: BorderRadius.circular(7),
+            onTap: () => onSelected(opt.value),
+            child: AnimatedContainer(
+              duration: AncoraMotion.duration(context, AncoraMotion.fast),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: isActive ? tokens.surface : Colors.transparent,
+                borderRadius: BorderRadius.circular(7),
+                border: isActive ? Border.all(color: tokens.border) : null,
+              ),
+              child: Text(
+                opt.label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                  color: isActive ? tokens.textPrimary : tokens.textMuted,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+/// Coluna para [AncoraDataTable].
+class AncoraTableColumn<T> {
+  const AncoraTableColumn({
+    required this.label,
+    required this.cellBuilder,
+    this.sortValue,
+    this.numeric = false,
+  });
+
+  final String label;
+  final Widget Function(T row) cellBuilder;
+  final Comparable Function(T row)? sortValue;
+  final bool numeric;
+}
+
+/// Tabela analítica reutilizável (estilo Stripe/GitHub) com ordenação, paginação e scroll seguro.
+class AncoraDataTable<T> extends StatefulWidget {
+  const AncoraDataTable({
+    super.key,
+    required this.columns,
+    required this.rows,
+    this.pageSize = 8,
+    this.emptyMessage = 'Nenhum registro encontrado.',
+  });
+
+  final List<AncoraTableColumn<T>> columns;
+  final List<T> rows;
+  final int pageSize;
+  final String emptyMessage;
+
+  @override
+  State<AncoraDataTable<T>> createState() => _AncoraDataTableState<T>();
+}
+
+class _AncoraDataTableState<T> extends State<AncoraDataTable<T>> {
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
+  int _page = 0;
+
+  @override
+  void didUpdateWidget(covariant AncoraDataTable<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final maxPage = math.max(0, ((widget.rows.length - 1) / widget.pageSize).floor());
+    if (_page > maxPage) {
+      _page = maxPage;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AncoraThemeTokens.of(context);
+    if (widget.rows.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: Text(
+            widget.emptyMessage,
+            style: TextStyle(fontSize: 13, color: tokens.textMuted),
+          ),
+        ),
+      );
+    }
+
+    final sorted = List<T>.from(widget.rows);
+    if (_sortColumnIndex != null && _sortColumnIndex! < widget.columns.length) {
+      final col = widget.columns[_sortColumnIndex!];
+      if (col.sortValue != null) {
+        sorted.sort((a, b) {
+          final cmp = col.sortValue!(a).compareTo(col.sortValue!(b));
+          return _sortAscending ? cmp : -cmp;
+        });
+      }
+    }
+
+    final totalPages = math.max(1, (sorted.length / widget.pageSize).ceil());
+    final safePage = _page.clamp(0, totalPages - 1);
+    final start = safePage * widget.pageSize;
+    final end = math.min(sorted.length, start + widget.pageSize);
+    final pageRows = sorted.sublist(start, end);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            sortColumnIndex: _sortColumnIndex,
+            sortAscending: _sortAscending,
+            headingRowHeight: 40,
+            dataRowMinHeight: 42,
+            dataRowMaxHeight: 54,
+            horizontalMargin: 12,
+            columnSpacing: 20,
+            headingRowColor: WidgetStatePropertyAll(tokens.surfaceSubtle),
+            dividerThickness: 0.7,
+            columns: [
+              for (int i = 0; i < widget.columns.length; i++)
+                DataColumn(
+                  numeric: widget.columns[i].numeric,
+                  onSort: widget.columns[i].sortValue == null
+                      ? null
+                      : (colIdx, asc) {
+                          setState(() {
+                            _sortColumnIndex = colIdx;
+                            _sortAscending = asc;
+                          });
+                        },
+                  label: Text(
+                    widget.columns[i].label,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: tokens.textSecondary,
+                    ),
+                  ),
+                ),
+            ],
+            rows: pageRows
+                .map(
+                  (row) => DataRow(
+                    cells: widget.columns
+                        .map((c) => DataCell(c.cellBuilder(row)))
+                        .toList(),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        if (totalPages > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text(
+                'Página ${safePage + 1} de $totalPages (${sorted.length} itens)',
+                style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Página anterior',
+                visualDensity: VisualDensity.compact,
+                onPressed: safePage > 0
+                    ? () => setState(() => _page = safePage - 1)
+                    : null,
+                icon: const Icon(Icons.chevron_left_rounded, size: 18),
+              ),
+              IconButton(
+                tooltip: 'Próxima página',
+                visualDensity: VisualDensity.compact,
+                onPressed: safePage < totalPages - 1
+                    ? () => setState(() => _page = safePage + 1)
+                    : null,
+                icon: const Icon(Icons.chevron_right_rounded, size: 18),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

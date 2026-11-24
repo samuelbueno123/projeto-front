@@ -49,6 +49,16 @@ class AncoraAnimatedSwitcher extends StatelessWidget {
       reverseDuration: const Duration(milliseconds: 160),
       switchInCurve: AncoraMotion.easeOut,
       switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) {
+        return Stack(
+          alignment: Alignment.topLeft,
+          fit: StackFit.expand,
+          children: [
+            ...previousChildren,
+            if (currentChild != null) currentChild,
+          ],
+        );
+      },
       transitionBuilder: (childWidget, animation) {
         final fade = CurvedAnimation(parent: animation, curve: Curves.easeOut);
         final slide = Tween<Offset>(

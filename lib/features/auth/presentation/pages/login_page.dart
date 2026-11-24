@@ -2,7 +2,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:http/http.dart' as http;
 
+import '../../../../core/config/api_config.dart';
+import '../../../../core/config/app_assets.dart';
 import '../../../../core/design_system/motion_system.dart';
 import '../../../../core/design_system/saas_design_system.dart';
 import '../widgets/google_login_button.dart';
@@ -97,7 +100,7 @@ class _LoginPageState extends State<LoginPage> {
             child: ImageFiltered(
               imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
               child: Image.asset(
-                'assets/images/condo_bg.jpg',
+                AppAssets.condoBackground,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
@@ -505,10 +508,19 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    Icons.apartment_rounded,
-                    size: 32,
-                    color: Colors.white,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: Image.asset(
+                      AppAssets.ancoraLogo,
+                      width: 62,
+                      height: 62,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.apartment_rounded,
+                        size: 32,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ),
               ).saasScale(duration: 350.ms, curve: Curves.easeOutBack),
@@ -896,11 +908,247 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
+
+              const SizedBox(height: 12),
+
+              // Configuração de servidor da API (essencial para testar em dispositivos móveis/LAN)
+              Center(
+                child: InkWell(
+                  onTap: widget.isLoading ? null : _openServerConfigDialog,
+                  borderRadius: BorderRadius.circular(999),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.dns_outlined,
+                          size: 14,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'Servidor: ${ApiConfig.baseUrl}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Alterar',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: isDark
+                                ? const Color(0xFF93C5FD)
+                                : SaaSColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _openServerConfigDialog() async {
+    final controller = TextEditingController(
+      text: ApiConfig.runtimeOverrideBaseUrl ?? ApiConfig.baseUrl,
+    );
+    String? testStatus;
+    bool testSuccess = false;
+    bool testing = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.dns_outlined, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('Configurar Servidor da API')),
+                ],
+              ),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Para testar pelo celular na mesma rede Wi-Fi, informe o endereço IP do seu computador (ex.: http://192.168.1.50:8080).',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF64748B),
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'URL do Backend',
+                        hintText: 'http://192.168.1.50:8080',
+                        prefixIcon: Icon(Icons.link_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ActionChip(
+                          label: const Text('Automático'),
+                          onPressed: () async {
+                            await ApiConfig.setRuntimeBaseUrl(null);
+                            controller.text = ApiConfig.baseUrl;
+                            setDialogState(() {
+                              testStatus = null;
+                            });
+                          },
+                        ),
+                        ActionChip(
+                          label: const Text('Emulador Android (10.0.2.2)'),
+                          onPressed: () {
+                            controller.text = 'http://10.0.2.2:8080';
+                            setDialogState(() {
+                              testStatus = null;
+                            });
+                          },
+                        ),
+                        ActionChip(
+                          label: const Text('Localhost'),
+                          onPressed: () {
+                            controller.text = 'http://localhost:8080';
+                            setDialogState(() {
+                              testStatus = null;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    if (testStatus != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: testSuccess
+                              ? const Color(0xFF15803D).withValues(alpha: 0.12)
+                              : const Color(0xFFDC2626).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          testStatus!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: testSuccess
+                                ? const Color(0xFF15803D)
+                                : const Color(0xFFDC2626),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: testing
+                      ? null
+                      : () async {
+                          final candidate = ApiConfig.normalizeBaseUrl(
+                            controller.text,
+                          );
+                          if (candidate == null) {
+                            setDialogState(() {
+                              testSuccess = false;
+                              testStatus = 'Informe uma URL válida.';
+                            });
+                            return;
+                          }
+                          setDialogState(() {
+                            testing = true;
+                            testStatus = null;
+                          });
+                          try {
+                            final res = await http
+                                .get(Uri.parse('$candidate/actuator/health'))
+                                .timeout(const Duration(seconds: 5));
+                            setDialogState(() {
+                              testing = false;
+                              testSuccess = res.statusCode == 200;
+                              testStatus = testSuccess
+                                  ? 'Conexão bem-sucedida com $candidate!'
+                                  : 'Servidor respondeu com HTTP ${res.statusCode}.';
+                            });
+                          } catch (e) {
+                            setDialogState(() {
+                              testing = false;
+                              testSuccess = false;
+                              testStatus =
+                                  'Não foi possível conectar em $candidate.';
+                            });
+                          }
+                        },
+                  child: Text(testing ? 'Testando...' : 'Testar conexão'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final normalized = ApiConfig.normalizeBaseUrl(
+                      controller.text,
+                    );
+                    if (normalized == null) {
+                      setDialogState(() {
+                        testSuccess = false;
+                        testStatus = 'Informe uma URL válida.';
+                      });
+                      return;
+                    }
+                    await ApiConfig.setRuntimeBaseUrl(normalized);
+                    if (mounted) setState(() {});
+                    if (dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop();
+                    }
+                  },
+                  child: const Text('Salvar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
   }
 
   Widget _buildPasswordStrength(bool isDark) {

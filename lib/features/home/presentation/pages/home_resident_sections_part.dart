@@ -692,27 +692,14 @@ extension _HomeResidentSectionsExtension on _HomePageState {
                       child: SizedBox(
                         width: 52,
                         height: 52,
-                        child: (imgUrl != null && imgUrl.isNotEmpty)
-                            ? SmartImage(
-                                source: imgUrl,
-                                width: 52,
-                                height: 52,
-                                fit: BoxFit.cover,
-                                placeholderIcon: Icons.deck_rounded,
-                              )
-                            : Container(
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? const Color(0xFF334155)
-                                      : const Color(0xFFE0E7FF),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.deck_rounded,
-                                  color: Color(0xFF3B82F6),
-                                  size: 26,
-                                ),
-                              ),
+                        child: SmartImage(
+                          source: imgUrl,
+                          width: 52,
+                          height: 52,
+                          fit: BoxFit.cover,
+                          placeholderIcon: Icons.deck_rounded,
+                          fallbackAsset: AppAssets.commonAreaDefault,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 14),
